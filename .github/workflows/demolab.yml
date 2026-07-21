@@ -105,10 +105,13 @@ jobs:
 
           for binary in "${binaries[@]}"; do
             report="$("$inspector" inspect "$binary" --json)"
-            jq -e '
+            jq --arg expected_input "$binary" -e '
+              .schema_version == 1 and
               .command == "inspect" and
+              .input_path == $expected_input and
               .evidence_level == "metadata" and
               .plaintext_proven == false and
+              .notice == "Mach-O encryption metadata does not prove plaintext" and
               (.report.slices | length > 0) and
               all(.report.slices[];
                 .encryption_state == "not_declared" and
