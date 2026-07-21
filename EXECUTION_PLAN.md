@@ -69,12 +69,11 @@ decryption support.
 
 ## Current gate
 
-`HOST-009` is the only active planning step. Its deterministic archive policy,
-safe metadata normalization, retained-worktree identity boundary, output
-limits, validation, cleanup behavior, and acceptance criteria are fixed by
-Issue #40. Implementation must not start until this documentation-only
-activation PR is reviewed and merged; `HOST-010` and every later step remain
-untouched.
+`HOST-009` is complete through implementation PR #42. The library now packages
+the retained private worktree as a deterministic unsigned analysis IPA under
+the bounded policy fixed by Issue #40. `HOST-010` is the next eligible planned
+step, but it is not active; its Issue and documentation-only activation PR must
+be created, reviewed, and merged before implementation begins.
 
 ## Execution ledger
 
@@ -92,7 +91,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 7 | `HOST-006` | `done` | Resolve bounded `Info.plist` metadata and exact declared executables for conventional nested bundles; reject missing, duplicate, escaping, oversized, or malformed declarations visibly. | `HOST-005` | [#31](https://github.com/jacklv-coder/OrchardProbe/issues/31) | [#32](https://github.com/jacklv-coder/OrchardProbe/pull/32) | [#33](https://github.com/jacklv-coder/OrchardProbe/pull/33) |
 | 8 | `HOST-007` | `done` | Produce a deterministic declared-executable inventory for all supported standard bundle types, with explicit coverage and ambiguity semantics. | `HOST-006` | [#34](https://github.com/jacklv-coder/OrchardProbe/issues/34) | [#35](https://github.com/jacklv-coder/OrchardProbe/pull/35) | [#36](https://github.com/jacklv-coder/OrchardProbe/pull/36) |
 | 9 | `HOST-008` | `done` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | [#38](https://github.com/jacklv-coder/OrchardProbe/pull/38) | [#39](https://github.com/jacklv-coder/OrchardProbe/pull/39) |
-| 10 | `HOST-009` | `active` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | — |
+| 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `planned` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | To create during activation | To record during activation | — |
 | 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | To record during activation | — |
 | 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
@@ -105,8 +104,9 @@ and required-check history, so merge SHAs are not duplicated in this table.
 
 ## What this plan does not claim
 
-Rows after `HOST-008` are plans, not implemented capabilities. In particular,
+Rows after `HOST-009` are plans, not implemented capabilities. In particular,
 the repository does not yet provide a device backend, working decryption,
-device/build matching, IPA reconstruction, the `oprobe decrypt` command, an
-installable release, or a supported-device claim. The output design remains
-unsigned, analysis-only, and limited to apps the user is authorized to analyze.
+device/build matching, Mach-O reconstruction, caller-visible IPA publication,
+the `oprobe decrypt` command, an installable release, or a supported-device
+claim. The output design remains unsigned, analysis-only, and limited to apps
+the user is authorized to analyze.
