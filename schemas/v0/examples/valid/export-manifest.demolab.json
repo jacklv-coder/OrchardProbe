@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "tool_version": "0.1.0-alpha.1",
+  "tool_revision": null,
+  "target": {
+    "bundle_id": "com.example.orchardprobe.demolab",
+    "display_name": "OrchardProbe DemoLab",
+    "version": "0.0.0-demo"
+  },
+  "backend": "device_free_demo",
+  "capability_ids": [],
+  "binaries": [
+    {
+      "path": "Payload/DemoLab.app/DemoLab",
+      "role": "main_executable",
+      "architecture": "arm64",
+      "slice": null,
+      "input_size": null,
+      "output_size": null,
+      "outcome": "inconclusive",
+      "evidence_level": "structure",
+      "input_sha256": null,
+      "output_sha256": null,
+      "known_plaintext_sha256": null,
+      "known_plaintext_evaluated": false,
+      "signature": {
+        "presence": "absent",
+        "kind": "not_applicable",
+        "validation": "not_applicable"
+      },
+      "ranges": [],
+      "reason_codes": [
+        "backend.not_implemented",
+        "evidence.structure_only",
+        "evidence.oracle_not_evaluated"
+      ],
+      "notes": [
+        "device-free first-party fixture description only; no plaintext oracle was evaluated"
+      ]
+    }
+  ],
+  "warnings": [
+    "demo evidence is structural and must not be interpreted as verified plaintext"
+  ]
+}

@@ -80,27 +80,40 @@ fn stderr(output: &Output) -> String {
 
 fn valid_manifest(binary_path: &str) -> Value {
     json!({
-        "schema_version": 1,
+        "schema_version": 2,
         "tool_version": "0.1.0-test",
+        "tool_revision": null,
         "target": {
             "bundle_id": "com.example.orchardprobe.test",
             "display_name": "OrchardProbe Test Fixture",
             "version": "1.0"
         },
         "backend": "test_fixture",
+        "capability_ids": [],
         "binaries": [{
             "path": binary_path,
+            "role": "main_executable",
             "architecture": "arm64",
+            "slice": null,
+            "input_size": null,
+            "output_size": null,
             "outcome": "inconclusive",
             "evidence_level": "structure",
             "input_sha256": null,
             "output_sha256": null,
             "known_plaintext_sha256": null,
+            "known_plaintext_evaluated": false,
             "signature": {
                 "presence": "unknown",
                 "kind": "unknown",
                 "validation": "not_checked"
             },
+            "ranges": [],
+            "reason_codes": [
+                "evidence.structure_only",
+                "evidence.oracle_not_evaluated",
+                "signature.not_checked"
+            ],
             "notes": ["synthetic test data"]
         }],
         "warnings": []
@@ -211,9 +224,19 @@ fn demo_is_device_free_and_explicitly_inconclusive() {
     );
     let manifest: Value =
         serde_json::from_slice(&json_output.stdout).expect("demo emits a JSON manifest");
+    assert_eq!(manifest["schema_version"], 2);
     assert_eq!(manifest["backend"], "device_free_demo");
+    assert_eq!(manifest["capability_ids"], json!([]));
     assert_eq!(manifest["binaries"][0]["outcome"], "inconclusive");
     assert_ne!(manifest["binaries"][0]["evidence_level"], "known_plaintext");
+    assert_eq!(
+        manifest["binaries"][0]["reason_codes"],
+        json!([
+            "backend.not_implemented",
+            "evidence.structure_only",
+            "evidence.oracle_not_evaluated"
+        ])
+    );
 }
 
 #[test]
@@ -454,6 +477,38 @@ fn verify_rejects_malformed_and_unsafe_manifests_on_stderr() {
     let unsafe_error = stderr(&unsafe_output);
     assert!(unsafe_error.contains("unsafe or invalid OrchardProbe manifest"));
     assert!(unsafe_error.contains("not a safe bundle-relative path"));
+}
+
+#[test]
+fn verify_rejects_duplicate_json_keys_at_every_depth() {
+    let base = serde_json::to_string(&valid_manifest("Payload/Test.app/Test"))
+        .expect("serialize manifest");
+    for (label, duplicate) in [
+        (
+            "duplicate-top-level",
+            base.replacen(
+                "\"schema_version\":2",
+                "\"schema_version\":2,\"schema_version\":2",
+                1,
+            ),
+        ),
+        (
+            "duplicate-nested",
+            base.replacen(
+                "\"architecture\":\"arm64\"",
+                "\"architecture\":\"arm64\",\"architecture\":\"arm64\"",
+                1,
+            ),
+        ),
+    ] {
+        let file = TestFile::write(label, duplicate);
+        let path = file.path().to_str().expect("temporary path is UTF-8");
+        let output = oprobe(&["verify", path, "--json"]);
+
+        assert!(!output.status.success());
+        assert!(stdout(&output).is_empty());
+        assert!(stderr(&output).contains("duplicate object key"));
+    }
 }
 
 #[test]

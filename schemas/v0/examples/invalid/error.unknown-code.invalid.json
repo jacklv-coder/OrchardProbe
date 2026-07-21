@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "message_type": "error",
+  "category": "collection",
+  "code": "raw_log_available",
+  "terminal": true,
+  "retryable": false,
+  "operation": "bundle_entry_stream",
+  "state": "collecting",
+  "context": []
+}

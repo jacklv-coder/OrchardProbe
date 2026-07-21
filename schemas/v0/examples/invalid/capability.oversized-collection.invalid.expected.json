@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "contract": "capability",
+  "contract_schema": "../../capability-v1.schema.json",
+  "instance": "capability.oversized-collection.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "maxItems"
+    ],
+    "instance_pointer": "/disabled_capabilities",
+    "reason_code": "collection_limit_exceeded",
+    "reason": "At most 16 disabled capability records are allowed."
+  }
+}

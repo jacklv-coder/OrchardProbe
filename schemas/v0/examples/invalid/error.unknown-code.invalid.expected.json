@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "contract": "error",
+  "contract_schema": "../../error-v1.schema.json",
+  "instance": "error.unknown-code.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "enum",
+      "oneOf"
+    ],
+    "instance_pointer": "/code",
+    "reason_code": "unknown_wire_value",
+    "reason": "Error codes are closed wire values and cannot introduce an arbitrary log channel."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "contract": "capability",
+  "contract_schema": "../../capability-v1.schema.json",
+  "instance": "capability.unknown-field.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "additionalProperties"
+    ],
+    "instance_pointer": "",
+    "reason_code": "unknown_field",
+    "reason": "Capability reports reject every undeclared field."
+  }
+}

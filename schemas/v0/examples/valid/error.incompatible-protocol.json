@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "message_type": "error",
+  "category": "capability",
+  "code": "incompatible_protocol_version",
+  "terminal": true,
+  "retryable": false,
+  "operation": "handshake",
+  "state": "negotiating",
+  "context": [
+    {
+      "kind": "protocol_version",
+      "received_major": 1,
+      "received_minor": 0,
+      "supported_major": 0,
+      "minimum_minor": 0,
+      "maximum_minor": 1
+    }
+  ]
+}

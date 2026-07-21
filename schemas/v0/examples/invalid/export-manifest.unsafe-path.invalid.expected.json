@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "contract": "export_manifest",
+  "contract_schema": "../../export-manifest-v2.schema.json",
+  "instance": "export-manifest.unsafe-path.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "pattern"
+    ],
+    "instance_pointer": "/binaries/0/path",
+    "reason_code": "unsafe_relative_path",
+    "reason": "Bundle evidence paths must be contained relative paths without dot components."
+  }
+}

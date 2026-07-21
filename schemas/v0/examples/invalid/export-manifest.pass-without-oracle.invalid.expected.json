@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "contract": "export_manifest",
+  "contract_schema": "../../export-manifest-v2.schema.json",
+  "instance": "export-manifest.pass-without-oracle.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "required",
+      "minItems"
+    ],
+    "instance_pointer": "/binaries/0",
+    "reason_code": "inconsistent_evidence",
+    "reason": "Pass requires output and oracle hashes plus non-empty, complete range evidence."
+  }
+}

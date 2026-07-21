@@ -1,5 +1,7 @@
 //! Safe, host-only pre-alpha command-line interface for OrchardProbe.
 
+use std::collections::HashSet;
+use std::fmt;
 #[cfg(unix)]
 use std::fs::OpenOptions;
 use std::fs::{self, File};
@@ -11,12 +13,15 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use orchardprobe_core::{
-    CLI_OUTPUT_SCHEMA_VERSION, EvidenceLevel, ExportManifest, demo_manifest, local_doctor_report,
+    CLI_OUTPUT_SCHEMA_VERSION, EvidenceLevel, ExportManifest, MAX_MANIFEST_BYTES, demo_manifest,
+    local_doctor_report,
     macho::{EncryptionCommand, EncryptionState, MachOReport, parse_macho},
 };
-use serde::Serialize;
+use serde::{
+    Deserialize, Serialize,
+    de::{self, MapAccess, SeqAccess, Visitor},
+};
 
-const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
 const PLAINTEXT_NOTICE: &str = "manifest validation does not prove plaintext";
 const MACHO_PLAINTEXT_NOTICE: &str = "Mach-O encryption metadata does not prove plaintext";
 
@@ -79,6 +84,102 @@ struct InspectOutput<'a> {
     evidence_level: EvidenceLevel,
     plaintext_proven: bool,
     notice: &'static str,
+}
+
+struct StrictJson(serde_json::Value);
+
+impl<'de> Deserialize<'de> for StrictJson {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_any(StrictJsonVisitor)
+    }
+}
+
+struct StrictJsonVisitor;
+
+impl<'de> Visitor<'de> for StrictJsonVisitor {
+    type Value = StrictJson;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("JSON without duplicate object keys")
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(StrictJson(value.into()))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(StrictJson(value.into()))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(StrictJson(value.into()))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        serde_json::Number::from_f64(value)
+            .map(serde_json::Value::Number)
+            .map(StrictJson)
+            .ok_or_else(|| E::custom("non-finite JSON number"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_string(value.to_owned())
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+        Ok(StrictJson(serde_json::Value::String(value)))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(StrictJson(serde_json::Value::Null))
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(StrictJson(serde_json::Value::Null))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        StrictJson::deserialize(deserializer)
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::with_capacity(sequence.size_hint().unwrap_or(0).min(256));
+        while let Some(value) = sequence.next_element::<StrictJson>()? {
+            values.push(value.0);
+        }
+        Ok(StrictJson(serde_json::Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut values = serde_json::Map::new();
+        let mut keys = HashSet::with_capacity(map.size_hint().unwrap_or(0).min(64));
+        while let Some(key) = map.next_key::<String>()? {
+            if !keys.insert(key.clone()) {
+                return Err(de::Error::custom("duplicate object key"));
+            }
+            let value = map.next_value::<StrictJson>()?;
+            values.insert(key, value.0);
+        }
+        Ok(StrictJson(serde_json::Value::Object(values)))
+    }
 }
 
 fn main() -> ExitCode {
@@ -319,7 +420,9 @@ fn encryption_text(
 
 fn verify(path: &Path, json: bool) -> Result<String, String> {
     let bytes = read_bounded(path)?;
-    let manifest: ExportManifest = serde_json::from_slice(&bytes)
+    let value: StrictJson = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("invalid OrchardProbe manifest JSON: {error}"))?;
+    let manifest: ExportManifest = serde_json::from_value(value.0)
         .map_err(|error| format!("invalid OrchardProbe manifest JSON: {error}"))?;
 
     manifest

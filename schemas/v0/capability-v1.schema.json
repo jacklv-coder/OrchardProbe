@@ -1,0 +1,330 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jacklv-coder/OrchardProbe/main/schemas/v0/capability-v1.schema.json",
+  "title": "OrchardProbe pre-v1 capability report",
+  "description": "A bounded, sanitized capability offer. Presence means offered; absence means unavailable. This schema does not identify a device or authorize an operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message_type",
+    "protocol_version",
+    "backend_id",
+    "capabilities",
+    "disabled_capabilities"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "message_type": {
+      "const": "capability_report"
+    },
+    "protocol_version": {
+      "$ref": "#/$defs/protocol_version"
+    },
+    "backend_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/capability"
+      }
+    },
+    "disabled_capabilities": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/disabled_capability"
+      }
+    }
+  },
+  "$defs": {
+    "protocol_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ],
+      "properties": {
+        "major": {
+          "const": 0
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "capability": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/framed_json"
+        },
+        {
+          "$ref": "#/$defs/target_catalog"
+        },
+        {
+          "$ref": "#/$defs/bundle_enumerate"
+        },
+        {
+          "$ref": "#/$defs/bundle_entry_stream"
+        },
+        {
+          "$ref": "#/$defs/code_range_stream"
+        },
+        {
+          "$ref": "#/$defs/cancel"
+        }
+      ]
+    },
+    "disabled_capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "reason"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "reason": {
+          "enum": [
+            "unknown_optional",
+            "policy_blocked",
+            "limit_out_of_bounds",
+            "version_unsupported",
+            "backend_not_implemented",
+            "not_exercised"
+          ]
+        }
+      }
+    },
+    "framed_json": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "const": "transport.framed_json"
+        },
+        "revision": {
+          "const": 1
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_frame_bytes"
+          ],
+          "properties": {
+            "max_frame_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            }
+          }
+        }
+      }
+    },
+    "target_catalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "const": "target.catalog"
+        },
+        "revision": {
+          "const": 1
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_targets"
+          ],
+          "properties": {
+            "max_targets": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            }
+          }
+        }
+      }
+    },
+    "bundle_enumerate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "const": "bundle.enumerate"
+        },
+        "revision": {
+          "const": 1
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_entries",
+            "max_relative_path_utf8_bytes"
+          ],
+          "properties": {
+            "max_entries": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 16384
+            },
+            "max_relative_path_utf8_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1024
+            }
+          }
+        }
+      }
+    },
+    "bundle_entry_stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "const": "bundle.entry_stream"
+        },
+        "revision": {
+          "const": 1
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_entry_bytes",
+            "max_chunk_bytes"
+          ],
+          "properties": {
+            "max_entry_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8589934592
+            },
+            "max_chunk_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            }
+          }
+        }
+      }
+    },
+    "code_range_stream": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision",
+        "limits"
+      ],
+      "properties": {
+        "id": {
+          "const": "binary.code_range_stream"
+        },
+        "revision": {
+          "const": 1
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "max_ranges_per_binary",
+            "max_total_ranges",
+            "max_range_bytes",
+            "max_total_bytes",
+            "max_chunk_bytes"
+          ],
+          "properties": {
+            "max_ranges_per_binary": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "max_total_ranges": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 8192
+            },
+            "max_range_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 268435456
+            },
+            "max_total_bytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 68719476736
+            },
+            "max_chunk_bytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            }
+          }
+        }
+      }
+    },
+    "cancel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "revision"
+      ],
+      "properties": {
+        "id": {
+          "const": "session.cancel"
+        },
+        "revision": {
+          "const": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 2,
+  "message_type": "capability_report",
+  "protocol_version": {
+    "major": 0,
+    "minor": 1
+  },
+  "backend_id": "device_free_fixture",
+  "capabilities": [],
+  "disabled_capabilities": []
+}
