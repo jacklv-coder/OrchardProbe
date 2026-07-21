@@ -130,9 +130,16 @@ struct ParsedInfoPlist {
 /// the exact root `Info.plist` through the bounded entry API, and returns no
 /// plist payload bytes.
 pub fn inspect_ipa_app_metadata<R: Read + Seek>(
-    mut reader: R,
+    reader: R,
     archive_size: u64,
 ) -> Result<IpaAppMetadata, IpaAppMetadataError> {
+    inspect_ipa_app_metadata_with_inventory(reader, archive_size).map(|(metadata, _)| metadata)
+}
+
+pub(crate) fn inspect_ipa_app_metadata_with_inventory<R: Read + Seek>(
+    mut reader: R,
+    archive_size: u64,
+) -> Result<(IpaAppMetadata, crate::ipa::IpaInventory), IpaAppMetadataError> {
     let initial_inventory = inspect_ipa(&mut reader, archive_size)?;
     let app_root = initial_inventory.app_root.clone();
     let info_plist_path = format!("{app_root}/Info.plist");
@@ -181,15 +188,18 @@ pub fn inspect_ipa_app_metadata<R: Read + Seek>(
         });
     }
 
-    Ok(IpaAppMetadata {
-        app_root,
-        info_plist_path,
-        bundle_identifier: parsed.bundle_identifier,
-        bundle_version: parsed.bundle_version,
-        short_version: parsed.short_version,
-        executable_name: parsed.executable_name,
-        executable_path,
-    })
+    Ok((
+        IpaAppMetadata {
+            app_root,
+            info_plist_path,
+            bundle_identifier: parsed.bundle_identifier,
+            bundle_version: parsed.bundle_version,
+            short_version: parsed.short_version,
+            executable_name: parsed.executable_name,
+            executable_path,
+        },
+        inventory,
+    ))
 }
 
 fn parse_info_plist(bytes: &[u8]) -> Result<ParsedInfoPlist, IpaAppMetadataError> {
