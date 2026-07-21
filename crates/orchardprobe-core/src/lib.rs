@@ -4,6 +4,8 @@
 //! models auditable evidence and validates the untrusted paths that may appear
 //! in an export manifest.
 
+pub mod macho;
+
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
