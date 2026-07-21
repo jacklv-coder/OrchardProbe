@@ -11,18 +11,50 @@ struct TestFile(PathBuf);
 
 impl TestFile {
     fn write(label: &str, contents: impl AsRef<[u8]>) -> Self {
-        let sequence = NEXT_FILE_ID.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "orchardprobe-cli-{}-{sequence}-{label}.json",
-            std::process::id()
-        ));
-        fs::write(&path, contents).expect("write temporary test manifest");
+        Self::write_with_extension(label, "json", contents)
+    }
+
+    fn write_macho(label: &str, contents: impl AsRef<[u8]>) -> Self {
+        Self::write_with_extension(label, "macho", contents)
+    }
+
+    fn write_with_extension(label: &str, extension: &str, contents: impl AsRef<[u8]>) -> Self {
+        let path = unique_path(label, extension);
+        fs::write(&path, contents).expect("write temporary test file");
         Self(path)
     }
 
     fn path(&self) -> &Path {
         &self.0
     }
+}
+
+struct TestDirectory(PathBuf);
+
+impl TestDirectory {
+    fn create(label: &str) -> Self {
+        let path = unique_path(label, "directory");
+        fs::create_dir(&path).expect("create temporary test directory");
+        Self(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TestDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir(&self.0);
+    }
+}
+
+fn unique_path(label: &str, extension: &str) -> PathBuf {
+    let sequence = NEXT_FILE_ID.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!(
+        "orchardprobe-cli-{}-{sequence}-{label}.{extension}",
+        std::process::id()
+    ))
 }
 
 impl Drop for TestFile {
@@ -75,6 +107,52 @@ fn valid_manifest(binary_path: &str) -> Value {
     })
 }
 
+fn thin_macho64(cryptid: Option<u32>) -> Vec<u8> {
+    const MACH_HEADER_64_SIZE: u32 = 32;
+    const ENCRYPTION_COMMAND_SIZE: u32 = 24;
+    const ENCRYPTED_BYTES: u32 = 8;
+
+    let has_encryption = cryptid.is_some();
+    let command_bytes = if has_encryption {
+        ENCRYPTION_COMMAND_SIZE
+    } else {
+        0
+    };
+    let encrypted_offset = MACH_HEADER_64_SIZE + command_bytes;
+    let mut bytes = Vec::with_capacity((encrypted_offset + ENCRYPTED_BYTES) as usize);
+
+    bytes.extend_from_slice(&0xfeed_facfu32.to_le_bytes());
+    bytes.extend_from_slice(&0x0100_000cu32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&2_u32.to_le_bytes());
+    bytes.extend_from_slice(&u32::from(has_encryption).to_le_bytes());
+    bytes.extend_from_slice(&command_bytes.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+
+    if let Some(cryptid) = cryptid {
+        bytes.extend_from_slice(&0x2c_u32.to_le_bytes());
+        bytes.extend_from_slice(&ENCRYPTION_COMMAND_SIZE.to_le_bytes());
+        bytes.extend_from_slice(&encrypted_offset.to_le_bytes());
+        bytes.extend_from_slice(&ENCRYPTED_BYTES.to_le_bytes());
+        bytes.extend_from_slice(&cryptid.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+    }
+
+    bytes.extend_from_slice(&[0xa5; ENCRYPTED_BYTES as usize]);
+    bytes
+}
+
+fn thin_macho64_with_invalid_command_size() -> Vec<u8> {
+    let mut bytes = thin_macho64(None);
+    bytes.truncate(32);
+    bytes[16..20].copy_from_slice(&1_u32.to_le_bytes());
+    bytes[20..24].copy_from_slice(&8_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes
+}
+
 #[test]
 fn help_describes_the_safe_pre_alpha_commands() {
     let output = oprobe(&["--help"]);
@@ -83,6 +161,7 @@ fn help_describes_the_safe_pre_alpha_commands() {
     let text = stdout(&output);
     assert!(text.contains("doctor"));
     assert!(text.contains("demo"));
+    assert!(text.contains("inspect"));
     assert!(text.contains("verify"));
     assert!(text.contains("do not connect to an iOS device or process an IPA"));
 }
@@ -135,6 +214,196 @@ fn demo_is_device_free_and_explicitly_inconclusive() {
     assert_eq!(manifest["backend"], "device_free_demo");
     assert_eq!(manifest["binaries"][0]["outcome"], "inconclusive");
     assert_ne!(manifest["binaries"][0]["evidence_level"], "known_plaintext");
+}
+
+#[test]
+fn inspect_json_reports_missing_encryption_metadata_without_plaintext_claims() {
+    let file = TestFile::write_macho("no-encryption-command", thin_macho64(None));
+    let path = file.path().to_str().expect("temporary path is UTF-8");
+
+    let trailing_flag = oprobe(&["inspect", path, "--json"]);
+    assert!(
+        trailing_flag.status.success(),
+        "stderr: {}",
+        stderr(&trailing_flag)
+    );
+    assert!(stderr(&trailing_flag).is_empty());
+    let report: Value = serde_json::from_slice(&trailing_flag.stdout).expect("inspect emits JSON");
+    assert_eq!(report["schema_version"], 1);
+    assert_eq!(report["command"], "inspect");
+    assert_eq!(report["input_path"], path);
+    assert_eq!(report["report"]["container"], "thin");
+    assert_eq!(report["report"]["slices"][0]["architecture"], "arm64");
+    assert_eq!(
+        report["report"]["slices"][0]["encryption_state"],
+        "not_declared"
+    );
+    assert!(report["report"]["slices"][0]["encryption"].is_null());
+    assert_eq!(
+        report["report"]["slices"][0]["plaintext_status"],
+        "not_proven"
+    );
+    assert_eq!(report["evidence_level"], "metadata");
+    assert_eq!(report["plaintext_proven"], false);
+    assert_eq!(
+        report["notice"],
+        "Mach-O encryption metadata does not prove plaintext"
+    );
+
+    let leading_flag = oprobe(&["--json", "inspect", path]);
+    assert!(
+        leading_flag.status.success(),
+        "stderr: {}",
+        stderr(&leading_flag)
+    );
+    let leading_report: Value =
+        serde_json::from_slice(&leading_flag.stdout).expect("leading --json emits JSON");
+    assert_eq!(leading_report, report);
+}
+
+#[test]
+fn inspect_json_distinguishes_cryptid_without_treating_zero_as_plaintext() {
+    for (cryptid, expected_state) in [(0, "not_marked_encrypted"), (1, "marked_encrypted")] {
+        let file =
+            TestFile::write_macho(&format!("cryptid-{cryptid}"), thin_macho64(Some(cryptid)));
+        let path = file.path().to_str().expect("temporary path is UTF-8");
+        let output = oprobe(&["inspect", path, "--json"]);
+
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert!(stderr(&output).is_empty());
+        let report: Value = serde_json::from_slice(&output.stdout).expect("inspect emits JSON");
+        let slice = &report["report"]["slices"][0];
+        assert_eq!(slice["encryption_state"], expected_state);
+        assert_eq!(slice["encryption"]["cryptid"], cryptid);
+        assert_eq!(slice["plaintext_status"], "not_proven");
+        assert_eq!(report["evidence_level"], "metadata");
+        assert_eq!(report["plaintext_proven"], false);
+    }
+}
+
+#[test]
+fn inspect_text_is_clear_and_never_claims_plaintext() {
+    for (label, cryptid, expected_metadata) in [
+        (
+            "text-no-command",
+            None,
+            "not declared (no encryption load command; not plaintext proof)",
+        ),
+        (
+            "text-cryptid-zero",
+            Some(0),
+            "not marked encrypted by header metadata; not plaintext proof",
+        ),
+    ] {
+        let file = TestFile::write_macho(label, thin_macho64(cryptid));
+        let path = file.path().to_str().expect("temporary path is UTF-8");
+        let output = oprobe(&["inspect", path]);
+
+        assert!(output.status.success(), "stderr: {}", stderr(&output));
+        assert!(stderr(&output).is_empty());
+        let text = stdout(&output);
+        assert!(text.contains("OrchardProbe inspect"));
+        assert!(text.contains("Slice 0: arm64, 64-bit, little, execute"));
+        assert!(text.contains(expected_metadata));
+        assert!(text.contains("Evidence level: metadata"));
+        assert!(text.contains("Plaintext proven: no"));
+        assert!(text.contains("Mach-O encryption metadata does not prove plaintext."));
+        assert!(text.contains("No device or IPA was accessed."));
+        assert!(!text.contains("Plaintext proven: yes"));
+    }
+}
+
+#[test]
+fn inspect_rejects_non_macho_and_malformed_load_commands() {
+    let non_macho = TestFile::write_macho("not-macho", b"ordinary text");
+    let non_macho_path = non_macho.path().to_str().expect("temporary path is UTF-8");
+    let non_macho_output = oprobe(&["inspect", non_macho_path, "--json"]);
+    assert!(!non_macho_output.status.success());
+    assert!(stdout(&non_macho_output).is_empty());
+    let non_macho_error = stderr(&non_macho_output);
+    assert!(non_macho_error.contains("error: invalid Mach-O"));
+    assert!(non_macho_error.contains("unsupported Mach-O magic"));
+
+    let malformed = TestFile::write_macho(
+        "invalid-command-size",
+        thin_macho64_with_invalid_command_size(),
+    );
+    let malformed_path = malformed.path().to_str().expect("temporary path is UTF-8");
+    let malformed_output = oprobe(&["inspect", malformed_path]);
+    assert!(!malformed_output.status.success());
+    assert!(stdout(&malformed_output).is_empty());
+    let malformed_error = stderr(&malformed_output);
+    assert!(malformed_error.contains("error: invalid Mach-O"));
+    assert!(malformed_error.contains("load command 0 has size 0"));
+}
+
+#[test]
+fn inspect_rejects_truncated_macho() {
+    let truncated = TestFile::write_macho("truncated", 0xfeed_facfu32.to_le_bytes());
+    let path = truncated.path().to_str().expect("temporary path is UTF-8");
+    let output = oprobe(&["inspect", path]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("error: invalid Mach-O"));
+    assert!(stderr(&output).contains("Mach-O header"));
+}
+
+#[test]
+fn inspect_rejects_directories() {
+    let directory = TestDirectory::create("inspect-directory");
+    let path = directory.path().to_str().expect("temporary path is UTF-8");
+    let output = oprobe(&["inspect", path, "--json"]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("expected a regular file, found a directory"));
+}
+
+#[test]
+fn inspect_rejects_missing_files() {
+    let missing = unique_path("inspect-missing", "macho");
+    let path = missing.to_str().expect("temporary path is UTF-8");
+    let output = oprobe(&["inspect", path, "--json"]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("file does not exist"));
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_rejects_unix_sockets_as_non_regular_files() {
+    use std::os::unix::net::UnixListener;
+
+    let socket_path = unique_path("inspect-socket", "socket");
+    let listener = UnixListener::bind(&socket_path).expect("create temporary Unix socket");
+    let socket = TestFile(socket_path);
+    let path = socket.path().to_str().expect("temporary path is UTF-8");
+    let output = oprobe(&["inspect", path]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("expected a regular file"));
+    drop(listener);
+}
+
+#[cfg(unix)]
+#[test]
+fn inspect_rejects_symbolic_links_even_when_the_target_is_valid() {
+    use std::os::unix::fs::symlink;
+
+    let target = TestFile::write_macho("symlink-target", thin_macho64(None));
+    let link_path = unique_path("inspect-symlink", "macho");
+    symlink(target.path(), &link_path).expect("create temporary symbolic link");
+    let link = TestFile(link_path);
+    let path = link.path().to_str().expect("temporary path is UTF-8");
+    let output = oprobe(&["inspect", path]);
+
+    assert!(!output.status.success());
+    assert!(stdout(&output).is_empty());
+    assert!(stderr(&output).contains("refusing to inspect symbolic link"));
+    assert!(stderr(&output).contains("provide the target regular file directly"));
 }
 
 #[test]

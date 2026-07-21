@@ -5,7 +5,7 @@
 [简体中文](README.zh-CN.md)
 
 > [!IMPORTANT]
-> **Pre-alpha:** OrchardProbe is a working name. The repository now contains a device-free Rust host skeleton, project plan, and foundational policies—but no device backend, working exporter, supported-device matrix, release, or installation instructions.
+> **Pre-alpha:** OrchardProbe is a working name. The repository now contains device-free Rust host tools, a first-party simulator fixture, the project plan, and foundational policies—but no device backend, working exporter, supported-device matrix, release, or installation instructions.
 
 OrchardProbe is intended to make authorized iOS binary research more transparent and reproducible. The planned workflow will detect device capabilities, select a narrowly scoped export backend, verify every relevant Mach-O independently, and record what succeeded, failed, or was skipped in a machine-readable manifest.
 
@@ -13,15 +13,16 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
+cargo run --locked -p orchardprobe-cli -- inspect path/to/Mach-O --json
 cargo run --locked -p orchardprobe-cli -- demo --json
 cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 ```
 
-These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
+These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. `inspect` accepts one regular Mach-O file and reads only bounded container, slice, and load-command metadata; see [its exact contract](docs/development/macho-inspect.md). The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
 ## Authorized use only
 
@@ -77,6 +78,7 @@ The host-only commands available from source today are:
 
 ```text
 oprobe doctor [--json]
+oprobe inspect <MACH-O> [--json]
 oprobe demo [--json]
 oprobe verify <manifest.json> [--json]
 ```
