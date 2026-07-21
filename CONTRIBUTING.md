@@ -19,7 +19,7 @@ Before participating, read:
 - bilingual documentation and narrowly scoped RFCs;
 - tests for malformed input, interrupted transport, path traversal, symlink escape, and short reads.
 
-The repository contains a buildable Rust host workspace and the first-party DemoLab simulator fixture, but no device backend or working exporter. Follow the [Rust development guide](docs/development/getting-started.md), [Mach-O inspect contract](docs/development/macho-inspect.md), and [DemoLab guide](docs/development/demolab.md) for current build and test commands.
+The repository contains a buildable Rust host workspace and the first-party DemoLab simulator fixture, but no device backend or working exporter. Follow the [Rust development guide](docs/development/getting-started.md), [Mach-O inspect contract](docs/development/macho-inspect.md), [bounded IPA preflight contract](docs/development/ipa-preflight.md), and [DemoLab guide](docs/development/demolab.md) for current build and test commands.
 
 ## Before opening an issue
 

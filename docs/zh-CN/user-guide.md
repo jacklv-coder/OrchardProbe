@@ -6,8 +6,9 @@
 
 > [!IMPORTANT]
 > 本指南描述首个可用 Alpha 的目标体验，当前 pre-alpha 代码尚未实现它。
-> 目前 OrchardProbe 只能读取单个 Mach-O 的有界元数据并验证无需设备的
-> Schema，不能连接 iPhone、解密 App 或生成 IPA。
+> 目前 OrchardProbe 只能读取单个 Mach-O 的有界元数据、验证无需设备的
+> Schema，并运行仅限库内的 IPA Archive 预检。当前没有命令接受 IPA、连接
+> iPhone、解密 App 或生成 IPA。
 
 目标体验刻意保持简单：
 
@@ -172,7 +173,9 @@ oprobe verify <manifest.json> [--json]
 它们不处理 IPA，也不连接设备。从源码运行方式见
 [Rust workspace 指南（英文）](../development/getting-started.md)，整体原理见
 [技术总览](technical-overview.md)。未来的 `oprobe verify <ipa-or-app>` 与当前
-只验证 Manifest 的 `verify` 命令是两个接口；前者尚未实现。
+只验证 Manifest 的 `verify` 命令是两个接口；前者尚未实现。内部的
+[IPA 预检（英文）](../development/ipa-preflight.md)是经过测试的库基础，不是新增
+命令。
 
 ## 常见问题
 

@@ -44,6 +44,16 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 
 The final command runs a deterministic, device-free demo and prints its structured result as JSON. It does not contact a device or create an IPA.
 
+The core crate also has a library-only, read-only IPA archive preflight. It is
+not exposed as a CLI command. Run its synthetic and adversarial tests with:
+
+```sh
+cargo test -p orchardprobe-core ipa::tests --locked
+```
+
+See the [bounded IPA preflight contract](ipa-preflight.md) before changing its
+archive, path, size, or dependency boundary.
+
 To inspect bounded metadata from one local Mach-O file, run:
 
 ```sh

@@ -11,9 +11,9 @@ command simple and the security-sensitive internals auditable.
 > [!IMPORTANT]
 > The end-to-end device workflow is a design contract, not current behavior.
 > The pre-alpha repository implements the Rust CLI foundation, bounded Mach-O
-> metadata parsing, versioned schemas, synthetic DemoLab fixtures, and a bounded
-> protocol specification. It has no device transport, helper, decryption
-> backend, reconstructor, or IPA packager today.
+> and IPA archive metadata parsing, versioned schemas, synthetic DemoLab
+> fixtures, and a bounded protocol specification. It has no device transport,
+> helper, decryption backend, reconstructor, or IPA packager today.
 
 Read the [user guide](user-guide.md) first for the intended command and output.
 Read the [scope and threat model](architecture/RFC-0001-scope-and-threat-model.md)
@@ -95,7 +95,7 @@ identity belongs in OrchardProbe input, logs, configuration, or reports.
 
 ### 2. Bounded IPA ingest
 
-The IPA is untrusted input. A future archive module must inspect entries before
+The IPA is untrusted input. Archive ingest must inspect entries before
 materialization and enforce explicit limits for entry count, path bytes,
 component depth, per-file size, total size, and compression ratio. It rejects:
 
@@ -107,6 +107,12 @@ component depth, per-file size, total size, and compression ratio. It rejects:
 
 Extraction uses a private working directory. No archive path becomes an
 authority to read or write an arbitrary host path.
+
+The current library implements only the read-only metadata preflight portion of
+this stage in [`crates/orchardprobe-core/src/ipa.rs`](../crates/orchardprobe-core/src/ipa.rs).
+It validates bounded ZIP/ZIP64 directory and local-header metadata and returns a
+deterministic entry inventory; it does not decompress or extract entries. See
+the [IPA preflight contract](development/ipa-preflight.md).
 
 ### 3. Bundle and Mach-O inventory
 
@@ -255,6 +261,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | Path | Current responsibility |
 |---|---|
 | `crates/orchardprobe-cli/src/main.rs` | Host-only CLI, safe file opening, `doctor`, `inspect`, `demo`, and manifest verification. |
+| `crates/orchardprobe-core/src/ipa.rs` | Read-only, bounded ZIP/ZIP64 metadata preflight and deterministic IPA entry inventory. |
 | `crates/orchardprobe-core/src/macho.rs` | Bounded thin/FAT Mach-O metadata parser. |
 | `crates/orchardprobe-core/src/lib.rs` | Manifest model, invariants, device-free demo, and local doctor report. |
 | `crates/orchardprobe-core/src/wire.rs` | Versioned capability and structured-error wire contracts. |
@@ -263,7 +270,8 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `docs/architecture/` | Security and protocol design gates. |
 | `docs/compatibility/` | Evidence vocabulary and support-record workflow. |
 
-Future transport, catalog, backend, reconstruction, archive, and report modules
+Future transport, catalog, backend, reconstruction, archive materialization,
+and report modules
 must be added only after their corresponding design and evidence gates. Their
 names in diagrams are responsibilities, not existing crates.
 
@@ -273,6 +281,7 @@ names in diagrams are responsibilities, not existing crates.
 |---|---|
 | Rust workspace and local CLI | Implemented |
 | Secure bounded single-file Mach-O inspect | Implemented |
+| Bounded read-only IPA archive preflight | Implemented as a library; no CLI integration |
 | FAT/FAT64 adversarial parsing coverage | Implemented |
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
@@ -291,17 +300,20 @@ For a first code-reading pass:
 1. Read the [user guide](user-guide.md) to understand the product contract.
 2. Run the device-free commands in the
    [workspace guide](development/getting-started.md).
-3. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
+3. Read the [IPA preflight contract](development/ipa-preflight.md), then follow
+   `read_footer`, `read_central_directory`, `validate_local_header`, and their
+   adversarial tests in `crates/orchardprobe-core/src/ipa.rs`.
+4. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
    `open_regular_file` to see CLI error and host file-safety conventions.
-4. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
+5. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
    `parse_fat`, then `parse_slice`, range helpers, and adversarial tests.
-5. Read `crates/orchardprobe-core/src/lib.rs` beside
+6. Read `crates/orchardprobe-core/src/lib.rs` beside
    `schemas/v0/export-manifest-v2.schema.json` to compare Rust invariants with
    the wire contract.
-6. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
-7. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
+7. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
+8. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
    project-generated binaries.
-8. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
+9. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
    record to understand why implementation remains blocked on evidence.
 
 When adding a module, preserve the invariant that untrusted values are evidence
