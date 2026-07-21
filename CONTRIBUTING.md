@@ -1,12 +1,13 @@
 # Contributing to OrchardProbe
 
-Thank you for helping shape OrchardProbe. The project is currently in planning / pre-alpha, so the most valuable contributions establish a safe, testable foundation rather than claiming broad device compatibility.
+Thank you for helping shape OrchardProbe. The project is pre-alpha, so the most valuable contributions establish a safe, testable foundation rather than claiming broad device compatibility.
 
 Before participating, read:
 
 - [PROJECT_PLAN.md](PROJECT_PLAN.md) for product scope and release gates;
 - [LEGAL.md](LEGAL.md) and [ACCEPTABLE_USE.md](ACCEPTABLE_USE.md) for authorization boundaries;
-- [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+- [SECURITY.md](SECURITY.md) for private vulnerability reporting; and
+- [compatibility evidence policy](docs/compatibility/README.md) before reporting a device or environment result.
 
 ## Good early contributions
 
@@ -18,13 +19,13 @@ Before participating, read:
 - bilingual documentation and narrowly scoped RFCs;
 - tests for malformed input, interrupted transport, path traversal, symlink escape, and short reads.
 
-The repository does not yet contain a buildable implementation, so there are no valid build or test commands to document. Component-specific development instructions will be added with the code that introduces each component.
+The repository contains a buildable Rust host workspace and the first-party DemoLab simulator fixture, but no device backend or working exporter. Follow the [Rust development guide](docs/development/getting-started.md), [Mach-O inspect contract](docs/development/macho-inspect.md), and [DemoLab guide](docs/development/demolab.md) for current build and test commands.
 
 ## Before opening an issue
 
 Search existing issues and the project plan first. Explain the problem, the desired outcome, and why it belongs within OrchardProbe's authorized-use-only scope.
 
-For compatibility or diagnostic reports, include sanitized details such as host architecture, device model, SoC, iOS version, rootless/rootful state, relevant dependency versions, and the exact OrchardProbe commit. State whether the app is owned by you or covered by explicit testing authorization. Never publish an app name when client confidentiality or third-party rights prohibit it.
+For compatibility or diagnostic reports, use the repository's Compatibility intake Issue Form and follow the [compatibility evidence policy](docs/compatibility/README.md). Community reports remain unverified until maintainers reproduce them; a single report never creates an official support claim. The [sanitized test-record template](docs/compatibility/test-record-template.md) is for that maintainer-run verification. State whether the app is owned by you or covered by explicit testing authorization. Never publish an app name when client confidentiality or third-party rights prohibit it.
 
 Do not attach proprietary IPAs, decrypted commercial binaries, store receipts, credentials, tokens, raw device identifiers, crash dumps containing private data, or client-confidential logs. Reduce bugs to a generated fixture whenever possible.
 

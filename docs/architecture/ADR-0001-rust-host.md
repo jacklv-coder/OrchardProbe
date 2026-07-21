@@ -23,7 +23,7 @@ The host must parse all external bytes defensively. Lengths and offsets are chec
 
 A future Objective-C/C helper may run on the device, but its responsibility is limited to the smallest operation that cannot reasonably live on the host. It will use a versioned capability handshake, be short-lived, request only demonstrated privileges, and expose narrowly typed operations bound to the selected app. It will not expose a shell, arbitrary filesystem paths, caller-selected PIDs, unrestricted memory reads, or a general command execution channel. Both sides validate protocol bounds; crossing into Objective-C/C never relaxes the host's validation requirements.
 
-There is **no device backend today**. The current Rust workspace is a host-side foundation with a device-free demo. It does not discover devices, decrypt binaries, reconstruct an app from a device, or export an IPA. Adding the first backend requires a separate ADR describing the tested device environment, privileges, protocol operations, limits, and threat model.
+There is **no device backend today**. The current Rust workspace is a host-side foundation with a device-free demo and bounded single-file Mach-O inspection. It does not discover devices, decrypt binaries, reconstruct an app from a device, or export an IPA. Adding the first backend requires a separate ADR describing the tested device environment, privileges, protocol operations, limits, and threat model.
 
 ## Consequences
 

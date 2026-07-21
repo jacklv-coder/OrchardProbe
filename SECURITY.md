@@ -1,12 +1,12 @@
 # Security Policy
 
-OrchardProbe is currently in the planning / pre-alpha stage. There is no working release or supported production deployment yet. Security reports are still welcome for committed designs, schemas, documentation, and any implementation added during development.
+OrchardProbe is pre-alpha. The repository has working host-only parsing and test-fixture code, but no device backend, export capability, release, or supported production deployment. Security reports are welcome for committed code, designs, schemas, and documentation.
 
 ## Supported versions
 
 | Version or branch | Status | Security handling |
 | --- | --- | --- |
-| Default development branch | Pre-alpha; no compatibility guarantee | Reviewed on a best-effort basis |
+| Default development branch | Pre-alpha host code; no device compatibility guarantee | Reviewed on a best-effort basis |
 | Tagged releases | None published | No released version is currently supported |
 
 This table will be replaced with an explicit supported-version policy before the first public alpha.

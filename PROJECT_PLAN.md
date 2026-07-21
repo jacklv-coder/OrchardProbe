@@ -2,8 +2,10 @@
 
 > 面向自有或明确获授权 App 的、本地优先、可审计的 iOS 二进制导出与验证工具链。
 
-状态：规划草案
+状态：执行中的 pre-alpha 蓝图
 日期：2026-07-21
+
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser 与 `oprobe inspect` 已落地并由必需 CI 覆盖。设备发现、真机 Helper、导出后端、重建与 IPA 打包仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 
@@ -71,6 +73,7 @@ CLI：`oprobe`
 
 ```text
 oprobe doctor [--json]
+oprobe inspect <macho> [--json]
 oprobe devices
 oprobe apps
 oprobe export <bundle-id> --output <path>
@@ -138,7 +141,7 @@ flowchart LR
 - `collector`：只复制 `.app` bundle，阻止路径穿越和 symlink escape，默认剔除 receipt、`SC_Info` 和数据容器。
 - `packager`：确定性 ZIP、保持相对路径和权限，不重签、不安装。
 - `verifier`：逐 slice/二进制报告四级证据：metadata 状态、结构完整性、后端读写区间哈希一致性，以及仅对自有 fixture 可用的已知明文预期。没有明文 oracle 时必须输出 `inconclusive`，不能把 `cryptid == 0` 当作完整证明。
-- `report`：v1 前使用显式版本号且允许演进的 JSON schema；后续支持 SARIF/HTML 和企业流水线。签名信息拆成互不混淆的字段：`presence`（`absent/present/unknown`）、`kind`（如 `cms/ad-hoc/unknown/not-applicable`）和 `validation`（`valid/invalid/not-checked/not-applicable`）。
+- `report`：v1 前使用显式版本号且允许演进的 JSON schema；后续支持 SARIF/HTML 和企业流水线。签名信息拆成互不混淆的字段：`presence`（`absent/present/unknown`）、`kind`（如 `cms/ad_hoc/unknown/not_applicable`）和 `validation`（`valid/invalid/not_checked/not_applicable`）。
 
 ### 5.4 建议仓库结构
 
@@ -188,12 +191,12 @@ MVP 不承诺：
 
 ### Sprint 0：1 周，先证明方向
 
-- 固化 `RFC-0001 Scope and Threat Model`。
-- 建立 Apache-2.0、`LEGAL.md`、`ACCEPTABLE_USE.md`、`SECURITY.md`。
-- 创建 DemoLab：Swift 主程序 + Objective-C 动态 Framework + Extension。
-- 定义 capability、export manifest、error code 三个 JSON schema。
-- 用一台目标设备分别验证候选后端，在不修改或重装目标 App 的前提下能否取得所需能力并读出精确代码区间。
-- 退出条件：能对自有 fixture 生成可重复的字节级验证结果。
+- [x] 固化 `RFC-0001 Scope and Threat Model`。
+- [x] 建立 Apache-2.0、`LEGAL.md`、`ACCEPTABLE_USE.md`、`SECURITY.md`。
+- [x] 创建 DemoLab：Swift 主程序 + Objective-C 动态 Framework + Extension。
+- [ ] 定义 capability、export manifest、error code 三个 JSON schema（当前只有可演进的 manifest 骨架）。
+- [ ] 用一台目标设备分别验证候选后端，在不修改或重装目标 App 的前提下能否取得所需能力并读出精确代码区间。
+- [ ] 退出条件：能对自有 fixture 生成可重复的字节级真机验证结果；若声称受保护到明文的能力，fixture 必须确实处于有独立证据的相应初始保护状态，普通未加密开发构建不能满足该声明。
 
 ### v0.1：第 2–4 周
 
