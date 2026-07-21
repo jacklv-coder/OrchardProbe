@@ -80,7 +80,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 
 | Order | ID | Status on `main` | Deliverable / acceptance summary | Depends on | Issue | Implementation PR |
 |---:|---|---|---|---|---|---|
-| 1 | `GOV-001` | `done` | Establish this bilingual ledger, sequential gate, completion definition, and documentation links. | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | Pending bootstrap PR |
+| 1 | `GOV-001` | `done` | Establish this bilingual ledger, sequential gate, completion definition, and documentation links. | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | [#30](https://github.com/jacklv-coder/OrchardProbe/pull/30) |
 | 2 | `HOST-001` | `done` | Reject unsafe or ambiguous IPA archive structure without decompressing entries. | foundation | [#19](https://github.com/jacklv-coder/OrchardProbe/issues/19) | [#20](https://github.com/jacklv-coder/OrchardProbe/pull/20) |
 | 3 | `HOST-002` | `done` | Read or stream one exact Stored/Deflate entry with size, ratio, CRC, and inventory-consistency bounds. | `HOST-001` | [#21](https://github.com/jacklv-coder/OrchardProbe/issues/21) | [#22](https://github.com/jacklv-coder/OrchardProbe/pull/22) |
 | 4 | `HOST-003` | `done` | Parse bounded XML/binary root `Info.plist` identity and declared main executable metadata. | `HOST-002` | [#23](https://github.com/jacklv-coder/OrchardProbe/issues/23) | [#24](https://github.com/jacklv-coder/OrchardProbe/pull/24) |
