@@ -15,6 +15,10 @@ xcuserdata/
 .swiftpm/
 .build/
 
+# Generated DemoLab fixture project and build products
+/fixtures/DemoLab/DemoLab.xcodeproj/
+/fixtures/DemoLab/DerivedData/
+
 # JavaScript tooling
 node_modules/
 coverage/

@@ -21,7 +21,7 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 ```
 
-这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
+这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。仓库自有的 [DemoLab fixture](fixtures/DemoLab/README.md) 提供 Swift 主 App、Objective-C 动态 Framework 和 Share Extension，用于安全且可复现的模拟器构建。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
 
 ## 仅限授权用途
 

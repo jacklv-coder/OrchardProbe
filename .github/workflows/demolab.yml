@@ -1,0 +1,86 @@
+name: DemoLab build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build fixture
+    runs-on: macos-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install XcodeGen
+        shell: bash
+        run: brew list xcodegen || brew install xcodegen
+
+      - name: Generate DemoLab project
+        shell: bash
+        run: |
+          generated_dir="$RUNNER_TEMP/fixtures/DemoLab"
+          mkdir -p "$RUNNER_TEMP/fixtures"
+          cp -R fixtures/DemoLab "$generated_dir"
+          xcodegen generate \
+            --spec "$generated_dir/project.yml" \
+            --project "$generated_dir"
+
+      - name: Build DemoLab for the iOS Simulator
+        shell: bash
+        run: |
+          generated_dir="$RUNNER_TEMP/fixtures/DemoLab"
+          xcodebuild \
+            -project "$generated_dir/DemoLab.xcodeproj" \
+            -scheme DemoLab \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$generated_dir/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Verify fixture products
+        shell: bash
+        run: |
+          set -euo pipefail
+          products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/Debug-iphonesimulator"
+          app="$products/DemoLab.app"
+          app_binary="$app/DemoLab"
+          built_framework="$products/DemoFramework.framework"
+          framework="$app/Frameworks/DemoFramework.framework"
+          extension="$app/PlugIns/DemoShareExtension.appex"
+
+          test -x "$app_binary"
+          test -x "$framework/DemoFramework"
+          test -x "$extension/DemoShareExtension"
+
+          otool -hv "$app_binary" >/dev/null
+          otool -hv "$framework/DemoFramework" >/dev/null
+          otool -hv "$extension/DemoShareExtension" >/dev/null
+          otool -L "$app_binary" | grep -Fq '@rpath/DemoFramework.framework/DemoFramework'
+
+          test -f "$built_framework/Headers/DemoFramework.h"
+          test -f "$built_framework/Headers/DLDemoMessage.h"
+          test -f "$built_framework/Modules/module.modulemap"
+
+          test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = \
+            'com.example.orchardprobe.demolab'
+          test "$(plutil -extract CFBundleIdentifier raw "$framework/Info.plist")" = \
+            'com.example.orchardprobe.demolab.framework'
+          test "$(plutil -extract CFBundleIdentifier raw "$extension/Info.plist")" = \
+            'com.example.orchardprobe.demolab.share'
+          test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw "$extension/Info.plist")" = \
+            'com.apple.share-services'
+          test "$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$extension/Info.plist")" = \
+            'DemoShareExtension.ShareViewController'
