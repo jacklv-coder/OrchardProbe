@@ -40,6 +40,8 @@ Entry。后续的[有界 IPA 主程序检查（英文）](docs/development/ipa-m
 
 ## 文档
 
+- [串行执行计划](docs/zh-CN/execution-plan.md)：权威步骤顺序、当前门禁、验收
+  标准、Issue、PR 和完成规则。
 - [用户指南](docs/zh-CN/user-guide.md)：计划中的
   `oprobe decrypt MyApp.ipa` 使用体验、运行条件、输出与失败行为。
 - [技术总览](docs/zh-CN/technical-overview.md)：完整流水线、信任边界、重建模型、
@@ -170,7 +172,9 @@ OrchardProbe 当前处于 **Sprint 0 / 项目基础建设**阶段。
 4. **v0.6：** 加固断点恢复、结构化集成、Fuzz 和自托管真机测试。
 5. **v1.0：** 只有在独立安全审查完成且可靠性指标达标后，才稳定协议与 manifest。
 
-路线图表达方向，不代表日期或兼容性承诺。详细计划和发布门槛见 [PROJECT_PLAN.md](PROJECT_PLAN.md)。
+路线图表达方向，不代表日期或兼容性承诺。产品蓝图和发布门槛见
+[PROJECT_PLAN.md](PROJECT_PLAN.md)；权威步骤顺序和当前门禁见
+[串行执行计划](docs/zh-CN/execution-plan.md)。
 
 ## 参与贡献
 

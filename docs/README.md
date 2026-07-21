@@ -14,6 +14,8 @@ implementation behind it. Start with the document that matches what you need:
 
 ## Understand the system
 
+- [Sequential execution plan](../EXECUTION_PLAN.md) — the authoritative step
+  order, current gate, Issue/PR evidence, and definition of done.
 - [Technical overview](technical-overview.md) — end-to-end data flow, component
   boundaries, Mach-O reconstruction, evidence semantics, and a code-reading
   path for learners.
