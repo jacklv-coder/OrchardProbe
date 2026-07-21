@@ -44,6 +44,14 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 
 The final command runs a deterministic, device-free demo and prints its structured result as JSON. It does not contact a device or create an IPA.
 
+To inspect bounded metadata from one local Mach-O file, run:
+
+```sh
+cargo run --locked -p orchardprobe-cli -- inspect path/to/Mach-O --json
+```
+
+`inspect` accepts one regular file. It rejects directories and symbolic links, does not recurse through an app bundle, and does not unpack an IPA. Its encryption result is Mach-O header metadata only: a missing encryption command or `cryptid == 0` is never reported as proof of plaintext. See [the inspect contract](macho-inspect.md) for supported formats, limits, and JSON fields.
+
 `--locked` makes Cargo use the committed `Cargo.lock` exactly. If dependency metadata changes intentionally, regenerate the lockfile in the same change and then rerun all four commands without removing `--locked`.
 
 ## Architecture boundary

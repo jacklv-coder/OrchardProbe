@@ -84,3 +84,37 @@ jobs:
             'com.apple.share-services'
           test "$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$extension/Info.plist")" = \
             'DemoShareExtension.ShareViewController'
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install 1.85.0 --profile minimal
+
+      - name: Inspect first-party Mach-O products
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked -p orchardprobe-cli
+
+          products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/Debug-iphonesimulator"
+          inspector="target/debug/oprobe"
+          binaries=(
+            "$products/DemoLab.app/DemoLab"
+            "$products/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
+            "$products/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+          )
+
+          for binary in "${binaries[@]}"; do
+            report="$("$inspector" inspect "$binary" --json)"
+            jq --arg expected_input "$binary" -e '
+              .schema_version == 1 and
+              .command == "inspect" and
+              .input_path == $expected_input and
+              .evidence_level == "metadata" and
+              .plaintext_proven == false and
+              .notice == "Mach-O encryption metadata does not prove plaintext" and
+              (.report.slices | length > 0) and
+              all(.report.slices[];
+                .encryption_state == "not_declared" and
+                .plaintext_status == "not_proven")
+            ' <<<"$report" >/dev/null
+          done
