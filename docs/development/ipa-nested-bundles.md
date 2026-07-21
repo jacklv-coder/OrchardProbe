@@ -1,9 +1,9 @@
 # Bounded IPA nested-bundle metadata
 
-The `orchardprobe_core::ipa_bundle` module is the metadata-only step between
-the root app parser and a future complete declared-executable code inventory.
-It discovers conventional nested framework and extension bundle roots, reads
-each exact direct `Info.plist` through the existing bounded IPA entry API, and
+The `orchardprobe_core::ipa_bundle` module is the metadata-only layer between
+the root app parser and the declared-standard-bundle code inventory. It
+discovers conventional nested framework and extension bundle roots, reads each
+exact direct `Info.plist` through the existing bounded IPA entry API, and
 resolves the declared executable to an exact regular entry.
 
 > [!IMPORTANT]
@@ -123,7 +123,7 @@ There is no partial-success result. A returned empty nested list means the
 validated root app contains no bundle root in this deliberately closed scope;
 it does not mean arbitrary nested app types were enumerated.
 
-## Tests and next step
+## Tests and catalog integration
 
 Tests use only synthetic in-memory IPAs. They cover XML and binary plists,
 nonstandard declared executable names, implicit ZIP directories, a direct
@@ -138,9 +138,10 @@ Run the focused suite with:
 cargo test -p orchardprobe-core ipa_bundle::tests --locked
 ```
 
-The existing
-[`ipa_catalog` code candidate inventory](ipa-code-inventory.md) remains
-unchanged and explicitly incomplete. The next ledger step, `HOST-007`, may
-consume this metadata, stream each exact declared executable through the Mach-O
-parser, define conflict semantics with conventional candidates, and advance
-coverage only when those tests pass.
+The [`ipa_catalog` code inventory](ipa-code-inventory.md) now consumes this
+metadata against the same authoritative complete inventory already bound to
+the root main executable. It gives an exact nested declaration precedence over
+a `.dylib` suffix, does not guess a conventional bundle-stem executable, and
+streams every selected nested executable through the bounded Mach-O parser.
+This module itself remains metadata-only and does not retain or classify those
+payload bytes.

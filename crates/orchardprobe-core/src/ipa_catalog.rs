@@ -1,9 +1,10 @@
-//! Deterministic, bounded discovery of conventional IPA code candidates.
+//! Deterministic, bounded inventory of declared standard-bundle IPA code.
 //!
-//! Bundle naming conventions select candidates only. Every returned code
-//! object has also passed the bounded Mach-O parser. This first inventory is
-//! intentionally incomplete for framework or extension bundles whose
-//! `CFBundleExecutable` differs from the conventional bundle stem.
+//! The root app and every supported framework or extension contribute their
+//! exact `CFBundleExecutable` declaration. Lowercase dylib names remain a
+//! bounded convention only within the same closed ancestry. Every returned
+//! code object has passed the bounded Mach-O parser; unsupported bundle types
+//! and arbitrary executable-looking resources are outside this coverage.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Seek};
@@ -17,10 +18,14 @@ use crate::ipa::{
     MAX_IPA_ENTRY_COPY_COMPRESSED_BYTES, copy_ipa_entry_bounded,
 };
 use crate::ipa_app::IpaAppMetadata;
+use crate::ipa_bundle::{
+    IpaNestedBundle, IpaNestedBundleMetadataError, IpaNestedBundleRole,
+    inspect_ipa_nested_bundle_metadata_from_inventory,
+};
 use crate::ipa_code::{IpaMainExecutableError, inspect_ipa_main_executable_with_inventory};
 use crate::macho::{MachOParseError, MachOReport, parse_macho};
 
-/// Maximum distinct conventional code candidates, including the main entry.
+/// Maximum distinct declared or in-scope dylib candidates, including main.
 pub const MAX_IPA_CODE_CANDIDATES: usize = 256;
 /// Maximum aggregate declared compressed and uncompressed candidate bytes.
 pub const MAX_IPA_CODE_CANDIDATE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
@@ -29,8 +34,8 @@ pub const MAX_IPA_CODE_CANDIDATE_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IpaCodeInventoryCoverage {
-    /// Root main plus conventional framework, dylib, and extension candidates.
-    ConventionalCandidates,
+    /// Root and supported nested declarations plus in-scope lowercase dylibs.
+    DeclaredStandardBundles,
 }
 
 /// One candidate confirmed as Mach-O by the bounded parser.
@@ -42,7 +47,7 @@ pub struct IpaCodeObject {
     pub macho: MachOReport,
 }
 
-/// Stable reason a convention-selected entry was not classified as code.
+/// Stable reason a selected entry was not classified as code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IpaCodeCandidateRejectionReason {
@@ -59,11 +64,12 @@ pub struct IpaRejectedCodeCandidate {
     pub reason: IpaCodeCandidateRejectionReason,
 }
 
-/// Deterministic result for the current convention-based discovery scope.
+/// Deterministic result for the current declared-standard-bundle scope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct IpaCodeInventory {
     pub coverage: IpaCodeInventoryCoverage,
     pub app: IpaAppMetadata,
+    pub nested_bundles: Vec<IpaNestedBundle>,
     pub binaries: Vec<IpaCodeObject>,
     pub rejected_candidates: Vec<IpaRejectedCodeCandidate>,
 }
@@ -73,6 +79,9 @@ pub struct IpaCodeInventory {
 pub enum IpaCodeInventoryError {
     #[error("root IPA executable inspection failed: {0}")]
     MainExecutable(#[from] IpaMainExecutableError),
+
+    #[error("nested IPA bundle metadata inspection failed: {0}")]
+    NestedBundleMetadata(#[from] IpaNestedBundleMetadataError),
 
     #[error("IPA exposes {actual} code candidates; maximum is {maximum}")]
     TooManyCandidates { actual: usize, maximum: usize },
@@ -105,7 +114,7 @@ pub enum IpaCodeInventoryError {
     InventoryChanged { path: String },
 }
 
-/// Build the current bounded, convention-based IPA code candidate inventory.
+/// Build the bounded declared-standard-bundle IPA code inventory.
 ///
 /// The reader must be the secured regular-file handle used to obtain
 /// `archive_size`. Candidates are copied and parsed sequentially. The source
@@ -116,7 +125,17 @@ pub fn inspect_ipa_code_inventory<R: Read + Seek>(
 ) -> Result<IpaCodeInventory, IpaCodeInventoryError> {
     let (main, authoritative_inventory) =
         inspect_ipa_main_executable_with_inventory(&mut reader, archive_size)?;
-    let candidates = discover_candidates(&authoritative_inventory, &main.app.executable_path);
+    let nested_metadata = inspect_ipa_nested_bundle_metadata_from_inventory(
+        &mut reader,
+        archive_size,
+        main.app.clone(),
+        &authoritative_inventory,
+    )?;
+    let candidates = discover_candidates(
+        &authoritative_inventory,
+        &main.app.executable_path,
+        &nested_metadata.bundles,
+    );
     validate_candidate_set(&candidates)?;
 
     let mut binaries = vec![IpaCodeObject {
@@ -131,14 +150,8 @@ pub fn inspect_ipa_code_inventory<R: Read + Seek>(
         if role == BinaryRole::MainExecutable {
             continue;
         }
-        if entry.uncompressed_size > MAX_IPA_ENTRY_COPY_BYTES
-            || entry.compressed_size > MAX_IPA_ENTRY_COPY_COMPRESSED_BYTES
-        {
-            rejected_candidates.push(rejected(
-                path,
-                role,
-                IpaCodeCandidateRejectionReason::EntryTooLarge,
-            ));
+        if let Some(reason) = candidate_size_rejection(&entry) {
+            rejected_candidates.push(rejected(path, role, reason));
             continue;
         }
 
@@ -158,9 +171,7 @@ pub fn inspect_ipa_code_inventory<R: Read + Seek>(
             path: path.clone(),
             source,
         })?;
-        if copied.inventory != authoritative_inventory {
-            return Err(IpaCodeInventoryError::InventoryChanged { path });
-        }
+        ensure_candidate_inventory_unchanged(&path, &authoritative_inventory, &copied.inventory)?;
 
         match parse_macho(&mut temporary) {
             Ok(macho) => binaries.push(IpaCodeObject {
@@ -179,8 +190,9 @@ pub fn inspect_ipa_code_inventory<R: Read + Seek>(
     rejected_candidates.sort_by(|left, right| left.path.cmp(&right.path));
 
     Ok(IpaCodeInventory {
-        coverage: IpaCodeInventoryCoverage::ConventionalCandidates,
+        coverage: IpaCodeInventoryCoverage::DeclaredStandardBundles,
         app: main.app,
+        nested_bundles: nested_metadata.bundles,
         binaries,
         rejected_candidates,
     })
@@ -189,46 +201,96 @@ pub fn inspect_ipa_code_inventory<R: Read + Seek>(
 fn discover_candidates(
     inventory: &IpaInventory,
     main_path: &str,
+    nested_bundles: &[IpaNestedBundle],
 ) -> BTreeMap<String, (BinaryRole, IpaEntry)> {
     let mut candidates = BTreeMap::new();
+
+    // Filename conventions are the weakest signal and are inserted first.
     for entry in &inventory.entries {
-        if entry.kind != IpaEntryKind::File {
-            continue;
+        if entry.kind == IpaEntryKind::File && is_in_scope_dylib(inventory, &entry.path) {
+            candidates.insert(
+                entry.path.clone(),
+                (BinaryRole::DynamicLibrary, entry.clone()),
+            );
         }
-        let role = if entry.path == main_path {
-            Some(BinaryRole::MainExecutable)
-        } else if is_conventional_bundle_executable(&entry.path, ".framework") {
-            Some(BinaryRole::Framework)
-        } else if entry
-            .path
-            .rsplit('/')
-            .next()
-            .is_some_and(|name| name.ends_with(".dylib"))
-        {
-            Some(BinaryRole::DynamicLibrary)
-        } else if is_conventional_bundle_executable(&entry.path, ".appex") {
-            Some(BinaryRole::Extension)
-        } else {
-            None
+    }
+
+    // Exact nested declarations override a `.dylib` suffix for the same path.
+    for bundle in nested_bundles {
+        let role = match bundle.role {
+            IpaNestedBundleRole::Framework => BinaryRole::Framework,
+            IpaNestedBundleRole::Extension => BinaryRole::Extension,
         };
-        if let Some(role) = role {
-            candidates.insert(entry.path.clone(), (role, entry.clone()));
-        }
+        candidates.insert(
+            bundle.executable_path.clone(),
+            (role, bundle.executable_entry.clone()),
+        );
+    }
+
+    // The root declaration is mandatory and always has highest precedence.
+    if let Some(entry) = inventory
+        .entries
+        .iter()
+        .find(|entry| entry.path == main_path)
+    {
+        candidates.insert(
+            main_path.to_owned(),
+            (BinaryRole::MainExecutable, entry.clone()),
+        );
     }
     candidates
 }
 
-fn is_conventional_bundle_executable(path: &str, bundle_suffix: &str) -> bool {
-    let mut components = path.rsplit('/');
-    let Some(file_name) = components.next() else {
+fn is_in_scope_dylib(inventory: &IpaInventory, path: &str) -> bool {
+    if !path
+        .rsplit('/')
+        .next()
+        .is_some_and(|name| name.ends_with(".dylib"))
+    {
+        return false;
+    }
+    let Some(relative) = path
+        .strip_prefix(&inventory.app_root)
+        .and_then(|suffix| suffix.strip_prefix('/'))
+    else {
         return false;
     };
-    let Some(bundle_name) = components.next() else {
+    let components = relative.split('/').collect::<Vec<_>>();
+    if components.is_empty()
+        || components
+            .iter()
+            .any(|component| component.ends_with(".app"))
+    {
         return false;
-    };
-    bundle_name
-        .strip_suffix(bundle_suffix)
-        .is_some_and(|stem| !stem.is_empty() && file_name == stem)
+    }
+
+    let extension_indexes = components
+        .iter()
+        .enumerate()
+        .filter_map(|(index, component)| component.ends_with(".appex").then_some(index))
+        .collect::<Vec<_>>();
+    if !(extension_indexes.is_empty()
+        || (extension_indexes == [1]
+            && components.first() == Some(&"PlugIns")
+            && is_nonempty_bundle_component(components[1], ".appex")))
+    {
+        return false;
+    }
+
+    let framework_components = components
+        .iter()
+        .filter(|component| component.ends_with(".framework"))
+        .collect::<Vec<_>>();
+    framework_components.len() <= 1
+        && framework_components
+            .iter()
+            .all(|component| is_nonempty_bundle_component(component, ".framework"))
+}
+
+fn is_nonempty_bundle_component(component: &str, suffix: &str) -> bool {
+    component
+        .strip_suffix(suffix)
+        .is_some_and(|stem| !stem.is_empty())
 }
 
 fn validate_candidate_set(
@@ -264,6 +326,25 @@ fn validate_candidate_total(
     Ok(())
 }
 
+fn candidate_size_rejection(entry: &IpaEntry) -> Option<IpaCodeCandidateRejectionReason> {
+    (entry.uncompressed_size > MAX_IPA_ENTRY_COPY_BYTES
+        || entry.compressed_size > MAX_IPA_ENTRY_COPY_COMPRESSED_BYTES)
+        .then_some(IpaCodeCandidateRejectionReason::EntryTooLarge)
+}
+
+fn ensure_candidate_inventory_unchanged(
+    path: &str,
+    expected: &IpaInventory,
+    actual: &IpaInventory,
+) -> Result<(), IpaCodeInventoryError> {
+    if expected != actual {
+        return Err(IpaCodeInventoryError::InventoryChanged {
+            path: path.to_owned(),
+        });
+    }
+    Ok(())
+}
+
 fn classify_macho_rejection(source: &MachOParseError) -> IpaCodeCandidateRejectionReason {
     match source {
         MachOParseError::FileTooSmall { .. } | MachOParseError::UnsupportedMagic { .. } => {
@@ -283,7 +364,8 @@ fn rejected(
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Write};
+    use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+    use std::ops::Range;
 
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
@@ -293,10 +375,53 @@ mod tests {
 
     const APP_ROOT: &str = "Payload/Demo.app";
     const MAIN_PATH: &str = "Payload/Demo.app/Demo";
+    const UNREAD_CANDIDATE: &[u8] = b"candidate payload must stay unread";
+
+    struct DenyRangeReader {
+        inner: Cursor<Vec<u8>>,
+        denied: Range<u64>,
+    }
+
+    impl DenyRangeReader {
+        fn new(bytes: Vec<u8>, needle: &[u8]) -> Self {
+            let start = bytes
+                .windows(needle.len())
+                .position(|window| window == needle)
+                .expect("find denied fixture payload") as u64;
+            Self {
+                inner: Cursor::new(bytes),
+                denied: start..start + needle.len() as u64,
+            }
+        }
+    }
+
+    impl Read for DenyRangeReader {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            let start = self.inner.position();
+            if self.denied.contains(&start) {
+                return Err(std::io::Error::other(
+                    "optional candidate payload was read before metadata failed",
+                ));
+            }
+            self.inner.read(buffer)
+        }
+    }
+
+    impl Seek for DenyRangeReader {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(position)
+        }
+    }
 
     fn options() -> SimpleFileOptions {
         SimpleFileOptions::default()
             .compression_method(CompressionMethod::Deflated)
+            .unix_permissions(0o644)
+    }
+
+    fn stored_options() -> SimpleFileOptions {
+        SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
             .unix_permissions(0o644)
     }
 
@@ -320,12 +445,15 @@ mod tests {
         bytes
     }
 
-    fn info_plist() -> &'static [u8] {
-        br#"<plist><dict>
-<key>CFBundleIdentifier</key><string>com.example.demo</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleExecutable</key><string>Demo</string>
-</dict></plist>"#
+    fn info_plist(identifier: &str, executable: &str) -> Vec<u8> {
+        format!(
+            "<plist><dict>\
+             <key>CFBundleIdentifier</key><string>{identifier}</string>\
+             <key>CFBundleVersion</key><string>1</string>\
+             <key>CFBundleExecutable</key><string>{executable}</string>\
+             </dict></plist>"
+        )
+        .into_bytes()
     }
 
     fn make_inventory_ipa() -> Vec<u8> {
@@ -333,42 +461,107 @@ mod tests {
         let invalid = invalid_macho();
         let cursor = Cursor::new(Vec::new());
         let mut writer = ZipWriter::new(cursor);
-        for directory in [
-            "Payload/",
-            "Payload/Demo.app/",
-            "Payload/Demo.app/Frameworks/",
-            "Payload/Demo.app/Frameworks/DemoKit.framework/",
-            "Payload/Demo.app/PlugIns/",
-            "Payload/Demo.app/PlugIns/Share.appex/",
-            "Payload/Demo.app/PlugIns/Share.appex/Frameworks/",
-            "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/",
-        ] {
-            writer
-                .add_directory(directory, options())
-                .expect("add directory");
-        }
-        let files: [(&str, &[u8]); 8] = [
-            ("Payload/Demo.app/Info.plist", info_plist()),
-            (MAIN_PATH, &macho),
+        let files = vec![
+            (
+                "Payload/Demo.app/Info.plist",
+                info_plist("com.example.demo", "Demo"),
+            ),
+            (MAIN_PATH, macho.clone()),
+            (
+                "Payload/Demo.app/Frameworks/DemoKit.framework/Info.plist",
+                info_plist("com.example.demo.kit", "RenamedKit.dylib"),
+            ),
+            (
+                "Payload/Demo.app/Frameworks/DemoKit.framework/RenamedKit.dylib",
+                macho.clone(),
+            ),
             (
                 "Payload/Demo.app/Frameworks/DemoKit.framework/DemoKit",
-                &macho,
+                macho.clone(),
             ),
-            ("Payload/Demo.app/Frameworks/libHelper.dylib", &macho),
-            ("Payload/Demo.app/PlugIns/Share.appex/Share", &macho),
             (
-                "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/Nested",
-                &macho,
+                "Payload/Demo.app/PlugIns/Share.appex/Info.plist",
+                info_plist("com.example.demo.share", "ShareWorker.dylib"),
             ),
-            ("Payload/Demo.app/Assets/fake.dylib", b"not Mach-O"),
             (
-                "Payload/Demo.app/Frameworks/Broken.framework/Broken",
-                &invalid,
+                "Payload/Demo.app/PlugIns/Share.appex/ShareWorker.dylib",
+                macho.clone(),
             ),
+            ("Payload/Demo.app/PlugIns/Share.appex/Share", macho.clone()),
+            (
+                "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/Info.plist",
+                info_plist("com.example.demo.nested", "NestedWorker"),
+            ),
+            (
+                "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/NestedWorker",
+                macho.clone(),
+            ),
+            (
+                "Payload/Demo.app/Frameworks/A.framework/Info.plist",
+                info_plist("com.example.demo.a", "AWorker"),
+            ),
+            (
+                "Payload/Demo.app/Frameworks/A.framework/AWorker",
+                macho.clone(),
+            ),
+            ("Payload/Demo.app/Frameworks/libHelper.dylib", macho.clone()),
+            (
+                "Payload/Demo.app/PlugIns/Share.appex/libExtension.dylib",
+                macho.clone(),
+            ),
+            ("Payload/Demo.app/Assets/fake.dylib", b"not Mach-O".to_vec()),
+            ("Payload/Demo.app/Frameworks/libInvalid.dylib", invalid),
+            (
+                "Payload/Demo.app/Watch/Watch.app/libWatch.dylib",
+                macho.clone(),
+            ),
+            ("Payload/Demo.app/Nested.app/libNested.dylib", macho.clone()),
+            (
+                "Payload/Demo.app/Extensions/Other.appex/libOther.dylib",
+                macho.clone(),
+            ),
+            (
+                "Payload/Demo.app/Frameworks/A.framework/Frameworks/B.framework/libDeep.dylib",
+                macho.clone(),
+            ),
+            ("Payload/Demo.app/libUpper.DYLIB", macho),
         ];
         for (path, bytes) in files {
             writer.start_file(path, options()).expect("start file");
-            writer.write_all(bytes).expect("write file");
+            writer.write_all(&bytes).expect("write file");
+        }
+        writer.finish().expect("finish IPA").into_inner()
+    }
+
+    fn make_nested_metadata_failure_ipa(nested_plist: Option<&[u8]>) -> Vec<u8> {
+        let macho = minimal_arm64_macho();
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        for (path, bytes) in [
+            (
+                "Payload/Demo.app/Info.plist",
+                info_plist("com.example.demo", "Demo"),
+            ),
+            (MAIN_PATH, macho.clone()),
+            ("Payload/Demo.app/Frameworks/F.framework/F", macho.clone()),
+        ] {
+            writer.start_file(path, options()).expect("start file");
+            writer.write_all(&bytes).expect("write file");
+        }
+        writer
+            .start_file("Payload/Demo.app/Assets/late.dylib", stored_options())
+            .expect("start denied candidate");
+        writer
+            .write_all(UNREAD_CANDIDATE)
+            .expect("write denied candidate");
+        if let Some(bytes) = nested_plist {
+            writer
+                .start_file(
+                    "Payload/Demo.app/Frameworks/F.framework/Info.plist",
+                    options(),
+                )
+                .expect("start nested plist");
+            writer.write_all(bytes).expect("write nested plist");
         }
         writer.finish().expect("finish IPA").into_inner()
     }
@@ -384,7 +577,42 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(
             first.coverage,
-            IpaCodeInventoryCoverage::ConventionalCandidates
+            IpaCodeInventoryCoverage::DeclaredStandardBundles
+        );
+        assert_eq!(
+            first
+                .nested_bundles
+                .iter()
+                .map(|bundle| {
+                    (
+                        bundle.executable_path.as_str(),
+                        bundle.role,
+                        bundle.executable_name.as_str(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    "Payload/Demo.app/Frameworks/A.framework/AWorker",
+                    IpaNestedBundleRole::Framework,
+                    "AWorker",
+                ),
+                (
+                    "Payload/Demo.app/Frameworks/DemoKit.framework/RenamedKit.dylib",
+                    IpaNestedBundleRole::Framework,
+                    "RenamedKit.dylib",
+                ),
+                (
+                    "Payload/Demo.app/PlugIns/Share.appex/ShareWorker.dylib",
+                    IpaNestedBundleRole::Extension,
+                    "ShareWorker.dylib",
+                ),
+                (
+                    "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/NestedWorker",
+                    IpaNestedBundleRole::Framework,
+                    "NestedWorker",
+                ),
+            ]
         );
         assert_eq!(
             first
@@ -395,7 +623,11 @@ mod tests {
             vec![
                 (MAIN_PATH, BinaryRole::MainExecutable),
                 (
-                    "Payload/Demo.app/Frameworks/DemoKit.framework/DemoKit",
+                    "Payload/Demo.app/Frameworks/A.framework/AWorker",
+                    BinaryRole::Framework,
+                ),
+                (
+                    "Payload/Demo.app/Frameworks/DemoKit.framework/RenamedKit.dylib",
                     BinaryRole::Framework,
                 ),
                 (
@@ -403,15 +635,37 @@ mod tests {
                     BinaryRole::DynamicLibrary,
                 ),
                 (
-                    "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/Nested",
+                    "Payload/Demo.app/PlugIns/Share.appex/Frameworks/Nested.framework/NestedWorker",
                     BinaryRole::Framework,
                 ),
                 (
-                    "Payload/Demo.app/PlugIns/Share.appex/Share",
+                    "Payload/Demo.app/PlugIns/Share.appex/ShareWorker.dylib",
                     BinaryRole::Extension,
+                ),
+                (
+                    "Payload/Demo.app/PlugIns/Share.appex/libExtension.dylib",
+                    BinaryRole::DynamicLibrary,
                 ),
             ]
         );
+        for excluded in [
+            "Payload/Demo.app/Frameworks/DemoKit.framework/DemoKit",
+            "Payload/Demo.app/PlugIns/Share.appex/Share",
+            "Payload/Demo.app/Watch/Watch.app/libWatch.dylib",
+            "Payload/Demo.app/Nested.app/libNested.dylib",
+            "Payload/Demo.app/Extensions/Other.appex/libOther.dylib",
+            "Payload/Demo.app/Frameworks/A.framework/Frameworks/B.framework/libDeep.dylib",
+            "Payload/Demo.app/libUpper.DYLIB",
+        ] {
+            assert!(
+                first.binaries.iter().all(|binary| binary.path != excluded)
+                    && first
+                        .rejected_candidates
+                        .iter()
+                        .all(|candidate| candidate.path != excluded),
+                "out-of-scope path must be omitted: {excluded}"
+            );
+        }
         assert!(first.binaries.iter().all(|binary| {
             binary
                 .macho
@@ -431,7 +685,7 @@ mod tests {
                     IpaCodeCandidateRejectionReason::NotMacho,
                 ),
                 (
-                    "Payload/Demo.app/Frameworks/Broken.framework/Broken",
+                    "Payload/Demo.app/Frameworks/libInvalid.dylib",
                     IpaCodeCandidateRejectionReason::InvalidMacho,
                 ),
             ]
@@ -439,32 +693,77 @@ mod tests {
     }
 
     #[test]
-    fn discovery_requires_exact_conventional_names_and_regular_files() {
+    fn discovery_uses_declarations_precedence_and_closed_dylib_ancestry() {
+        let main_path = "Payload/Demo.app/Demo.dylib";
+        let declared_path = "Payload/Demo.app/Frameworks/F.framework/Declared.dylib";
+        let entries = vec![
+            entry(main_path, 1),
+            entry(declared_path, 1),
+            entry("Payload/Demo.app/Frameworks/F.framework/F", 1),
+            entry("Payload/Demo.app/libRoot.dylib", 1),
+            entry("Payload/Demo.app/PlugIns/E.appex/libExt.dylib", 1),
+            entry("Payload/Demo.app/Frameworks/F.framework/libWithin.dylib", 1),
+            entry("Payload/Demo.app/Nested.app/libNested.dylib", 1),
+            entry("Payload/Demo.app/.app/libEmptyApp.dylib", 1),
+            entry("Payload/Demo.app/Other/E.appex/libOther.dylib", 1),
+            entry("Payload/Demo.app/PlugIns/.appex/libEmptyExtension.dylib", 1),
+            entry(
+                "Payload/Demo.app/Frameworks/F.framework/G.framework/libDeep.dylib",
+                1,
+            ),
+            entry("Payload/Demo.app/.framework/libEmptyFramework.dylib", 1),
+            entry("Payload/Demo.app/libUpper.DYLIB", 1),
+            IpaEntry {
+                path: "Payload/Demo.app/libDirectory.dylib".to_owned(),
+                kind: IpaEntryKind::Directory,
+                compressed_size: 0,
+                uncompressed_size: 0,
+                crc32: 0,
+            },
+        ];
         let inventory = IpaInventory {
             archive_size: 1,
             app_root: APP_ROOT.to_owned(),
-            entry_count: 4,
-            file_count: 3,
+            entry_count: entries.len(),
+            file_count: entries.len() - 1,
             directory_count: 1,
-            total_compressed_size: 3,
-            total_uncompressed_size: 3,
-            entries: vec![
-                entry(MAIN_PATH, 1),
-                entry("Payload/Demo.app/F.framework/Other", 1),
-                entry("Payload/Demo.app/E.appex/E/Nested", 1),
-                IpaEntry {
-                    path: "Payload/Demo.app/libDirectory.dylib".to_owned(),
-                    kind: IpaEntryKind::Directory,
-                    compressed_size: 0,
-                    uncompressed_size: 0,
-                    crc32: 0,
-                },
-            ],
+            total_compressed_size: (entries.len() - 1) as u64,
+            total_uncompressed_size: (entries.len() - 1) as u64,
+            entries,
         };
+        let declared_entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == declared_path)
+            .expect("declared entry")
+            .clone();
+        let nested = vec![nested_bundle(
+            IpaNestedBundleRole::Framework,
+            "Payload/Demo.app/Frameworks/F.framework",
+            "Declared.dylib",
+            declared_entry,
+        )];
 
-        let candidates = discover_candidates(&inventory, MAIN_PATH);
-        assert_eq!(candidates.len(), 1);
-        assert!(candidates.contains_key(MAIN_PATH));
+        let candidates = discover_candidates(&inventory, main_path, &nested);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|(path, (role, _))| (path.as_str(), *role))
+                .collect::<Vec<_>>(),
+            vec![
+                (main_path, BinaryRole::MainExecutable),
+                (declared_path, BinaryRole::Framework),
+                (
+                    "Payload/Demo.app/Frameworks/F.framework/libWithin.dylib",
+                    BinaryRole::DynamicLibrary,
+                ),
+                (
+                    "Payload/Demo.app/PlugIns/E.appex/libExt.dylib",
+                    BinaryRole::DynamicLibrary,
+                ),
+                ("Payload/Demo.app/libRoot.dylib", BinaryRole::DynamicLibrary,),
+            ]
+        );
     }
 
     #[test]
@@ -495,6 +794,69 @@ mod tests {
                 ..
             })
         ));
+
+        let too_large = entry(
+            "Payload/Demo.app/libTooLarge.dylib",
+            MAX_IPA_ENTRY_COPY_BYTES + 1,
+        );
+        assert_eq!(
+            candidate_size_rejection(&too_large),
+            Some(IpaCodeCandidateRejectionReason::EntryTooLarge)
+        );
+
+        let expected = IpaInventory {
+            archive_size: 1,
+            app_root: APP_ROOT.to_owned(),
+            entry_count: 0,
+            file_count: 0,
+            directory_count: 0,
+            total_compressed_size: 0,
+            total_uncompressed_size: 0,
+            entries: vec![],
+        };
+        let mut changed = expected.clone();
+        changed.archive_size += 1;
+        assert!(matches!(
+            ensure_candidate_inventory_unchanged(MAIN_PATH, &expected, &changed),
+            Err(IpaCodeInventoryError::InventoryChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn nested_metadata_failures_precede_optional_candidate_payload_reads() {
+        let missing = make_nested_metadata_failure_ipa(None);
+        let missing_size = missing.len() as u64;
+        let missing_error = inspect_ipa_code_inventory(
+            DenyRangeReader::new(missing, UNREAD_CANDIDATE),
+            missing_size,
+        )
+        .expect_err("missing nested plist must fail");
+        assert!(
+            matches!(
+                &missing_error,
+                IpaCodeInventoryError::NestedBundleMetadata(
+                    IpaNestedBundleMetadataError::MissingInfoPlist { .. }
+                )
+            ),
+            "unexpected error: {missing_error:?}"
+        );
+
+        let malformed = make_nested_metadata_failure_ipa(Some(b"not a plist"));
+        let malformed_size = malformed.len() as u64;
+        let malformed_error = inspect_ipa_code_inventory(
+            DenyRangeReader::new(malformed, UNREAD_CANDIDATE),
+            malformed_size,
+        )
+        .expect_err("malformed nested plist must fail");
+        assert!(
+            matches!(
+                &malformed_error,
+                IpaCodeInventoryError::NestedBundleMetadata(
+                    IpaNestedBundleMetadataError::InvalidInfoPlist { .. }
+                )
+            ),
+            "unexpected error: {malformed_error:?}"
+        );
     }
 
     #[test]
@@ -513,6 +875,26 @@ mod tests {
             compressed_size: size,
             uncompressed_size: size,
             crc32: 0,
+        }
+    }
+
+    fn nested_bundle(
+        role: IpaNestedBundleRole,
+        bundle_root: &str,
+        executable_name: &str,
+        executable_entry: IpaEntry,
+    ) -> IpaNestedBundle {
+        IpaNestedBundle {
+            role,
+            bundle_root: bundle_root.to_owned(),
+            info_plist_path: format!("{bundle_root}/Info.plist"),
+            info_plist_entry: entry(&format!("{bundle_root}/Info.plist"), 1),
+            bundle_identifier: "com.example.fixture".to_owned(),
+            bundle_version: "1".to_owned(),
+            short_version: None,
+            executable_name: executable_name.to_owned(),
+            executable_path: executable_entry.path.clone(),
+            executable_entry,
         }
     }
 }
