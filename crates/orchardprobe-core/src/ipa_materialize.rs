@@ -914,8 +914,13 @@ mod tests {
                 *captured_root.borrow_mut() = Some(root.to_owned());
                 if path.ends_with("Implicit/Nested.bin") {
                     let implicit = root.join(format!("{APP_ROOT}/Implicit"));
+                    // Keep the removed inode referenced until its replacement
+                    // exists. Some Linux filesystems otherwise immediately
+                    // reuse it, which would not represent identity drift.
+                    let original = File::open(&implicit).expect("hold planned directory inode");
                     fs::remove_dir(&implicit).expect("remove planned directory");
                     fs::create_dir(&implicit).expect("replace planned directory");
+                    drop(original);
                 }
             },
         );
