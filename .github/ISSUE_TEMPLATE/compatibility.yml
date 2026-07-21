@@ -1,80 +1,158 @@
-name: Compatibility report
-description: Report a tested host, device, iOS, or backend combination.
-title: "[Compatibility]: "
+name: Compatibility intake report
+description: Submit sanitized, unverified observations from an authorized first-party fixture test.
+title: "[Compatibility intake]: "
 labels:
   - compatibility
 body:
   - type: markdown
     attributes:
       value: |
-        Compatibility evidence must come from an app and device you own or are explicitly authorized to test.
+        Compatibility issues are **unverified intake reports**, not support claims. A single user report never creates or upgrades official support, even when the observed behavior is successful.
 
-        **Do not upload or link to IPAs, credentials, raw UDIDs, certificates, provisioning profiles, receipts, third-party binaries, or unsanitized logs.** Report model families and sanitized metadata only.
+        Use OrchardProbe's first-party DemoLab fixture whenever possible. Do not name or test a proprietary application here. Do not attach or link to IPAs, binaries, raw logs, credentials, or device identifiers.
+
   - type: checkboxes
     id: authorization
     attributes:
-      label: Authorization and privacy
+      label: Authorization and first-party scope
       options:
-        - label: I own the tested app and device, or I have explicit authorization to test them.
+        - label: I own the tested app and device, or I have explicit authorization covering this exact test.
           required: true
-        - label: This report and its links contain no IPA, credential, raw UDID, certificate, provisioning profile, third-party binary, or other sensitive data.
+        - label: I used OrchardProbe DemoLab wherever it could reproduce the observation; any exception is explained under limitations.
           required: true
-  - type: input
-    id: version
+        - label: I understand this report remains unverified until maintainers independently reproduce and sign a test record.
+          required: true
+
+  - type: dropdown
+    id: observed_result
     attributes:
-      label: OrchardProbe version
-      placeholder: v0.1.0-alpha or commit SHA
+      label: Unverified observed result
+      description: This describes intake only; it is not a compatibility status or proof of plaintext.
+      options:
+        - Unverified report — expected behavior observed
+        - Unverified report — partial or ambiguous behavior observed
+        - Unverified report — failure observed
     validations:
       required: true
+
+  - type: dropdown
+    id: claim_scope
+    attributes:
+      label: Unverified claim scope
+      description: Keep the observation narrow. An unencrypted development build cannot exercise a protected-to-plaintext transition.
+      options:
+        - Host parsing only
+        - Transport or contained collection only
+        - Protected-to-plaintext reconstruction
+        - End-to-end export pipeline
+    validations:
+      required: true
+
+  - type: textarea
+    id: source_revisions
+    attributes:
+      label: Tool and fixture revisions
+      description: Provide full commit SHAs. DemoLab is the preferred and expected public fixture.
+      placeholder: |
+        orchardprobe_commit: 40-character SHA
+        demolab_commit: 40-character SHA
+        helper_artifact_sha256: SHA-256 or not exercised
+    validations:
+      required: true
+
+  - type: textarea
+    id: device_environment
+    attributes:
+      label: Sanitized device environment
+      description: For a host-only claim, enter not exercised. Otherwise provide only these fields; never include a device identifier, address, username, or proprietary app identifier.
+      placeholder: |
+        not exercised (for host-only claims), or:
+        marketing_model: iPhone model name
+        soc_family: public SoC family
+        ios_version: major.minor.patch
+        ios_build: build number
+        jailbreak_or_test_environment: public name
+        environment_version: exact version
+        root_mode: rootless or rootful
+    validations:
+      required: true
+
   - type: input
     id: host
     attributes:
-      label: Host
-      description: macOS version and CPU architecture.
-      placeholder: macOS 15.x, Apple Silicon
+      label: Sanitized host
+      description: macOS version and architecture only. Do not include a hostname, username, IP address, or local path.
+      placeholder: macOS 15.5; Apple Silicon
     validations:
       required: true
-  - type: input
-    id: device
-    attributes:
-      label: Device model family
-      description: Do not provide a serial number, ECID, or UDID.
-      placeholder: iPhone 15 family
-    validations:
-      required: true
-  - type: input
-    id: ios
-    attributes:
-      label: iOS version
-      placeholder: 18.x
-    validations:
-      required: true
+
   - type: textarea
-    id: environment
+    id: capabilities
     attributes:
-      label: Device environment and backend
-      description: Describe relevant rootless/rootful environment and backend versions without including secrets or identifying data.
+      label: Negotiated capability IDs
+      description: For a host-only claim, enter not exercised. Otherwise use only public, project-defined IDs; do not paste shell output or connection details.
+      placeholder: |
+        not exercised (for host-only claims), or:
+        transport_capability_ids: id.one, id.two
+        backend_capability_ids: id.three, id.four
     validations:
       required: true
-  - type: dropdown
-    id: result
-    attributes:
-      label: Result
-      options:
-        - Pass
-        - Partial
-        - Fail
-    validations:
-      required: true
+
   - type: textarea
-    id: commands
+    id: binary_evidence
     attributes:
-      label: Commands and observed behavior
-      description: Use synthetic or OrchardProbe-owned fixtures where possible and sanitize all output.
+      label: Per-binary unverified evidence
+      description: "One line per DemoLab Mach-O: sanitized initial state, evidence level, and unverified observation. Allowed evidence: metadata, structure, range_hash, known_plaintext. Never use Pass."
+      placeholder: |
+        DemoLab.app/DemoLab | initial_state: sanitized evidence or unprotected | evidence: known_plaintext | unverified_outcome: expected behavior observed
+        DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework | initial_state: unprotected | evidence: structure | unverified_outcome: inconclusive
+        DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension | initial_state: not evaluated | evidence: metadata | unverified_outcome: skipped
     validations:
       required: true
+
+  - type: textarea
+    id: plaintext_oracles
+    attributes:
+      label: Known-plaintext oracle summary
+      description: Record only the DemoLab-relative path, oracle and observed SHA-256, and oracle provenance from the recorded commit. Use unavailable when absent; never paste bytes.
+      placeholder: |
+        DemoLab.app/DemoLab | oracle_sha256: ... | observed_sha256: ... | source: build from recorded DemoLab commit
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sanitized reproduction steps
+      description: Provide the smallest deterministic reproduction using DemoLab-relative paths and placeholders. Summarize observations; do not paste raw logs.
+      placeholder: |
+        1. Build DemoLab at the recorded commit.
+        2. Establish the listed transport capability.
+        3. Run the narrowly scoped test.
+        4. Compare each observed hash with its DemoLab oracle.
+        5. Repeat from a clean state.
+    validations:
+      required: true
+
   - type: textarea
     id: limitations
     attributes:
-      label: Limitations or notes
-      description: Explain skipped binaries, warnings, or other constraints without sharing protected artifacts.
+      label: Limitations and incomplete coverage
+      description: Identify skipped DemoLab binaries, intermittent behavior, missing oracles, and capability constraints using sanitized summaries only.
+      placeholder: none, or a concise sanitized explanation
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: Final redaction check
+      options:
+        - label: This report and its links contain no UDID, ECID, serial number, IP address, host/device username, credential, token, certificate, or provisioning material.
+          required: true
+        - label: This report and its links contain no proprietary application name or bundle identifier, IPA, binary content, or third-party artifact.
+          required: true
+        - label: This report contains no raw or unsanitized logs; commands, paths, and observations are minimal and sanitized.
+          required: true
+        - label: All posted hashes refer only to DemoLab or another original, redistributable first-party fixture described under limitations.
+          required: true

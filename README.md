@@ -33,6 +33,8 @@ Before participating, read:
 - [Legal and authorization notice](LEGAL.md)
 - [Acceptable Use Policy](ACCEPTABLE_USE.md)
 - [Security Policy](SECURITY.md)
+- [Scope and threat model](docs/architecture/RFC-0001-scope-and-threat-model.md)
+- [Compatibility evidence policy](docs/compatibility/README.md)
 
 ## Project vision
 
@@ -118,7 +120,7 @@ The host is planned as a Rust workspace. A small Objective-C/C helper will perfo
 - No telemetry: the project will not collect usage, IPA, log, or device data.
 - Minimal collection: only the `.app` bundle is in scope; receipts, `SC_Info`, and data containers are excluded by design.
 - Auditable output: structured reports explain backend choice, per-file status, hashes, signing state, and evidence level. Metadata such as `cryptid == 0` alone is never treated as proof of correct plaintext; results without a plaintext oracle are marked inconclusive.
-- Honest compatibility: public support claims require a recorded real-device result.
+- Honest compatibility: public support claims require maintainer reproduction and a sanitized real-device record under the [compatibility evidence policy](docs/compatibility/README.md).
 - Safe fixtures: repository tests use project-generated DemoLab artifacts, never proprietary third-party binaries.
 
 ## Roadmap
