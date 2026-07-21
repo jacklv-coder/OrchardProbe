@@ -82,11 +82,6 @@ impl IpaPrivateWorktree {
     pub fn path(&self) -> &Path {
         self.root.path()
     }
-
-    /// Remove the worktree now and report cleanup failure explicitly.
-    pub fn close(self) -> std::io::Result<()> {
-        self.root.close()
-    }
 }
 
 impl fmt::Debug for IpaPrivateWorktree {

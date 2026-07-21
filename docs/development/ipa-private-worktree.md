@@ -10,8 +10,8 @@ materialize_ipa_private_worktree(reader, archive_size)
 It is intentionally not a general ZIP extractor. It accepts the same
 `Read + Seek` source and secured byte length as IPA preflight, creates a fresh
 owner-only temporary root, and materializes only the already validated
-`Payload/<App>.app` tree. The returned value owns that root. Dropping it removes
-the tree; `close()` is available when a caller must observe a cleanup error.
+`Payload/<App>.app` tree. The returned value owns that root, and dropping it
+attempts to remove the complete tree.
 
 This API is library-only and is not connected to `oprobe decrypt`.
 
