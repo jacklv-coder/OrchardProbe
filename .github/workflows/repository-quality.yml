@@ -1,0 +1,61 @@
+name: Repository quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  foundation:
+    name: Foundation files
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Check patch formatting
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            git diff --check "${{ github.event.before }}..${{ github.sha }}"
+          else
+            git diff --check HEAD^
+          fi
+
+      - name: Check required project files
+        shell: bash
+        run: |
+          required_files=(
+            README.md
+            README.zh-CN.md
+            LICENSE
+            LEGAL.md
+            ACCEPTABLE_USE.md
+            SECURITY.md
+            CONTRIBUTING.md
+            CODE_OF_CONDUCT.md
+            PROJECT_PLAN.md
+          )
+
+          for required_file in "${required_files[@]}"; do
+            if [[ ! -s "$required_file" ]]; then
+              echo "Missing or empty required file: $required_file" >&2
+              exit 1
+            fi
+          done
+
+      - name: Reject accidentally committed IPA files
+        shell: bash
+        run: |
+          if git ls-files '*.ipa' | grep -q .; then
+            echo "IPA files must never be committed to this repository." >&2
+            exit 1
+          fi

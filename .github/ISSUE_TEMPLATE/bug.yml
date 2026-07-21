@@ -1,0 +1,75 @@
+name: Bug report
+description: Report a reproducible OrchardProbe defect using sanitized details.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve OrchardProbe.
+
+        **Do not upload or link to IPAs, credentials, raw UDIDs, certificates, provisioning profiles, receipts, third-party binaries, or unsanitized logs.** Use only apps and devices you own or are explicitly authorized to test.
+  - type: checkboxes
+    id: authorized-use
+    attributes:
+      label: Authorized use
+      options:
+        - label: I own the app and device involved, or I have explicit authorization to test them.
+          required: true
+        - label: I have removed all IPAs, credentials, raw UDIDs, certificates, provisioning profiles, third-party binaries, and other sensitive data from this report and its links.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: OrchardProbe version
+      description: Release version or commit SHA.
+      placeholder: v0.1.0-alpha or abc1234
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Command
+      description: Include flags but redact paths, bundle identifiers, and other identifying data as needed.
+      placeholder: oprobe verify sanitized-fixture.app --json
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Sanitized environment
+      description: Host OS/architecture, device model family, iOS version, and backend. Never include a serial number or UDID.
+      placeholder: macOS 15 / Apple Silicon; iPhone model family; iOS 18.x; backend name
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest reproduction using OrchardProbe-owned or synthetic fixtures whenever possible.
+      placeholder: |
+        1. Run ...
+        2. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      description: Paste only the minimal text needed. Redact identifiers, local paths, tokens, account data, hashes tied to private artifacts, and binary content.
+      render: shell
+    validations:
+      required: false

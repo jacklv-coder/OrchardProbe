@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: >-
+  If you use OrchardProbe in research, please cite it using this metadata.
+title: OrchardProbe
+abstract: >-
+  Auditable, local-first iOS app export and Mach-O verification for apps you
+  own or are authorized to test.
+type: software
+authors:
+  - name: OrchardProbe Contributors
+repository-code: https://github.com/jacklv-coder/OrchardProbe
+url: https://github.com/jacklv-coder/OrchardProbe
+license: Apache-2.0
+keywords:
+  - iOS
+  - Mach-O
+  - binary analysis
+  - mobile security
+  - authorized testing
