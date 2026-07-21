@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private security report
+    url: https://github.com/jacklv-coder/OrchardProbe/security/advisories/new
+    about: Report vulnerabilities or sensitive concerns privately; never disclose secrets or third-party artifacts in a public issue.

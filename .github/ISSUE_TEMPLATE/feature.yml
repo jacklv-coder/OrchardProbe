@@ -1,0 +1,48 @@
+name: Feature request
+description: Propose an improvement consistent with OrchardProbe's authorized-use scope.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        OrchardProbe supports local analysis of apps you own or are explicitly authorized to test. Requests for downloading or sharing third-party apps, bypassing purchases or licenses, collecting credentials, or extracting unrelated user data are out of scope.
+
+        **Do not upload or link to IPAs, credentials, raw UDIDs, certificates, provisioning profiles, receipts, or third-party binaries.**
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: My proposed use involves only apps and devices I own or am explicitly authorized to test.
+          required: true
+        - label: This request and its links contain no IPA, credential, raw UDID, certificate, provisioning profile, third-party binary, or other sensitive data.
+          required: true
+        - label: This request does not depend on downloading, redistributing, or bypassing payment, licensing, account, or anti-cheat controls.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What authorized workflow is difficult today, and who does it affect?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior, command-line experience, and expected output.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety, privacy, and compatibility impact
+      description: Explain required permissions, data handled, failure modes, and affected platforms or device environments.
+    validations:
+      required: true

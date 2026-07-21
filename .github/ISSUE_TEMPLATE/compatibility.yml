@@ -1,0 +1,80 @@
+name: Compatibility report
+description: Report a tested host, device, iOS, or backend combination.
+title: "[Compatibility]: "
+labels:
+  - compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Compatibility evidence must come from an app and device you own or are explicitly authorized to test.
+
+        **Do not upload or link to IPAs, credentials, raw UDIDs, certificates, provisioning profiles, receipts, third-party binaries, or unsanitized logs.** Report model families and sanitized metadata only.
+  - type: checkboxes
+    id: authorization
+    attributes:
+      label: Authorization and privacy
+      options:
+        - label: I own the tested app and device, or I have explicit authorization to test them.
+          required: true
+        - label: This report and its links contain no IPA, credential, raw UDID, certificate, provisioning profile, third-party binary, or other sensitive data.
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: OrchardProbe version
+      placeholder: v0.1.0-alpha or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: host
+    attributes:
+      label: Host
+      description: macOS version and CPU architecture.
+      placeholder: macOS 15.x, Apple Silicon
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device model family
+      description: Do not provide a serial number, ECID, or UDID.
+      placeholder: iPhone 15 family
+    validations:
+      required: true
+  - type: input
+    id: ios
+    attributes:
+      label: iOS version
+      placeholder: 18.x
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Device environment and backend
+      description: Describe relevant rootless/rootful environment and backend versions without including secrets or identifying data.
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Result
+      options:
+        - Pass
+        - Partial
+        - Fail
+    validations:
+      required: true
+  - type: textarea
+    id: commands
+    attributes:
+      label: Commands and observed behavior
+      description: Use synthetic or OrchardProbe-owned fixtures where possible and sanitize all output.
+    validations:
+      required: true
+  - type: textarea
+    id: limitations
+    attributes:
+      label: Limitations or notes
+      description: Explain skipped binaries, warnings, or other constraints without sharing protected artifacts.

@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+
+# Rust
+target/
+**/*.rs.bk
+
+# Xcode and Swift
+DerivedData/
+build/
+*.xcarchive
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.build/
+
+# JavaScript tooling
+node_modules/
+coverage/
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# Local configuration, credentials, and signing material
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.cer
+*.crt
+*.der
+*.key
+*.pem
+*.mobileprovision
+*.provisionprofile
+
+# Exported apps and local analysis artifacts
+*.ipa
+*.app/
+artifacts/
+reports/
+
+# Logs and temporary files
+*.log
+*.tmp
+.cache/

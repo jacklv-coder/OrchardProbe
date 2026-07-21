@@ -1,0 +1,55 @@
+name: Documentation issue
+description: Report unclear, missing, or incorrect OrchardProbe documentation.
+title: "[Docs]: "
+labels:
+  - documentation
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for improving the documentation.
+
+        **Do not upload or link to IPAs, credentials, raw UDIDs, certificates, provisioning profiles, receipts, third-party binaries, or unsanitized logs.** Examples must use synthetic or OrchardProbe-owned data, and you must be authorized to use every referenced artifact.
+  - type: checkboxes
+    id: authorization
+    attributes:
+      label: Authorization and privacy
+      options:
+        - label: I am authorized to use every artifact and environment referenced in this report.
+          required: true
+        - label: This report and its links contain no IPA, credential, raw UDID, certificate, provisioning profile, third-party binary, or other sensitive data.
+          required: true
+  - type: input
+    id: location
+    attributes:
+      label: Documentation location
+      description: Link to a repository page or provide a file and heading.
+      placeholder: docs/example.md — Installation
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      options:
+        - Incorrect
+        - Unclear
+        - Missing
+        - Outdated
+        - Typo or formatting
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current documentation or gap
+      description: Quote only a short relevant excerpt, or describe what is missing.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested
+    attributes:
+      label: Suggested improvement
+      description: Explain what the documentation should say or demonstrate.
+    validations:
+      required: true
