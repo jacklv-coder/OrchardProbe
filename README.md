@@ -21,7 +21,7 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 ```
 
-These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
+These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
 ## Authorized use only
 
