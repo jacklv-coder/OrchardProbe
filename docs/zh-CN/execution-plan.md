@@ -16,7 +16,8 @@ PR 中同步更新。
 1. 为 `planned` 步骤建立 GitHub Issue，明确范围、依赖、安全限制、测试、文档和
    验收标准。
 2. 先用一个只改计划文档的“激活 PR”，把唯一一个步骤从 `planned` 改为
-   `active` 并链接 Issue。该 PR 必须完成正常审查和合并门禁，实现才能开始。
+   `active`，并记录 Issue 和激活 PR。该 PR 必须完成正常审查和合并门禁，实现
+   才能开始。
 3. 只要存在 `active` 或 `blocked` 步骤，就不得启动更后的台账步骤。
 4. 实现 PR 把当前步骤从 `active` 改为 `done`，链接实现 PR，并同步受影响的技术
    文档和用户文档。由于只有 `main` 有效，`done` 只有在实现 PR 合并后才生效。
@@ -60,35 +61,36 @@ PR。后续步骤不得复用这个例外。
 
 ## 当前门禁
 
-`GOV-001` 出现在 `main` 后，没有正在进行的实现步骤。`HOST-006` 是唯一允许下一
-个激活的步骤；必须先合并一个独立的激活 PR，才能开始它的实现。
+`HOST-006` 是唯一正在进行的实现步骤，其有界范围和验收标准由 Issue #31 固定。
+在 `HOST-006` 实现 PR 满足全部完成门禁并合并前，`HOST-007` 及以后步骤都不得
+启动。
 
 ## 执行台账
 
 Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和必需检查历史，
 因此表格不重复保存容易漂移的 Commit SHA。
 
-| 顺序 | ID | `main` 状态 | 交付物 / 验收摘要 | 依赖 | Issue | 实现 PR |
-|---:|---|---|---|---|---|---|
-| 1 | `GOV-001` | `done` | 建立双语台账、串行门禁、完成定义和文档入口。 | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | [#30](https://github.com/jacklv-coder/OrchardProbe/pull/30) |
-| 2 | `HOST-001` | `done` | 不解压 Entry 即拒绝不安全或有歧义的 IPA Archive 结构。 | 基础能力 | [#19](https://github.com/jacklv-coder/OrchardProbe/issues/19) | [#20](https://github.com/jacklv-coder/OrchardProbe/pull/20) |
-| 3 | `HOST-002` | `done` | 在大小、压缩比、CRC 和 Inventory 一致性限制内读取或流式复制一个精确 Stored/Deflate Entry。 | `HOST-001` | [#21](https://github.com/jacklv-coder/OrchardProbe/issues/21) | [#22](https://github.com/jacklv-coder/OrchardProbe/pull/22) |
-| 4 | `HOST-003` | `done` | 解析有界 XML/Binary 根 `Info.plist` 身份和声明主程序元数据。 | `HOST-002` | [#23](https://github.com/jacklv-coder/OrchardProbe/issues/23) | [#24](https://github.com/jacklv-coder/OrchardProbe/pull/24) |
-| 5 | `HOST-004` | `done` | 流式读取并检查精确根主程序的 Mach-O 结构。 | `HOST-003` | [#25](https://github.com/jacklv-coder/OrchardProbe/issues/25) | [#26](https://github.com/jacklv-coder/OrchardProbe/pull/26) |
-| 6 | `HOST-005` | `done` | 只有在 Mach-O 解析通过后才清点有界的约定 Framework、dylib 和 Extension 候选，并把覆盖率标为不完整。 | `HOST-004` | [#27](https://github.com/jacklv-coder/OrchardProbe/issues/27) | [#28](https://github.com/jacklv-coder/OrchardProbe/pull/28) |
-| 7 | `HOST-006` | `planned` | 解析约定嵌套 App Bundle 的有界 `Info.plist` 和精确声明可执行文件；显式拒绝缺失、重复、越界、过大或畸形声明。 | `HOST-005` | 激活时创建 | — |
-| 8 | `HOST-007` | `planned` | 为全部受支持标准 Bundle 类型生成确定性的“声明可执行文件”清单，并明确覆盖率与歧义语义。 | `HOST-006` | 激活时创建 | — |
-| 9 | `HOST-008` | `planned` | 把不可变源 IPA 物化到私有、有界的工作目录，阻止 Symlink/Path Escape，排除 Receipt 和 `SC_Info`，不修改源文件。 | `HOST-007` | 激活时创建 | — |
-| 10 | `HOST-009` | `planned` | 使用未改变的 Fixture 字节重建确定性、未签名、仅供分析的 IPA；保留必要元数据且绝不宣称已经解密。 | `HOST-008` | 激活时创建 | — |
-| 11 | `HOST-010` | `planned` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | 激活时创建 | — |
-| 12 | `LAB-001` | `planned` | 建立首方受保护 DemoLab Oracle，同时提供初始保护状态与预期明文的独立证据；否则记录有界 No-Go。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | — |
-| 13 | `DEVICE-001` | `planned` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | — |
-| 14 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | — |
-| 15 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | — |
-| 16 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | — |
-| 17 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | — |
-| 18 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | — |
-| 19 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | — |
+| 顺序 | ID | `main` 状态 | 交付物 / 验收摘要 | 依赖 | Issue | 激活 PR | 实现 PR |
+|---:|---|---|---|---|---|---|---|
+| 1 | `GOV-001` | `done` | 建立双语台账、串行门禁、完成定义和文档入口。 | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | Bootstrap 例外 | [#30](https://github.com/jacklv-coder/OrchardProbe/pull/30) |
+| 2 | `HOST-001` | `done` | 不解压 Entry 即拒绝不安全或有歧义的 IPA Archive 结构。 | 基础能力 | [#19](https://github.com/jacklv-coder/OrchardProbe/issues/19) | 早于台账 | [#20](https://github.com/jacklv-coder/OrchardProbe/pull/20) |
+| 3 | `HOST-002` | `done` | 在大小、压缩比、CRC 和 Inventory 一致性限制内读取或流式复制一个精确 Stored/Deflate Entry。 | `HOST-001` | [#21](https://github.com/jacklv-coder/OrchardProbe/issues/21) | 早于台账 | [#22](https://github.com/jacklv-coder/OrchardProbe/pull/22) |
+| 4 | `HOST-003` | `done` | 解析有界 XML/Binary 根 `Info.plist` 身份和声明主程序元数据。 | `HOST-002` | [#23](https://github.com/jacklv-coder/OrchardProbe/issues/23) | 早于台账 | [#24](https://github.com/jacklv-coder/OrchardProbe/pull/24) |
+| 5 | `HOST-004` | `done` | 流式读取并检查精确根主程序的 Mach-O 结构。 | `HOST-003` | [#25](https://github.com/jacklv-coder/OrchardProbe/issues/25) | 早于台账 | [#26](https://github.com/jacklv-coder/OrchardProbe/pull/26) |
+| 6 | `HOST-005` | `done` | 只有在 Mach-O 解析通过后才清点有界的约定 Framework、dylib 和 Extension 候选，并把覆盖率标为不完整。 | `HOST-004` | [#27](https://github.com/jacklv-coder/OrchardProbe/issues/27) | 早于台账 | [#28](https://github.com/jacklv-coder/OrchardProbe/pull/28) |
+| 7 | `HOST-006` | `active` | 解析约定嵌套 Bundle 的有界 `Info.plist` 和精确声明可执行文件；显式拒绝缺失、重复、越界、过大或畸形声明。 | `HOST-005` | [#31](https://github.com/jacklv-coder/OrchardProbe/issues/31) | 待填写激活 PR | — |
+| 8 | `HOST-007` | `planned` | 为全部受支持标准 Bundle 类型生成确定性的“声明可执行文件”清单，并明确覆盖率与歧义语义。 | `HOST-006` | 激活时创建 | 激活时记录 | — |
+| 9 | `HOST-008` | `planned` | 把不可变源 IPA 物化到私有、有界的工作目录，阻止 Symlink/Path Escape，排除 Receipt 和 `SC_Info`，不修改源文件。 | `HOST-007` | 激活时创建 | 激活时记录 | — |
+| 10 | `HOST-009` | `planned` | 使用未改变的 Fixture 字节重建确定性、未签名、仅供分析的 IPA；保留必要元数据且绝不宣称已经解密。 | `HOST-008` | 激活时创建 | 激活时记录 | — |
+| 11 | `HOST-010` | `planned` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | 激活时创建 | 激活时记录 | — |
+| 12 | `LAB-001` | `planned` | 建立首方受保护 DemoLab Oracle，同时提供初始保护状态与预期明文的独立证据；否则记录有界 No-Go。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | 激活时记录 | — |
+| 13 | `DEVICE-001` | `planned` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
+| 14 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
+| 15 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
+| 16 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | 激活时记录 | — |
+| 17 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | 激活时记录 | — |
+| 18 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | 激活时记录 | — |
+| 19 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | 激活时记录 | — |
 
 ## 本计划没有宣称什么
 

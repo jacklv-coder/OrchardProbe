@@ -17,8 +17,8 @@ The project deliberately works on one ledger step at a time:
 1. A planned step receives a GitHub Issue with a bounded scope, dependencies,
    safety constraints, tests, documentation changes, and acceptance criteria.
 2. A documentation-only activation PR changes that one row from `planned` to
-   `active` and links the Issue. It must pass the normal review and merge gates
-   before implementation starts.
+   `active` and records both the Issue and activation PR. It must pass the
+   normal review and merge gates before implementation starts.
 3. No later ledger step may start while a row is `active` or `blocked`.
 4. The implementation PR changes its row from `active` to `done`, links the
    implementation PR, and updates affected technical and user documentation.
@@ -69,36 +69,37 @@ decryption support.
 
 ## Current gate
 
-There is no active implementation step once `GOV-001` is present on `main`.
-`HOST-006` is the only step eligible for activation next. Its implementation
-must not start until a separate activation PR is merged.
+`HOST-006` is the only active implementation step. Its bounded scope and
+acceptance criteria are fixed by Issue #31. `HOST-007` and every later step must
+remain untouched until the `HOST-006` implementation PR satisfies the complete
+gate and is merged.
 
 ## Execution ledger
 
 Issue and PR links are durable evidence. The linked PR exposes its merged commit
 and required-check history, so merge SHAs are not duplicated in this table.
 
-| Order | ID | Status on `main` | Deliverable / acceptance summary | Depends on | Issue | Implementation PR |
-|---:|---|---|---|---|---|---|
-| 1 | `GOV-001` | `done` | Establish this bilingual ledger, sequential gate, completion definition, and documentation links. | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | [#30](https://github.com/jacklv-coder/OrchardProbe/pull/30) |
-| 2 | `HOST-001` | `done` | Reject unsafe or ambiguous IPA archive structure without decompressing entries. | foundation | [#19](https://github.com/jacklv-coder/OrchardProbe/issues/19) | [#20](https://github.com/jacklv-coder/OrchardProbe/pull/20) |
-| 3 | `HOST-002` | `done` | Read or stream one exact Stored/Deflate entry with size, ratio, CRC, and inventory-consistency bounds. | `HOST-001` | [#21](https://github.com/jacklv-coder/OrchardProbe/issues/21) | [#22](https://github.com/jacklv-coder/OrchardProbe/pull/22) |
-| 4 | `HOST-003` | `done` | Parse bounded XML/binary root `Info.plist` identity and declared main executable metadata. | `HOST-002` | [#23](https://github.com/jacklv-coder/OrchardProbe/issues/23) | [#24](https://github.com/jacklv-coder/OrchardProbe/pull/24) |
-| 5 | `HOST-004` | `done` | Stream and structurally inspect the exact root main executable as Mach-O. | `HOST-003` | [#25](https://github.com/jacklv-coder/OrchardProbe/issues/25) | [#26](https://github.com/jacklv-coder/OrchardProbe/pull/26) |
-| 6 | `HOST-005` | `done` | Inventory bounded conventional framework, dylib, and extension candidates only after Mach-O parsing; report coverage as incomplete. | `HOST-004` | [#27](https://github.com/jacklv-coder/OrchardProbe/issues/27) | [#28](https://github.com/jacklv-coder/OrchardProbe/pull/28) |
-| 7 | `HOST-006` | `planned` | Resolve bounded `Info.plist` metadata and exact declared executables for conventional nested app bundles; reject missing, duplicate, escaping, oversized, or malformed declarations visibly. | `HOST-005` | To create during activation | — |
-| 8 | `HOST-007` | `planned` | Produce a deterministic declared-executable inventory for all supported standard bundle types, with explicit coverage and ambiguity semantics. | `HOST-006` | To create during activation | — |
-| 9 | `HOST-008` | `planned` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | To create during activation | — |
-| 10 | `HOST-009` | `planned` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | To create during activation | — |
-| 11 | `HOST-010` | `planned` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | To create during activation | — |
-| 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | — |
-| 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | — |
-| 14 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | — |
-| 15 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | — |
-| 16 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | — |
-| 17 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | — |
-| 18 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | — |
-| 19 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | — |
+| Order | ID | Status on `main` | Deliverable / acceptance summary | Depends on | Issue | Activation PR | Implementation PR |
+|---:|---|---|---|---|---|---|---|
+| 1 | `GOV-001` | `done` | Establish this bilingual ledger, sequential gate, completion definition, and documentation links. | — | [#29](https://github.com/jacklv-coder/OrchardProbe/issues/29) | Bootstrap exception | [#30](https://github.com/jacklv-coder/OrchardProbe/pull/30) |
+| 2 | `HOST-001` | `done` | Reject unsafe or ambiguous IPA archive structure without decompressing entries. | foundation | [#19](https://github.com/jacklv-coder/OrchardProbe/issues/19) | Predates ledger | [#20](https://github.com/jacklv-coder/OrchardProbe/pull/20) |
+| 3 | `HOST-002` | `done` | Read or stream one exact Stored/Deflate entry with size, ratio, CRC, and inventory-consistency bounds. | `HOST-001` | [#21](https://github.com/jacklv-coder/OrchardProbe/issues/21) | Predates ledger | [#22](https://github.com/jacklv-coder/OrchardProbe/pull/22) |
+| 4 | `HOST-003` | `done` | Parse bounded XML/binary root `Info.plist` identity and declared main executable metadata. | `HOST-002` | [#23](https://github.com/jacklv-coder/OrchardProbe/issues/23) | Predates ledger | [#24](https://github.com/jacklv-coder/OrchardProbe/pull/24) |
+| 5 | `HOST-004` | `done` | Stream and structurally inspect the exact root main executable as Mach-O. | `HOST-003` | [#25](https://github.com/jacklv-coder/OrchardProbe/issues/25) | Predates ledger | [#26](https://github.com/jacklv-coder/OrchardProbe/pull/26) |
+| 6 | `HOST-005` | `done` | Inventory bounded conventional framework, dylib, and extension candidates only after Mach-O parsing; report coverage as incomplete. | `HOST-004` | [#27](https://github.com/jacklv-coder/OrchardProbe/issues/27) | Predates ledger | [#28](https://github.com/jacklv-coder/OrchardProbe/pull/28) |
+| 7 | `HOST-006` | `active` | Resolve bounded `Info.plist` metadata and exact declared executables for conventional nested bundles; reject missing, duplicate, escaping, oversized, or malformed declarations visibly. | `HOST-005` | [#31](https://github.com/jacklv-coder/OrchardProbe/issues/31) | Pending activation PR | — |
+| 8 | `HOST-007` | `planned` | Produce a deterministic declared-executable inventory for all supported standard bundle types, with explicit coverage and ambiguity semantics. | `HOST-006` | To create during activation | To record during activation | — |
+| 9 | `HOST-008` | `planned` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | To create during activation | To record during activation | — |
+| 10 | `HOST-009` | `planned` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | To create during activation | To record during activation | — |
+| 11 | `HOST-010` | `planned` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | To create during activation | To record during activation | — |
+| 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | To record during activation | — |
+| 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
+| 14 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
+| 15 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
+| 16 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | To record during activation | — |
+| 17 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | To record during activation | — |
+| 18 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | To record during activation | — |
+| 19 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | To record during activation | — |
 
 ## What this plan does not claim
 
