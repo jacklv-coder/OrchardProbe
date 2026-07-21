@@ -5,11 +5,23 @@
 [English](README.md)
 
 > [!IMPORTANT]
-> **规划阶段 / Pre-alpha：** OrchardProbe 目前只是工作名，工具尚未实现。本仓库当前只有项目规划和基础治理政策，不包含可用的导出工具、已验证的设备支持矩阵、正式版本或安装说明。
+> **Pre-alpha：** OrchardProbe 目前只是工作名。仓库现已包含无需设备的 Rust Host 骨架、项目规划和基础治理政策，但仍没有设备后端、可用的导出工具、已验证的设备支持矩阵、正式版本或安装说明。
 
 OrchardProbe 希望让经过授权的 iOS 二进制研究更透明、更可复现。计划中的工作流会探测设备能力、选择边界明确的导出后端、分别验证每个相关 Mach-O，并在机器可读的 manifest 中记录成功、失败和跳过的项目。
 
 项目不会承诺支持所有 iOS 版本、设备、越狱环境或 App。首个可用里程碑会刻意收窄范围：先支持 Apple Silicon macOS，并只支持一种经过明确记录和真机验证的设备环境，再逐步扩展兼容性。
+
+## 当前开发快照
+
+当前代码刻意只实现 Host 端基础能力：报告本机 pre-alpha 状态、输出确定性的合成 manifest，以及检查 manifest 的 Schema 与路径安全约束。
+
+```sh
+cargo run --locked -p orchardprobe-cli -- doctor --json
+cargo run --locked -p orchardprobe-cli -- demo --json
+cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
+```
+
+这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
 
 ## 仅限授权用途
 
@@ -59,20 +71,26 @@ OrchardProbe 不会提供或帮助实现：
 
 增加上述能力的请求或贡献均不在项目范围内。
 
-## 计划中的 CLI
+## 当前与计划中的 CLI
 
-以下命令面只是设计草案，并非当前可用接口：
+当前可以从源码运行的 Host-only 命令是：
 
 ```text
 oprobe doctor [--json]
+oprobe demo [--json]
+oprobe verify <manifest.json> [--json]
+```
+
+以下设备与产物命令仍只是未来设计占位，目前尚未实现：
+
+```text
 oprobe devices
 oprobe apps
 oprobe export <bundle-id> --output <path>
 oprobe verify <ipa-or-app> [--json]
-oprobe demo
 ```
 
-目前有意不提供安装命令。只有在可复现的 alpha 版本发布后，项目才会添加安装文档。
+目前有意不提供 Release 安装命令。上面的 Cargo 命令只面向贡献者；只有在可复现的 alpha 版本发布后，项目才会添加正式安装文档。
 
 ## 架构概览
 
