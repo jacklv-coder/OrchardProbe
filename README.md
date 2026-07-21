@@ -22,7 +22,7 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 ```
 
-These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. `inspect` accepts one regular Mach-O file and reads only bounded container, slice, and load-command metadata; see [its exact contract](docs/development/macho-inspect.md). Capability, structured-error, and export-manifest values now have [versioned, bounded pre-v1 contracts](docs/development/schemas.md), but no device backend implements them yet. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
+These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. `inspect` accepts one regular Mach-O file and reads only bounded container, slice, and load-command metadata; see [its exact contract](docs/development/macho-inspect.md). Capability, structured-error, and export-manifest values now have [versioned, bounded pre-v1 contracts](docs/development/schemas.md), and a separate [bounded host/helper protocol RFC](docs/architecture/RFC-0002-bounded-host-helper-protocol.md) specifies the design gate for any future transport. Both are device-free contracts; no device backend implements them yet. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
 ## Authorized use only
 
@@ -34,6 +34,7 @@ Before participating, read:
 - [Acceptable Use Policy](ACCEPTABLE_USE.md)
 - [Security Policy](SECURITY.md)
 - [Scope and threat model](docs/architecture/RFC-0001-scope-and-threat-model.md)
+- [Bounded host/helper protocol](docs/architecture/RFC-0002-bounded-host-helper-protocol.md)
 - [Compatibility evidence policy](docs/compatibility/README.md)
 
 ## Project vision

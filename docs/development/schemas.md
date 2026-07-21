@@ -40,6 +40,13 @@ executed. Unknown required behavior is never enabled: it fails closed with a
 `required_capability_missing` error carrying only the bounded public capability
 ID.
 
+[RFC-0002](../architecture/RFC-0002-bounded-host-helper-protocol.md) defines how
+a future authenticated, length-prefixed session would compose these capability
+and error payloads with state, request, target, transcript, and stream binding.
+It is a specification and test gate, not an implemented parser, transport,
+helper, or device backend. Future frame and operation schemas must be added as
+new immutable contracts rather than inferred from the prose RFC.
+
 ## Closed and bounded by default
 
 Every object has `additionalProperties: false`. Arrays and strings have schema
