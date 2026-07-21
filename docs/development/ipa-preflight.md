@@ -7,7 +7,7 @@ untrusted IPA archive and an opt-in bounded read of one validated entry.
 > [!IMPORTANT]
 > This is a library foundation, not a user-facing decrypt feature. No current
 > CLI command accepts an IPA. The module does not connect to a device,
-> extract entries to disk, parse plist app identity, inspect embedded Mach-O
+> extract entries to disk, inspect embedded Mach-O
 > payloads, decrypt code, reconstruct files, or create an output IPA. The
 > single-entry API can decompress only one explicitly selected entry into a
 > bounded in-memory buffer after the full archive preflight succeeds.
@@ -134,7 +134,7 @@ Run the focused tests with:
 cargo test -p orchardprobe-core ipa::tests --locked
 ```
 
-The next safe implementation step is bounded `Info.plist` parsing and executable
-inventory over this single-entry primitive. It must be designed separately;
-preflight and bounded byte reads do not make plist parsing, full extraction, or
-Mach-O payload interpretation safe by implication.
+Bounded root [`Info.plist` metadata parsing](ipa-info-plist.md) is now implemented
+as a separate layer over this primitive. Preflight and bounded byte reads do not
+make plist parsing, full extraction, or Mach-O payload interpretation safe by
+implication; each later layer retains its own limits and typed failures.

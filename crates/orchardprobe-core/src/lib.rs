@@ -1,10 +1,11 @@
-//! Shared, device-independent report types for OrchardProbe.
+//! Shared, device-independent parsing and report types for OrchardProbe.
 //!
 //! This crate intentionally contains no device access or DRM operations. It
 //! models auditable evidence and validates the untrusted paths that may appear
 //! in an export manifest.
 
 pub mod ipa;
+pub mod ipa_app;
 pub mod macho;
 pub mod wire;
 

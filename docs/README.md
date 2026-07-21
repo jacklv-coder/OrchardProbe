@@ -29,6 +29,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Rust workspace guide](development/getting-started.md)
 - [Mach-O inspect contract](development/macho-inspect.md)
 - [Bounded IPA preflight and entry read](development/ipa-preflight.md)
+- [Bounded IPA Info.plist metadata](development/ipa-info-plist.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)
