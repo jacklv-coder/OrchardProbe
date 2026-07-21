@@ -123,7 +123,9 @@ cargo test -p orchardprobe-core ipa::tests --locked
 cargo test -p orchardprobe-core ipa_code::tests --locked
 ```
 
-The next catalog step will resolve and classify framework, dylib, and extension
-candidates deterministically. A filename suffix or bundle convention is only a
+The separate [deterministic code candidate inventory](ipa-code-inventory.md)
+now resolves conventional framework, dylib, and extension paths through this
+streaming boundary. A filename suffix or bundle convention remains only a
 candidate signal; an entry becomes a code object only after bounded Mach-O
-parsing. That follow-up can reuse the streaming boundary introduced here.
+parsing. Nested plist resolution for nonstandard executable names remains a
+follow-up.

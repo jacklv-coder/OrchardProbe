@@ -12,11 +12,12 @@ command simple and the security-sensitive internals auditable.
 > The end-to-end device workflow is a design contract, not current behavior.
 > The pre-alpha repository implements the Rust CLI foundation, bounded Mach-O
 > parsing, IPA archive metadata preflight and bounded memory/streaming entry
-> reads, bounded root app identity parsing from XML/binary plist events, and
-> structural Mach-O inspection of the declared root executable, plus versioned
-> schemas, synthetic DemoLab fixtures, and a bounded protocol specification. It
-> has no device transport, helper, decryption backend, reconstructor, or IPA
-> packager today.
+> reads, bounded root app identity parsing from XML/binary plist events,
+> structural Mach-O inspection of the declared root executable, and an
+> explicitly incomplete conventional framework/dylib/extension candidate
+> inventory, plus versioned schemas, synthetic DemoLab fixtures, and a bounded
+> protocol specification. It has no device transport, helper, decryption
+> backend, reconstructor, or IPA packager today.
 
 Read the [user guide](user-guide.md) first for the intended command and output.
 Read the [scope and threat model](architecture/RFC-0001-scope-and-threat-model.md)
@@ -147,8 +148,14 @@ now binds the root app metadata inventory to a second complete IPA inventory,
 streams the exact declared main executable into an automatically cleaned
 anonymous temporary file, and invokes that parser. This is structural metadata
 for the root executable only; see the
-[IPA main-executable contract](development/ipa-main-executable.md). Framework,
-dylib, and extension candidate discovery is still unimplemented.
+[IPA main-executable contract](development/ipa-main-executable.md).
+
+[`crates/orchardprobe-core/src/ipa_catalog.rs`](../crates/orchardprobe-core/src/ipa_catalog.rs)
+adds deterministic conventional framework, dylib, extension, and nested
+framework candidates. Each entry must pass the same parser before it is called
+code; false positives and malformed candidates remain visible. Its coverage is
+explicitly incomplete until nested bundle plists resolve nonstandard executable
+names. See the [code candidate inventory contract](development/ipa-code-inventory.md).
 
 Inventory order is stable and each binary has an independent outcome. A ZIP is
 not considered complete merely because the main executable was processed.
@@ -288,6 +295,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `crates/orchardprobe-core/src/ipa.rs` | Read-only ZIP/ZIP64 preflight, deterministic IPA inventory, and bounded CRC-checked memory/caller-sink entry reads. |
 | `crates/orchardprobe-core/src/ipa_app.rs` | Bounded XML/binary root `Info.plist` event parsing, app identity validation, and exact main-executable entry resolution. |
 | `crates/orchardprobe-core/src/ipa_code.rs` | Complete-inventory-bound root executable streaming and bounded Mach-O metadata inspection through an anonymous temporary file. |
+| `crates/orchardprobe-core/src/ipa_catalog.rs` | Deterministic, bounded conventional code candidate discovery, Mach-O confirmation, and visible rejection reasons. |
 | `crates/orchardprobe-core/src/macho.rs` | Bounded thin/FAT Mach-O metadata parser. |
 | `crates/orchardprobe-core/src/lib.rs` | Manifest model, invariants, device-free demo, and local doctor report. |
 | `crates/orchardprobe-core/src/wire.rs` | Versioned capability and structured-error wire contracts. |
@@ -296,8 +304,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `docs/architecture/` | Security and protocol design gates. |
 | `docs/compatibility/` | Evidence vocabulary and support-record workflow. |
 
-Future transport, catalog, backend, reconstruction, archive materialization,
-and report modules
+Future transport, backend, reconstruction, archive materialization, and report modules
 must be added only after their corresponding design and evidence gates. Their
 names in diagrams are responsibilities, not existing crates.
 
@@ -310,7 +317,8 @@ names in diagrams are responsibilities, not existing crates.
 | Bounded read-only IPA archive preflight | Implemented as a library; no CLI integration |
 | Bounded Stored/Deflate IPA entry read | Implemented for memory and caller sinks as a library; no CLI integration |
 | Bounded root Info.plist identity parsing | Implemented for XML/binary events as a library; no full code inventory or CLI integration |
-| Root IPA main-executable Mach-O metadata | Implemented as a library; no framework/dylib/extension inventory or CLI integration |
+| Root IPA main-executable Mach-O metadata | Implemented as a library; no CLI integration |
+| Conventional framework/dylib/extension code candidates | Implemented as an explicitly incomplete library inventory; nested plist resolution and CLI integration remain |
 | FAT/FAT64 adversarial parsing coverage | Implemented |
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
@@ -339,17 +347,20 @@ For a first code-reading pass:
 5. Read the [IPA main-executable contract](development/ipa-main-executable.md),
    then follow `copy_ipa_entry_bounded` and `inspect_ipa_main_executable` through
    their CRC, sink-failure, inventory-drift, and Mach-O tests.
-6. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
+6. Read the [code candidate inventory contract](development/ipa-code-inventory.md),
+   then follow `discover_candidates`, `validate_candidate_set`,
+   `inspect_ipa_code_inventory`, and their role/rejection tests.
+7. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
    `open_regular_file` to see CLI error and host file-safety conventions.
-7. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
+8. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
    `parse_fat`, then `parse_slice`, range helpers, and adversarial tests.
-8. Read `crates/orchardprobe-core/src/lib.rs` beside
+9. Read `crates/orchardprobe-core/src/lib.rs` beside
    `schemas/v0/export-manifest-v2.schema.json` to compare Rust invariants with
    the wire contract.
-9. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
-10. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
+10. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
+11. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
    project-generated binaries.
-10. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
+12. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
    record to understand why implementation remains blocked on evidence.
 
 When adding a module, preserve the invariant that untrusted values are evidence

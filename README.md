@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, inventory conventional framework/dylib/extension candidates only after Mach-O parsing, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -36,8 +36,10 @@ or binary plist events. The next
 [bounded main-executable stage](docs/development/ipa-main-executable.md) streams
 that exact entry to an anonymous temporary file and applies the existing
 metadata-only Mach-O parser. It does not prove an installed-build match,
-decryption, or plaintext, and it does not yet enumerate framework, dylib, or
-extension code.
+decryption, or plaintext. A separate
+[deterministic code candidate inventory](docs/development/ipa-code-inventory.md)
+now covers conventional framework, dylib, and extension paths, while explicitly
+remaining incomplete for nonstandard nested bundle executable names.
 
 ## Documentation
 
