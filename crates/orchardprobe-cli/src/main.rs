@@ -308,11 +308,55 @@ fn regular_file_metadata(path: &Path) -> Result<fs::Metadata, String> {
 #[cfg(unix)]
 fn open_regular_file(path: &Path) -> Result<File, String> {
     let expected = regular_file_metadata(path)?;
+    #[cfg(test)]
+    run_after_preopen_metadata_hook();
+    open_regular_file_matching(path, &expected)
+}
+
+#[cfg(all(test, unix))]
+std::thread_local! {
+    static AFTER_PREOPEN_METADATA_HOOK: std::cell::RefCell<Option<Box<dyn FnOnce()>>> =
+        std::cell::RefCell::new(None);
+}
+
+#[cfg(all(test, unix))]
+fn install_after_preopen_metadata_hook(hook: impl FnOnce() + 'static) {
+    AFTER_PREOPEN_METADATA_HOOK.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        assert!(slot.is_none(), "secure-open test hook is already installed");
+        *slot = Some(Box::new(hook));
+    });
+}
+
+#[cfg(all(test, unix))]
+fn run_after_preopen_metadata_hook() {
+    let hook = AFTER_PREOPEN_METADATA_HOOK.with(|slot| slot.borrow_mut().take());
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
+#[cfg(unix)]
+fn open_regular_file_matching(path: &Path, expected: &fs::Metadata) -> Result<File, String> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
-        .map_err(|error| format!("could not inspect '{}': {error}", path.display()))?;
+        .map_err(|error| {
+            let raw_error = error.raw_os_error();
+            // FreeBSD and DragonFly report EMLINK when O_NOFOLLOW rejects the
+            // final path component; Linux and macOS report ELOOP.
+            let no_follow_rejected_symlink =
+                raw_error == Some(libc::ELOOP) || raw_error == Some(libc::EMLINK);
+            if no_follow_rejected_symlink {
+                format!(
+                    "refusing to inspect '{}': symbolic link encountered while opening",
+                    path.display()
+                )
+            } else {
+                format!("could not inspect '{}': {error}", path.display())
+            }
+        })?;
     let opened = file
         .metadata()
         .map_err(|error| format!("could not inspect '{}': {error}", path.display()))?;
@@ -479,5 +523,260 @@ fn json_scalar(value: &impl Serialize) -> Result<String, String> {
     {
         serde_json::Value::String(value) => Ok(value),
         value => Ok(value.to_string()),
+    }
+}
+
+#[cfg(all(test, unix))]
+mod secure_open_tests {
+    use std::os::unix::fs::{MetadataExt as _, symlink};
+    use std::process::Command;
+    use std::sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    };
+    use std::thread;
+    use std::time::Duration;
+
+    use super::*;
+
+    static NEXT_SANDBOX_ID: AtomicU64 = AtomicU64::new(0);
+
+    struct TestSandbox(PathBuf);
+
+    impl TestSandbox {
+        fn create(label: &str) -> Self {
+            let sequence = NEXT_SANDBOX_ID.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "orchardprobe-secure-open-{}-{sequence}-{label}",
+                std::process::id()
+            ));
+            fs::create_dir(&path).expect("create secure-open test directory");
+            Self(path)
+        }
+
+        fn path(&self, name: &str) -> PathBuf {
+            self.0.join(name)
+        }
+
+        fn write(&self, name: &str, contents: impl AsRef<[u8]>) -> PathBuf {
+            let path = self.path(name);
+            fs::write(&path, contents).expect("write secure-open test file");
+            path
+        }
+    }
+
+    impl Drop for TestSandbox {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn thin_macho64(cpu_subtype: u32) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(32);
+        bytes.extend_from_slice(&0xfeed_facfu32.to_le_bytes());
+        bytes.extend_from_slice(&0x0100_000cu32.to_le_bytes());
+        bytes.extend_from_slice(&cpu_subtype.to_le_bytes());
+        bytes.extend_from_slice(&2_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes
+    }
+
+    fn create_fifo(path: &Path) {
+        let output = Command::new("mkfifo")
+            .arg(path)
+            .output()
+            .expect("run mkfifo for secure-open test");
+        assert!(
+            output.status.success(),
+            "mkfifo failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[test]
+    fn rejects_regular_path_atomically_replaced_by_symlink_before_open() {
+        let sandbox = TestSandbox::create("symlink-swap");
+        let victim = sandbox.write("victim.macho", thin_macho64(0));
+        let attacker = sandbox.write("attacker.macho", thin_macho64(2));
+        let staged_link = sandbox.path("staged-link.macho");
+        symlink(&attacker, &staged_link).expect("create staged symbolic link");
+        let hook_victim = victim.clone();
+        install_after_preopen_metadata_hook(move || {
+            fs::rename(&staged_link, &hook_victim)
+                .expect("atomically replace path with symbolic link");
+        });
+
+        let error = inspect(&victim, false)
+            .expect_err("O_NOFOLLOW must reject the replacement before parsing");
+
+        assert_eq!(
+            error,
+            format!(
+                "refusing to inspect '{}': symbolic link encountered while opening",
+                victim.display()
+            )
+        );
+        assert!(!error.contains("invalid Mach-O"));
+    }
+
+    #[test]
+    fn rejects_regular_path_atomically_replaced_by_fifo_without_hanging() {
+        let sandbox = TestSandbox::create("fifo-swap");
+        let victim = sandbox.write("victim.macho", thin_macho64(0));
+        let staged_fifo = sandbox.path("staged.fifo");
+        create_fifo(&staged_fifo);
+
+        let worker_path = victim.clone();
+        let hook_victim = victim.clone();
+        let (sender, receiver) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            install_after_preopen_metadata_hook(move || {
+                fs::rename(&staged_fifo, &hook_victim).expect("atomically replace path with FIFO");
+            });
+            let result = inspect(&worker_path, false);
+            let _ = sender.send(result);
+        });
+        let result = match receiver.recv_timeout(Duration::from_secs(5)) {
+            Ok(result) => result,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                worker
+                    .join()
+                    .expect("FIFO inspection worker must report its result");
+                panic!("FIFO inspection worker disconnected without a result");
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // This is a regression watchdog: the production O_NONBLOCK
+                // makes it unreachable in a correct build. A nonblocking
+                // writer wakes a reader already blocked by a flag regression,
+                // but returns immediately when no reader is waiting.
+                let rescue_writer = OpenOptions::new()
+                    .write(true)
+                    .custom_flags(libc::O_NONBLOCK)
+                    .open(&victim)
+                    .map_err(|error| error.raw_os_error());
+                match receiver.recv_timeout(Duration::from_secs(5)) {
+                    Ok(late_result) => {
+                        worker
+                            .join()
+                            .expect("released FIFO inspection worker must not panic");
+                        drop(rescue_writer);
+                        panic!(
+                            "O_NONBLOCK did not keep FIFO inspection within the timeout: {late_result:?}"
+                        );
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => {
+                        worker
+                            .join()
+                            .expect("FIFO inspection worker disconnected after the timeout");
+                        panic!("FIFO inspection worker disconnected without a late result");
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        // Joining could now hang forever if the worker entered
+                        // a blocking open after the rescue attempt. Detaching
+                        // is confined to this already-failing test process and
+                        // keeps the watchdog strictly bounded.
+                        drop(worker);
+                        panic!(
+                            "FIFO inspection remained blocked after bounded recovery; rescue writer result: {rescue_writer:?}"
+                        );
+                    }
+                }
+            }
+        };
+        worker
+            .join()
+            .expect("FIFO inspection worker must not panic");
+        let error = result.expect_err("post-open validation must reject the FIFO");
+
+        assert_eq!(
+            error,
+            format!(
+                "refusing to inspect '{}': file type changed while opening",
+                victim.display()
+            )
+        );
+        assert!(!error.contains("invalid Mach-O"));
+    }
+
+    #[test]
+    fn rejects_atomic_replacement_by_a_different_regular_inode() {
+        let sandbox = TestSandbox::create("regular-swap");
+        let victim = sandbox.write("victim.macho", thin_macho64(0));
+        let replacement = sandbox.write("replacement.macho", thin_macho64(2));
+        let expected = regular_file_metadata(&victim).expect("capture pre-open metadata");
+        let replacement_metadata =
+            regular_file_metadata(&replacement).expect("capture replacement metadata");
+        assert_ne!(
+            (expected.dev(), expected.ino()),
+            (replacement_metadata.dev(), replacement_metadata.ino())
+        );
+        let hook_victim = victim.clone();
+        install_after_preopen_metadata_hook(move || {
+            fs::rename(&replacement, &hook_victim)
+                .expect("atomically replace path with a different regular inode");
+        });
+
+        let error = inspect(&victim, false)
+            .expect_err("identity comparison must reject replacement before parsing");
+
+        assert_eq!(
+            error,
+            format!(
+                "refusing to inspect '{}': file changed while opening",
+                victim.display()
+            )
+        );
+        assert!(!error.contains("invalid Mach-O"));
+    }
+
+    #[test]
+    fn rejects_preexisting_fifo_and_device_before_open() {
+        let sandbox = TestSandbox::create("special-files");
+        let fifo = sandbox.path("existing.fifo");
+        create_fifo(&fifo);
+
+        let fifo_error = inspect(&fifo, false).expect_err("pre-open check must reject FIFO");
+        assert_eq!(
+            fifo_error,
+            format!(
+                "refusing to inspect '{}': expected a regular file",
+                fifo.display()
+            )
+        );
+
+        let device = Path::new("/dev/null");
+        let device_error = inspect(device, false)
+            .expect_err("pre-open check must reject character device before parsing");
+        assert_eq!(
+            device_error,
+            "refusing to inspect '/dev/null': expected a regular file"
+        );
+    }
+
+    #[test]
+    fn rejects_explicit_preopen_and_fstat_identity_mismatch() {
+        let sandbox = TestSandbox::create("identity-mismatch");
+        let expected_path = sandbox.write("expected.macho", thin_macho64(0));
+        let opened_path = sandbox.write("opened.macho", thin_macho64(2));
+        let expected =
+            regular_file_metadata(&expected_path).expect("capture expected file metadata");
+        let opened = regular_file_metadata(&opened_path).expect("capture opened file metadata");
+        assert_ne!(
+            (expected.dev(), expected.ino()),
+            (opened.dev(), opened.ino())
+        );
+
+        let error = open_regular_file_matching(&opened_path, &expected)
+            .expect_err("fstat identity mismatch must be terminal");
+        assert_eq!(
+            error,
+            format!(
+                "refusing to inspect '{}': file changed while opening",
+                opened_path.display()
+            )
+        );
     }
 }
