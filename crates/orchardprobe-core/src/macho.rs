@@ -1076,6 +1076,70 @@ mod tests {
         bytes
     }
 
+    #[derive(Clone, Copy)]
+    struct FatFixtureSlice<'a> {
+        offset: u64,
+        alignment_power: u32,
+        cpu_type: u32,
+        cpu_subtype: u32,
+        data: &'a [u8],
+    }
+
+    fn fat_with_slices(
+        endianness: Endianness,
+        is_64_bit: bool,
+        slices: &[FatFixtureSlice<'_>],
+    ) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&fat_magic(endianness, is_64_bit));
+        push_u32(
+            &mut bytes,
+            endianness,
+            u32::try_from(slices.len()).expect("synthetic slice count fits in u32"),
+        );
+
+        for slice in slices {
+            push_u32(&mut bytes, endianness, slice.cpu_type);
+            push_u32(&mut bytes, endianness, slice.cpu_subtype);
+            if is_64_bit {
+                push_u64(&mut bytes, endianness, slice.offset);
+                push_u64(
+                    &mut bytes,
+                    endianness,
+                    u64::try_from(slice.data.len()).expect("synthetic slice size fits in u64"),
+                );
+                push_u32(&mut bytes, endianness, slice.alignment_power);
+                push_u32(&mut bytes, endianness, 0);
+            } else {
+                push_u32(
+                    &mut bytes,
+                    endianness,
+                    u32::try_from(slice.offset).expect("synthetic FAT32 offset fits in u32"),
+                );
+                push_u32(
+                    &mut bytes,
+                    endianness,
+                    u32::try_from(slice.data.len())
+                        .expect("synthetic FAT32 slice size fits in u32"),
+                );
+                push_u32(&mut bytes, endianness, slice.alignment_power);
+            }
+        }
+
+        for slice in slices {
+            let start = usize::try_from(slice.offset).expect("synthetic offset fits in usize");
+            let end = start
+                .checked_add(slice.data.len())
+                .expect("synthetic slice end does not overflow usize");
+            if bytes.len() < end {
+                bytes.resize(end, 0);
+            }
+            bytes[start..end].copy_from_slice(slice.data);
+        }
+
+        bytes
+    }
+
     fn fat(
         endianness: Endianness,
         is_64_bit: bool,
@@ -1083,25 +1147,17 @@ mod tests {
         cpu_type: u32,
         cpu_subtype: u32,
     ) -> Vec<u8> {
-        let offset = 256_u64;
-        let mut bytes = Vec::new();
-        bytes.extend_from_slice(&fat_magic(endianness, is_64_bit));
-        push_u32(&mut bytes, endianness, 1);
-        push_u32(&mut bytes, endianness, cpu_type);
-        push_u32(&mut bytes, endianness, cpu_subtype);
-        if is_64_bit {
-            push_u64(&mut bytes, endianness, offset);
-            push_u64(&mut bytes, endianness, slice.len() as u64);
-            push_u32(&mut bytes, endianness, 0);
-            push_u32(&mut bytes, endianness, 0);
-        } else {
-            push_u32(&mut bytes, endianness, offset as u32);
-            push_u32(&mut bytes, endianness, slice.len() as u32);
-            push_u32(&mut bytes, endianness, 0);
-        }
-        bytes.resize(offset as usize, 0);
-        bytes.extend_from_slice(slice);
-        bytes
+        fat_with_slices(
+            endianness,
+            is_64_bit,
+            &[FatFixtureSlice {
+                offset: 256,
+                alignment_power: 0,
+                cpu_type,
+                cpu_subtype,
+                data: slice,
+            }],
+        )
     }
 
     fn parse(bytes: Vec<u8>) -> Result<MachOReport, MachOParseError> {
@@ -1159,6 +1215,190 @@ mod tests {
             assert_eq!(report.slices[0].offset, 256);
             assert_eq!(report.slices[0].size, slice.len() as u64);
             assert_eq!(report.slices[0].architecture, "arm64");
+        }
+    }
+
+    #[test]
+    fn parses_multiple_fat_slices_in_table_order() {
+        let arm64 = thin(Endianness::Little, true, CPU_TYPE_ARM64, 0, &[]);
+        let x86 = thin(Endianness::Big, false, CPU_TYPE_X86, 3, &[]);
+        let slices = [
+            FatFixtureSlice {
+                offset: 512,
+                alignment_power: 8,
+                cpu_type: CPU_TYPE_ARM64,
+                cpu_subtype: 0,
+                data: &arm64,
+            },
+            FatFixtureSlice {
+                offset: 256,
+                alignment_power: 8,
+                cpu_type: CPU_TYPE_X86,
+                cpu_subtype: 3,
+                data: &x86,
+            },
+        ];
+
+        for (endianness, is_64_bit, expected_container) in [
+            (Endianness::Little, false, MachOContainer::Fat32),
+            (Endianness::Big, false, MachOContainer::Fat32),
+            (Endianness::Little, true, MachOContainer::Fat64),
+            (Endianness::Big, true, MachOContainer::Fat64),
+        ] {
+            let report = parse(fat_with_slices(endianness, is_64_bit, &slices))
+                .expect("valid multi-slice universal Mach-O parses");
+
+            assert_eq!(report.container, expected_container);
+            assert_eq!(report.container_endianness, endianness);
+            assert_eq!(report.slices.len(), 2);
+            assert_eq!(report.slices[0].offset, 512);
+            assert_eq!(report.slices[0].size, arm64.len() as u64);
+            assert_eq!(report.slices[0].architecture, "arm64");
+            assert!(report.slices[0].is_64_bit);
+            assert_eq!(report.slices[0].endianness, Endianness::Little);
+            assert_eq!(
+                report.slices[0].plaintext_status,
+                PlaintextStatus::NotProven
+            );
+            assert_eq!(report.slices[1].offset, 256);
+            assert_eq!(report.slices[1].size, x86.len() as u64);
+            assert_eq!(report.slices[1].architecture, "i386");
+            assert!(!report.slices[1].is_64_bit);
+            assert_eq!(report.slices[1].endianness, Endianness::Big);
+            assert_eq!(
+                report.slices[1].plaintext_status,
+                PlaintextStatus::NotProven
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_zero_slice_fat_variants() {
+        for (endianness, is_64_bit) in [
+            (Endianness::Little, false),
+            (Endianness::Big, false),
+            (Endianness::Little, true),
+            (Endianness::Big, true),
+        ] {
+            assert!(matches!(
+                parse(fat_with_slices(endianness, is_64_bit, &[])),
+                Err(MachOParseError::NoFatSlices)
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_fat_alignment_exponent_and_offset() {
+        let slice = thin(Endianness::Little, true, CPU_TYPE_ARM64, 0, &[]);
+        for (endianness, is_64_bit) in [
+            (Endianness::Little, false),
+            (Endianness::Big, false),
+            (Endianness::Little, true),
+            (Endianness::Big, true),
+        ] {
+            let misaligned = fat_with_slices(
+                endianness,
+                is_64_bit,
+                &[FatFixtureSlice {
+                    offset: 258,
+                    alignment_power: 2,
+                    cpu_type: CPU_TYPE_ARM64,
+                    cpu_subtype: 0,
+                    data: &slice,
+                }],
+            );
+            assert!(matches!(
+                parse(misaligned),
+                Err(MachOParseError::InvalidFatAlignment {
+                    slice_index: 0,
+                    offset: 258,
+                    alignment_power: 2,
+                })
+            ));
+
+            let exponent_too_large = fat_with_slices(
+                endianness,
+                is_64_bit,
+                &[FatFixtureSlice {
+                    offset: 256,
+                    alignment_power: 64,
+                    cpu_type: CPU_TYPE_ARM64,
+                    cpu_subtype: 0,
+                    data: &slice,
+                }],
+            );
+            assert!(matches!(
+                parse(exponent_too_large),
+                Err(MachOParseError::InvalidFatAlignment {
+                    slice_index: 0,
+                    offset: 256,
+                    alignment_power: 64,
+                })
+            ));
+        }
+
+        let largest_shiftable_exponent = fat_with_slices(
+            Endianness::Big,
+            true,
+            &[FatFixtureSlice {
+                offset: 256,
+                alignment_power: 63,
+                cpu_type: CPU_TYPE_ARM64,
+                cpu_subtype: 0,
+                data: &slice,
+            }],
+        );
+        assert!(matches!(
+            parse(largest_shiftable_exponent),
+            Err(MachOParseError::InvalidFatAlignment {
+                slice_index: 0,
+                offset: 256,
+                alignment_power: 63,
+            })
+        ));
+    }
+
+    #[test]
+    fn rejects_fat_cpu_type_and_subtype_mismatches() {
+        let x86 = thin(Endianness::Little, false, CPU_TYPE_X86, 3, &[]);
+        let arm64 = thin(Endianness::Big, true, CPU_TYPE_ARM64, 0, &[]);
+        for (endianness, is_64_bit) in [
+            (Endianness::Little, false),
+            (Endianness::Big, false),
+            (Endianness::Little, true),
+            (Endianness::Big, true),
+        ] {
+            let type_mismatch = fat_with_slices(
+                endianness,
+                is_64_bit,
+                &[FatFixtureSlice {
+                    offset: 256,
+                    alignment_power: 0,
+                    cpu_type: CPU_TYPE_ARM64,
+                    cpu_subtype: 0,
+                    data: &x86,
+                }],
+            );
+            assert!(matches!(
+                parse(type_mismatch),
+                Err(MachOParseError::FatCpuMismatch { slice_index: 0 })
+            ));
+
+            let subtype_mismatch = fat_with_slices(
+                endianness,
+                is_64_bit,
+                &[FatFixtureSlice {
+                    offset: 256,
+                    alignment_power: 0,
+                    cpu_type: CPU_TYPE_ARM64,
+                    cpu_subtype: 2,
+                    data: &arm64,
+                }],
+            );
+            assert!(matches!(
+                parse(subtype_mismatch),
+                Err(MachOParseError::FatCpuMismatch { slice_index: 0 })
+            ));
         }
     }
 
