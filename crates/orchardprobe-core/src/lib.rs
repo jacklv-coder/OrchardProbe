@@ -6,6 +6,7 @@
 
 pub mod ipa;
 pub mod ipa_app;
+pub mod ipa_bundle;
 pub mod ipa_catalog;
 pub mod ipa_code;
 pub mod macho;

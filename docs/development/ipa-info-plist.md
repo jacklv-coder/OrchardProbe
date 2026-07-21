@@ -137,6 +137,8 @@ it to an automatically cleaned anonymous temporary file and applies the
 existing Mach-O parser. The following ingest step is a deterministic bundle
 [code candidate inventory](ipa-code-inventory.md) for conventional framework,
 dylib, and extension paths. Filename extensions and plist metadata remain
-candidate signals, not proof that an entry is Mach-O. Reusing this bounded
-parser for nested bundle plists is the next step needed to resolve nonstandard
-declared executable names.
+candidate signals, not proof that an entry is Mach-O. The separate
+[bounded nested-bundle metadata layer](ipa-nested-bundles.md) now reuses this
+parser for conventional framework and extension plists and resolves their exact
+declared executable entries. It still does not promote those entries to Mach-O
+code or make the convention-based code inventory complete.
