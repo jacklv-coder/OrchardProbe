@@ -25,7 +25,7 @@ The repository contains a buildable Rust host workspace and the first-party Demo
 
 Search existing issues and the project plan first. Explain the problem, the desired outcome, and why it belongs within OrchardProbe's authorized-use-only scope.
 
-For compatibility or diagnostic reports, use the repository's Compatibility intake Issue Form and follow the [compatibility evidence policy](docs/compatibility/README.md). Community reports remain unverified until maintainers reproduce them; a single report never creates an official support claim. The [sanitized test-record template](docs/compatibility/test-record-template.md) is for that maintainer-run verification. State whether the app is owned by you or covered by explicit testing authorization. Never publish an app name when client confidentiality or third-party rights prohibit it.
+For compatibility or diagnostic reports, use the repository's Compatibility intake Issue Form and follow the [compatibility evidence policy](docs/compatibility/README.md). Community reports remain unverified until maintainers reproduce them; a single report never creates an official support claim. The [sanitized test-record template](docs/compatibility/test-record-template.md) is for that maintainer-run verification. State whether the app is owned by you or covered by explicit testing authorization. Never publish a proprietary or third-party app name or bundle identifier.
 
 Do not attach proprietary IPAs, decrypted commercial binaries, store receipts, credentials, tokens, raw device identifiers, crash dumps containing private data, or client-confidential logs. Reduce bugs to a generated fixture whenever possible.
 

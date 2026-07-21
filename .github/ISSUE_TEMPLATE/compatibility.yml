@@ -9,7 +9,7 @@ body:
       value: |
         Compatibility issues are **unverified intake reports**, not support claims. A single user report never creates or upgrades official support, even when the observed behavior is successful.
 
-        Use OrchardProbe's first-party DemoLab fixture whenever possible. Do not name or test a proprietary application here. Do not attach or link to IPAs, binaries, raw logs, credentials, or device identifiers.
+        Use OrchardProbe's first-party DemoLab fixture whenever possible. If it cannot reproduce the observation, you may describe another original, publicly redistributable first-party fixture; that report remains diagnostic and cannot become Verified compatibility. Do not name or test a proprietary application here. Do not attach or link to IPAs, binaries, raw logs, credentials, or device identifiers.
 
   - type: checkboxes
     id: authorization
@@ -18,7 +18,7 @@ body:
       options:
         - label: I own the tested app and device, or I have explicit authorization covering this exact test.
           required: true
-        - label: I used OrchardProbe DemoLab wherever it could reproduce the observation; any exception is explained under limitations.
+        - label: I used OrchardProbe DemoLab wherever it could reproduce the observation; any exception is an original, publicly redistributable first-party fixture explained under limitations.
           required: true
         - label: I understand this report remains unverified until maintainers independently reproduce and sign a test record.
           required: true
@@ -52,7 +52,7 @@ body:
     id: source_revisions
     attributes:
       label: Tool and fixture revisions
-      description: Provide full commit SHAs. DemoLab is the preferred and expected public fixture.
+      description: Provide full commit SHAs. If DemoLab was not used, also provide the public first-party fixture name and revision under limitations.
       placeholder: |
         orchardprobe_commit: 40-character SHA
         demolab_commit: 40-character SHA
@@ -67,7 +67,7 @@ body:
       description: For a host-only claim, enter not exercised. Otherwise provide only these fields; never include a device identifier, address, username, or proprietary app identifier.
       placeholder: |
         not exercised (for host-only claims), or:
-        marketing_model: iPhone model name
+        marketing_model: Apple marketing model, for example iPhone 15 Pro; never a user-assigned device name
         soc_family: public SoC family
         ios_version: major.minor.patch
         ios_build: build number
@@ -102,7 +102,7 @@ body:
     id: binary_evidence
     attributes:
       label: Per-binary unverified evidence
-      description: "One line per DemoLab Mach-O: sanitized initial state, evidence level, and unverified observation. Allowed evidence: metadata, structure, range_hash, known_plaintext. Never use Pass."
+      description: "One line per fixture Mach-O: relative path, sanitized initial state, evidence level, and unverified outcome. Allowed: metadata, structure, range_hash, known_plaintext. Never use Pass."
       placeholder: |
         DemoLab.app/DemoLab | initial_state: sanitized evidence or unprotected | evidence: known_plaintext | unverified_outcome: expected behavior observed
         DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework | initial_state: unprotected | evidence: structure | unverified_outcome: inconclusive
@@ -114,7 +114,7 @@ body:
     id: plaintext_oracles
     attributes:
       label: Known-plaintext oracle summary
-      description: Record only the DemoLab-relative path, oracle and observed SHA-256, and oracle provenance from the recorded commit. Use unavailable when absent; never paste bytes.
+      description: Record only the fixture-relative path, oracle and observed SHA-256, and oracle provenance from the recorded revision. Use unavailable when absent; never paste bytes.
       placeholder: |
         DemoLab.app/DemoLab | oracle_sha256: ... | observed_sha256: ... | source: build from recorded DemoLab commit
     validations:
@@ -124,7 +124,7 @@ body:
     id: reproduction
     attributes:
       label: Sanitized reproduction steps
-      description: Provide the smallest deterministic reproduction using DemoLab-relative paths and placeholders. Summarize observations; do not paste raw logs.
+      description: Provide the smallest deterministic reproduction using fixture-relative paths and placeholders. Summarize observations; do not paste raw logs.
       placeholder: |
         1. Build DemoLab at the recorded commit.
         2. Establish the listed transport capability.
@@ -138,7 +138,7 @@ body:
     id: limitations
     attributes:
       label: Limitations and incomplete coverage
-      description: Identify skipped DemoLab binaries, intermittent behavior, missing oracles, and capability constraints using sanitized summaries only.
+      description: Identify the public fixture when not using DemoLab, skipped binaries, intermittent behavior, missing oracles, and capability constraints using sanitized summaries only.
       placeholder: none, or a concise sanitized explanation
     validations:
       required: true
