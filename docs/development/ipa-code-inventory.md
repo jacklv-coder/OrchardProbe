@@ -7,8 +7,9 @@ and classifies it as code only after the bounded Mach-O parser succeeds.
 
 > [!IMPORTANT]
 > The result explicitly reports `coverage: conventional_candidates`. It is not
-> a complete declared-bundle inventory: a framework or extension whose
-> `CFBundleExecutable` differs from its bundle-directory stem is not yet found.
+> a complete declared-bundle code inventory: the separate nested metadata layer
+> can resolve a framework or extension whose `CFBundleExecutable` differs from
+> its directory stem, but this inventory does not consume that result yet.
 > No current CLI accepts an IPA. This layer does not connect to a device, match
 > an installed build, decrypt or rewrite bytes, validate signatures, package an
 > IPA, or prove plaintext.
@@ -66,8 +67,10 @@ strings. They never create host paths.
 
 These conventions are discovery hints, not evidence. `Info.plist`, resources,
 arbitrarily named bundle files, and nonstandard executable names are not probed
-by guessing. The follow-up nested-plist layer will resolve declared executable
-names without widening this rule.
+by guessing. The separate
+[nested-bundle metadata layer](ipa-nested-bundles.md) now resolves declared
+executable entries without widening this rule, but integration belongs to the
+next ledger step.
 
 ## Resource and consistency limits
 
@@ -125,7 +128,8 @@ Run the focused tests with:
 cargo test -p orchardprobe-core ipa_catalog::tests --locked
 ```
 
-The next step is bounded nested `Info.plist` parsing for each discovered
-`.framework` and `.appex` bundle root. That will resolve nonstandard declared
-executables, reject conflicting declarations, and allow the coverage enum to
-advance only after tests demonstrate complete declared-bundle enumeration.
+Bounded nested `Info.plist` parsing is now implemented separately for in-scope
+`.framework` and direct `PlugIns/*.appex` bundle roots. The next step is to
+merge exact declared executable entries with conventional candidates, define
+conflict behavior, apply Mach-O parsing, and advance the coverage enum only
+after tests demonstrate the resulting declared-bundle code enumeration.

@@ -11,7 +11,7 @@
 > [串行执行计划](docs/zh-CN/execution-plan.md)为准。任何只存在于聊天或未合并
 > 分支中的计划都不生效。
 
-当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、Stored/Deflate Entry 内存/流式读取、根 App XML/Binary `Info.plist` 事件流身份解析、通过匿名临时文件完成的声明主程序 Mach-O 结构检查，以及只把约定路径作为候选且必须通过 Mach-O 解析的 Framework/dylib/Extension 确定性清单、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范和相应对抗测试已落地并由必需 CI 覆盖。非标准嵌套 Bundle 可执行名的完整清单、设备发现、真机 Helper、transport、导出后端、Archive 物化、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、Stored/Deflate Entry 内存/流式读取、根 App 与约定嵌套 Framework/Extension 的 XML/Binary `Info.plist` 事件流身份和声明可执行 Entry 解析、通过匿名临时文件完成的声明主程序 Mach-O 结构检查，以及只把约定路径作为候选且必须通过 Mach-O 解析的 Framework/dylib/Extension 确定性清单、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范和相应对抗测试已落地并由必需 CI 覆盖。Code 清单尚未消费嵌套 Bundle 的非标准声明可执行名；设备发现、真机 Helper、transport、导出后端、Archive 物化、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 

@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, inventory conventional framework/dylib/extension candidates only after Mach-O parsing, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, resolve exact declared executable metadata for conventional nested frameworks and direct extensions, inventory conventional framework/dylib/extension candidates only after Mach-O parsing, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -39,7 +39,11 @@ metadata-only Mach-O parser. It does not prove an installed-build match,
 decryption, or plaintext. A separate
 [deterministic code candidate inventory](docs/development/ipa-code-inventory.md)
 now covers conventional framework, dylib, and extension paths, while explicitly
-remaining incomplete for nonstandard nested bundle executable names.
+remaining incomplete. A new
+[bounded nested-bundle metadata layer](docs/development/ipa-nested-bundles.md)
+resolves exact declared executable entries for conventional frameworks and
+direct extensions, including nonstandard names, but the code inventory does not
+consume those declarations until the next ledger step.
 
 ## Documentation
 

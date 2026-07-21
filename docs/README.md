@@ -32,6 +32,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Mach-O inspect contract](development/macho-inspect.md)
 - [Bounded IPA preflight and entry read](development/ipa-preflight.md)
 - [Bounded IPA Info.plist metadata](development/ipa-info-plist.md)
+- [Bounded IPA nested-bundle metadata](development/ipa-nested-bundles.md)
 - [Bounded IPA main-executable inspection](development/ipa-main-executable.md)
 - [Deterministic IPA code candidate inventory](development/ipa-code-inventory.md)
 - [Versioned schema guide](development/schemas.md)
