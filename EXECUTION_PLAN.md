@@ -69,12 +69,10 @@ decryption support.
 
 ## Current gate
 
-`HOST-010` is the only active planning step. Its versioned artifact/package
-hashes, canonical inventory binding, per-binary unchanged-byte evidence,
-exclusions, honest inconclusive semantics, limits, schema migration, tests, and
-documentation acceptance criteria are fixed by Issue #43. Implementation must
-not start until this documentation-only activation PR is reviewed and merged;
-`LAB-001` and every later step remain untouched.
+`HOST-010` is complete through implementation PR #45. No planning step is
+active. `LAB-001` is the next planned step, but it and every later step remain
+untouched until a separate documentation-only activation PR passes the normal
+review and merge gates.
 
 ## Execution ledger
 
@@ -93,7 +91,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 8 | `HOST-007` | `done` | Produce a deterministic declared-executable inventory for all supported standard bundle types, with explicit coverage and ambiguity semantics. | `HOST-006` | [#34](https://github.com/jacklv-coder/OrchardProbe/issues/34) | [#35](https://github.com/jacklv-coder/OrchardProbe/pull/35) | [#36](https://github.com/jacklv-coder/OrchardProbe/pull/36) |
 | 9 | `HOST-008` | `done` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | [#38](https://github.com/jacklv-coder/OrchardProbe/pull/38) | [#39](https://github.com/jacklv-coder/OrchardProbe/pull/39) |
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
-| 11 | `HOST-010` | `active` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | — |
+| 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | To record during activation | — |
 | 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 14 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
