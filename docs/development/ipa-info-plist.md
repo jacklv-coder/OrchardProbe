@@ -131,7 +131,10 @@ Run the focused tests with:
 cargo test -p orchardprobe-core ipa_app::tests --locked
 ```
 
-The next ingest step is a deterministic bundle code inventory: classify the
-validated main executable plus framework, dylib, and extension candidates, then
-apply the existing bounded Mach-O parser without treating filename extensions
-or plist metadata alone as proof that a file is Mach-O.
+The exact root executable is now consumed by the separate
+[bounded IPA main-executable inspection](ipa-main-executable.md), which streams
+it to an automatically cleaned anonymous temporary file and applies the
+existing Mach-O parser. The following ingest step is a deterministic bundle
+code inventory for framework, dylib, and extension candidates. Filename
+extensions and plist metadata remain candidate signals, not proof that an
+entry is Mach-O.

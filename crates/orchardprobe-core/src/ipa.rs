@@ -2,11 +2,12 @@
 //!
 //! This module treats an IPA as an untrusted ZIP archive. It validates the
 //! archive and local-entry metadata needed to build a deterministic inventory.
-//! A separate opt-in API can return one bounded, CRC-checked entry in memory
-//! after the entire archive passes that preflight. It never extracts to disk.
+//! Separate opt-in APIs can return one bounded, CRC-checked entry in memory or
+//! stream one exact entry to a caller-owned sink after the entire archive
+//! passes that preflight. This module never chooses or derives a host path.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
-use std::io::{self, Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::ops::Range;
 use std::str;
 
@@ -56,6 +57,10 @@ pub const MAX_IPA_COMPRESSION_RATIO: u64 = 1_000;
 pub const MAX_IPA_ENTRY_READ_BYTES: u64 = 16 * 1024 * 1024;
 /// Maximum declared compressed byte length accepted by one in-memory read.
 pub const MAX_IPA_ENTRY_READ_COMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
+/// Maximum caller-selected bytes for one streaming entry copy.
+pub const MAX_IPA_ENTRY_COPY_BYTES: u64 = 512 * 1024 * 1024;
+/// Maximum declared compressed bytes accepted by one streaming entry copy.
+pub const MAX_IPA_ENTRY_COPY_COMPRESSED_BYTES: u64 = 512 * 1024 * 1024;
 
 /// The only entry kinds that can enter a future private work tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -86,6 +91,14 @@ pub struct IpaInventory {
     pub total_compressed_size: u64,
     pub total_uncompressed_size: u64,
     pub entries: Vec<IpaEntry>,
+}
+
+/// Result of copying one exact IPA entry to a caller-owned sink.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct IpaEntryCopy {
+    pub bytes_written: u64,
+    /// The complete inventory revalidated after and matched across the copy.
+    pub inventory: IpaInventory,
 }
 
 /// Failure while validating IPA archive metadata.
@@ -228,8 +241,18 @@ pub enum IpaEntryReadError {
     #[error("could not reopen the validated IPA for entry reading: {reason}")]
     ArchiveChanged { reason: String },
 
+    #[error("IPA inventory changed while an entry was being copied")]
+    InventoryChangedDuringRead,
+
     #[error("could not read entry `{path}`: {source}")]
     ReadFailed {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("could not write entry `{path}` to the caller-owned sink: {source}")]
+    WriteFailed {
         path: String,
         #[source]
         source: io::Error,
@@ -475,12 +498,61 @@ pub fn read_ipa_entry_bounded<R: Read + Seek>(
 }
 
 pub(crate) fn read_ipa_entry_bounded_with_inventory<R: Read + Seek>(
-    mut reader: R,
+    reader: R,
     archive_size: u64,
     path: &str,
     max_output_bytes: u64,
 ) -> Result<(Vec<u8>, IpaInventory), IpaEntryReadError> {
-    validate_output_limit(max_output_bytes)?;
+    let mut output = Vec::new();
+    let copied = copy_ipa_entry_with_limits(
+        reader,
+        archive_size,
+        path,
+        max_output_bytes,
+        MAX_IPA_ENTRY_READ_BYTES,
+        MAX_IPA_ENTRY_READ_COMPRESSED_BYTES,
+        &mut output,
+    )?;
+    Ok((output, copied.inventory))
+}
+
+/// Copy one exact regular-file entry after validating the full IPA.
+///
+/// The caller owns the output sink and any cleanup required after an error.
+/// This function never interprets the entry path as a host path. It accepts
+/// only Stored or Deflate entries, reads through entry EOF for ZIP CRC
+/// validation, checks the observed length, and requires complete inventories
+/// before and after the copy to match. It returns that revalidated inventory.
+/// `max_output_bytes` must not exceed
+/// [`MAX_IPA_ENTRY_COPY_BYTES`].
+pub fn copy_ipa_entry_bounded<R: Read + Seek, W: Write>(
+    reader: R,
+    archive_size: u64,
+    path: &str,
+    max_output_bytes: u64,
+    writer: &mut W,
+) -> Result<IpaEntryCopy, IpaEntryReadError> {
+    copy_ipa_entry_with_limits(
+        reader,
+        archive_size,
+        path,
+        max_output_bytes,
+        MAX_IPA_ENTRY_COPY_BYTES,
+        MAX_IPA_ENTRY_COPY_COMPRESSED_BYTES,
+        writer,
+    )
+}
+
+fn copy_ipa_entry_with_limits<R: Read + Seek, W: Write>(
+    mut reader: R,
+    archive_size: u64,
+    path: &str,
+    max_output_bytes: u64,
+    fixed_output_maximum: u64,
+    compressed_input_maximum: u64,
+    writer: &mut W,
+) -> Result<IpaEntryCopy, IpaEntryReadError> {
+    validate_output_limit(max_output_bytes, fixed_output_maximum)?;
 
     let inventory = inspect_ipa(&mut reader, archive_size)?;
     let canonical_path = validate_entry_selector(path)?;
@@ -497,7 +569,7 @@ pub(crate) fn read_ipa_entry_bounded_with_inventory<R: Read + Seek>(
             path: expected.path,
         });
     }
-    validate_entry_read_limits(&expected, max_output_bytes)?;
+    validate_entry_read_limits(&expected, max_output_bytes, compressed_input_maximum)?;
 
     reader
         .seek(SeekFrom::Start(0))
@@ -546,22 +618,44 @@ pub(crate) fn read_ipa_entry_bounded_with_inventory<R: Read + Seek>(
         })?;
     validate_reopened_entry(&file, &expected)?;
 
-    let reserve = usize::try_from(expected.uncompressed_size)
-        .expect("the fixed in-memory entry limit fits usize");
-    let mut output = Vec::with_capacity(reserve);
-    let read_limit = max_output_bytes + 1;
-    file.take(read_limit)
-        .read_to_end(&mut output)
-        .map_err(|source| IpaEntryReadError::ReadFailed {
-            path: expected.path.clone(),
-            source,
+    let read_limit = max_output_bytes
+        .checked_add(1)
+        .expect("fixed entry copy limits leave room for an overflow probe");
+    // A successful entry declares at most `max_output_bytes`, so one byte of
+    // capacity remains after its last payload byte. The next read therefore
+    // reaches the underlying `ZipFile` EOF (and its CRC check) before `Take`
+    // can synthesize EOF. Streams that produce the probe byte fail below.
+    let mut input = file.take(read_limit);
+    let mut buffer = [0u8; 64 * 1024];
+    let mut actual = 0u64;
+    loop {
+        let count = input
+            .read(&mut buffer)
+            .map_err(|source| IpaEntryReadError::ReadFailed {
+                path: expected.path.clone(),
+                source,
+            })?;
+        if count == 0 {
+            break;
+        }
+        actual = actual.checked_add(count as u64).ok_or_else(|| {
+            IpaEntryReadError::OutputLimitExceeded {
+                path: expected.path.clone(),
+                maximum: max_output_bytes,
+            }
         })?;
-    let actual = output.len() as u64;
-    if actual > max_output_bytes {
-        return Err(IpaEntryReadError::OutputLimitExceeded {
-            path: expected.path,
-            maximum: max_output_bytes,
-        });
+        if actual > max_output_bytes {
+            return Err(IpaEntryReadError::OutputLimitExceeded {
+                path: expected.path,
+                maximum: max_output_bytes,
+            });
+        }
+        writer
+            .write_all(&buffer[..count])
+            .map_err(|source| IpaEntryReadError::WriteFailed {
+                path: expected.path.clone(),
+                source,
+            })?;
     }
     if actual != expected.uncompressed_size {
         return Err(IpaEntryReadError::ActualSizeMismatch {
@@ -570,7 +664,16 @@ pub(crate) fn read_ipa_entry_bounded_with_inventory<R: Read + Seek>(
             actual,
         });
     }
-    Ok((output, inventory))
+    drop(input);
+    let mut reader = archive.into_inner();
+    let post_read_inventory = inspect_ipa(&mut reader, archive_size)?;
+    if inventory != post_read_inventory {
+        return Err(IpaEntryReadError::InventoryChangedDuringRead);
+    }
+    Ok(IpaEntryCopy {
+        bytes_written: actual,
+        inventory: post_read_inventory,
+    })
 }
 
 fn validate_reopened_entry<R: Read>(
@@ -591,11 +694,14 @@ fn validate_reopened_entry<R: Read>(
     Ok(())
 }
 
-fn validate_output_limit(max_output_bytes: u64) -> Result<(), IpaEntryReadError> {
-    if max_output_bytes == 0 || max_output_bytes > MAX_IPA_ENTRY_READ_BYTES {
+fn validate_output_limit(
+    max_output_bytes: u64,
+    fixed_maximum: u64,
+) -> Result<(), IpaEntryReadError> {
+    if max_output_bytes == 0 || max_output_bytes > fixed_maximum {
         return Err(IpaEntryReadError::InvalidOutputLimit {
             actual: max_output_bytes,
-            maximum: MAX_IPA_ENTRY_READ_BYTES,
+            maximum: fixed_maximum,
         });
     }
     Ok(())
@@ -615,12 +721,13 @@ fn validate_entry_selector(path: &str) -> Result<String, IpaEntryReadError> {
 fn validate_entry_read_limits(
     entry: &IpaEntry,
     max_output_bytes: u64,
+    compressed_input_maximum: u64,
 ) -> Result<(), IpaEntryReadError> {
-    if entry.compressed_size > MAX_IPA_ENTRY_READ_COMPRESSED_BYTES {
+    if entry.compressed_size > compressed_input_maximum {
         return Err(IpaEntryReadError::CompressedInputTooLarge {
             path: entry.path.clone(),
             actual: entry.compressed_size,
-            maximum: MAX_IPA_ENTRY_READ_COMPRESSED_BYTES,
+            maximum: compressed_input_maximum,
         });
     }
     if entry.uncompressed_size > max_output_bytes {
@@ -1227,7 +1334,7 @@ fn le_u64(bytes: &[u8], offset: usize) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{Cursor, Write};
+    use std::io::{self, Cursor, Write};
 
     use zip::write::SimpleFileOptions;
     use zip::{CompressionMethod, ZipWriter};
@@ -1454,9 +1561,117 @@ mod tests {
             crc32: 0,
         };
         assert!(matches!(
-            validate_entry_read_limits(&oversized, 1),
+            validate_entry_read_limits(&oversized, 1, MAX_IPA_ENTRY_READ_COMPRESSED_BYTES),
             Err(IpaEntryReadError::CompressedInputTooLarge { .. })
         ));
+    }
+
+    #[test]
+    fn copies_stored_and_deflated_entries_to_a_caller_sink() {
+        let payload = vec![b'A'; 128 * 1024];
+        for method in [CompressionMethod::Stored, CompressionMethod::Deflated] {
+            let path = "Payload/Demo.app/Demo";
+            let bytes =
+                make_archive_with_file_method(&[FixtureEntry::File(path, &payload)], method);
+            let mut output = Vec::new();
+
+            let copied = copy_ipa_entry_bounded(
+                Cursor::new(&bytes),
+                bytes.len() as u64,
+                path,
+                payload.len() as u64,
+                &mut output,
+            )
+            .expect("copy bounded entry");
+
+            assert_eq!(output, payload);
+            assert_eq!(copied.bytes_written, payload.len() as u64);
+            assert_eq!(copied.inventory.app_root, "Payload/Demo.app");
+        }
+    }
+
+    #[test]
+    fn copy_enforces_fixed_limits_and_surfaces_sink_failures() {
+        let path = "Payload/Demo.app/Demo";
+        let bytes = make_archive(&[FixtureEntry::File(path, b"data")]);
+
+        for invalid in [0, MAX_IPA_ENTRY_COPY_BYTES + 1] {
+            assert!(matches!(
+                copy_ipa_entry_bounded(
+                    Cursor::new(&bytes),
+                    bytes.len() as u64,
+                    path,
+                    invalid,
+                    &mut Vec::new(),
+                ),
+                Err(IpaEntryReadError::InvalidOutputLimit { .. })
+            ));
+        }
+        assert!(matches!(
+            copy_ipa_entry_bounded(
+                Cursor::new(&bytes),
+                bytes.len() as u64,
+                path,
+                3,
+                &mut Vec::new(),
+            ),
+            Err(IpaEntryReadError::DeclaredOutputTooLarge { .. })
+        ));
+
+        let mut sink = FailingWriter;
+        assert!(matches!(
+            copy_ipa_entry_bounded(Cursor::new(&bytes), bytes.len() as u64, path, 4, &mut sink,),
+            Err(IpaEntryReadError::WriteFailed { .. })
+        ));
+    }
+
+    #[test]
+    fn copy_reaches_eof_for_crc_and_rejects_unsupported_compression() {
+        let path = "Payload/Demo.app/Demo";
+        let mut corrupt = make_archive(&[FixtureEntry::File(path, b"data")]);
+        let central = central_offset_for(&corrupt, path);
+        let local = le_u32(&corrupt, central + 42) as usize;
+        let name_len = usize::from(le_u16(&corrupt, local + 26));
+        let extra_len = usize::from(le_u16(&corrupt, local + 28));
+        corrupt[local + LOCAL_ENTRY_FIXED_BYTES + name_len + extra_len] ^= 0xff;
+        assert!(matches!(
+            copy_ipa_entry_bounded(
+                Cursor::new(&corrupt),
+                corrupt.len() as u64,
+                path,
+                1024,
+                &mut Vec::new(),
+            ),
+            Err(IpaEntryReadError::ReadFailed { .. })
+        ));
+
+        let mut unsupported = make_archive(&[FixtureEntry::File(path, b"data")]);
+        let central = central_offset_for(&unsupported, path);
+        let local = le_u32(&unsupported, central + 42) as usize;
+        set_u16(&mut unsupported, central + 10, 12);
+        set_u16(&mut unsupported, local + 8, 12);
+        assert!(matches!(
+            copy_ipa_entry_bounded(
+                Cursor::new(&unsupported),
+                unsupported.len() as u64,
+                path,
+                1024,
+                &mut Vec::new(),
+            ),
+            Err(IpaEntryReadError::UnsupportedCompression { .. })
+        ));
+    }
+
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
+            Err(io::Error::other("synthetic sink failure"))
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
     }
 
     #[test]

@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry reads, parse bounded root app identity metadata, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -26,14 +26,18 @@ These commands do not connect to a device, decrypt a binary, process an IPA, or 
 
 The internal [bounded IPA ingest foundation](docs/development/ipa-preflight.md)
 validates archive metadata without decompression, then optionally reads one
-exact Stored/Deflate entry into a bounded CRC-checked memory buffer. It never
-extracts to disk, is not wired to the CLI, and does not change the statement
-above about current commands.
+exact Stored/Deflate entry into a bounded CRC-checked memory buffer or streams
+it to a caller-owned sink. It is not wired to the CLI and does not change the
+statement above about current commands.
 
 The separate [bounded `Info.plist` metadata parser](docs/development/ipa-info-plist.md)
 resolves the root Bundle ID, versions, and exact main executable entry from XML
-or binary plist events. It does not inspect that executable's payload or prove
-an installed-build match, decryption, or plaintext.
+or binary plist events. The next
+[bounded main-executable stage](docs/development/ipa-main-executable.md) streams
+that exact entry to an anonymous temporary file and applies the existing
+metadata-only Mach-O parser. It does not prove an installed-build match,
+decryption, or plaintext, and it does not yet enumerate framework, dylib, or
+extension code.
 
 ## Documentation
 
