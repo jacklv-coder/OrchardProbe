@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, resolve exact declared executable metadata for conventional nested frameworks and direct extensions, build a deterministic declared-standard-bundle inventory only after Mach-O parsing, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, resolve exact declared executable metadata for conventional nested frameworks and direct extensions, build a deterministic declared-standard-bundle inventory only after Mach-O parsing, materialize a validated IPA app tree into an automatically cleaned private bounded worktree, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -44,7 +44,11 @@ direct extensions, including nonstandard names. The
 consumes those declarations, preserves their roles over `.dylib` suffixes, and
 adds only lowercase dylibs in the same closed ancestry. Its coverage is explicit
 and does not include arbitrary nested apps, Watch/App Clip content, unsupported
-bundle types, or executable-looking resources.
+bundle types, or executable-looking resources. The library-only
+[private bounded IPA worktree](docs/development/ipa-private-worktree.md) then
+copies validated included bytes beneath a fresh owner-only root, excludes exact
+`_MASReceipt` and `SC_Info` components, and removes the tree on drop or failure.
+It does not modify Mach-O or create an output IPA.
 
 ## Documentation
 

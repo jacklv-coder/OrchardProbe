@@ -35,6 +35,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Bounded IPA nested-bundle metadata](development/ipa-nested-bundles.md)
 - [Bounded IPA main-executable inspection](development/ipa-main-executable.md)
 - [Declared standard-bundle IPA code inventory](development/ipa-code-inventory.md)
+- [Private bounded IPA worktree](development/ipa-private-worktree.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)
