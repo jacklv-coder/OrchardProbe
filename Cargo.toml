@@ -20,6 +20,7 @@ jsonschema = { version = "0.48.2", default-features = false }
 plist = { version = "=1.8.0", default-features = false, features = ["enable_unstable_features_that_may_break_with_minor_version_bumps"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+rustix = { version = "=1.1.4", features = ["fs"] }
 tempfile = "=3.27.0"
 thiserror = "2.0"
 zip = { version = "=5.1.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

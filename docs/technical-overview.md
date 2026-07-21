@@ -123,13 +123,24 @@ The archive layer does not choose a host output path and is not wired to the
 CLI. See the
 [IPA preflight and entry-read contract](development/ipa-preflight.md).
 
+The Unix-only
+[`crates/orchardprobe-core/src/ipa_materialize.rs`](../crates/orchardprobe-core/src/ipa_materialize.rs)
+layer plans the complete destination tree before payload reads, excludes exact
+`_MASReceipt` and `SC_Info` path components, and streams included bytes into a
+fresh `0700` RAII worktree through descriptor-relative no-follow and create-new
+operations. Files are `0600`; archive ownership, times, attributes, and
+executable bits are not copied. The tree is removed on drop or any error and
+remains library-only. See the
+[private bounded IPA worktree contract](development/ipa-private-worktree.md).
+
 The separate
 [`crates/orchardprobe-core/src/ipa_app.rs`](../crates/orchardprobe-core/src/ipa_app.rs)
 layer locates the case-sensitive root `Info.plist`, parses only bounded XML or
 binary plist events, validates Bundle ID and version fields, and resolves
-`CFBundleExecutable` to an exact regular-file inventory entry. It returns
-root metadata only; the separate declared-standard-bundle inventory consumes it,
-while archive materialization remains unimplemented. See the
+`CFBundleExecutable` to an exact regular-file inventory entry. It returns root
+metadata only; the separate declared-standard-bundle inventory consumes it,
+while the independent private-worktree layer consumes the lower archive
+inventory. See the
 [bounded Info.plist metadata contract](development/ipa-info-plist.md).
 
 [`crates/orchardprobe-core/src/ipa_bundle.rs`](../crates/orchardprobe-core/src/ipa_bundle.rs)
@@ -307,6 +318,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `crates/orchardprobe-core/src/ipa_bundle.rs` | Bounded conventional nested framework/extension discovery, plist parsing, and exact declared-executable entry resolution. |
 | `crates/orchardprobe-core/src/ipa_code.rs` | Complete-inventory-bound root executable streaming and bounded Mach-O metadata inspection through an anonymous temporary file. |
 | `crates/orchardprobe-core/src/ipa_catalog.rs` | Deterministic declared-standard-bundle selection, bounded Mach-O confirmation, precedence rules, and visible rejection reasons. |
+| `crates/orchardprobe-core/src/ipa_materialize.rs` | Private bounded IPA app-tree planning and descriptor-relative materialization with deterministic exclusions and RAII cleanup. |
 | `crates/orchardprobe-core/src/macho.rs` | Bounded thin/FAT Mach-O metadata parser. |
 | `crates/orchardprobe-core/src/lib.rs` | Manifest model, invariants, device-free demo, and local doctor report. |
 | `crates/orchardprobe-core/src/wire.rs` | Versioned capability and structured-error wire contracts. |
@@ -315,7 +327,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `docs/architecture/` | Security and protocol design gates. |
 | `docs/compatibility/` | Evidence vocabulary and support-record workflow. |
 
-Future transport, backend, reconstruction, archive materialization, and report modules
+Future transport, backend, reconstruction, archive packaging, and report modules
 must be added only after their corresponding design and evidence gates. Their
 names in diagrams are responsibilities, not existing crates.
 
@@ -331,6 +343,7 @@ names in diagrams are responsibilities, not existing crates.
 | Bounded nested framework/extension plist metadata | Implemented as a library and consumed by the catalog; no CLI integration |
 | Root IPA main-executable Mach-O metadata | Implemented as a library; no CLI integration |
 | Declared standard-bundle code inventory | Implemented for root, supported nested declarations, and in-scope lowercase dylibs; arbitrary bundle coverage and CLI integration remain unsupported |
+| Private bounded IPA worktree | Implemented on Unix as a library with Receipt/`SC_Info` exclusions and automatic cleanup; no CLI or package publication |
 | FAT/FAT64 adversarial parsing coverage | Implemented |
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
@@ -366,17 +379,20 @@ For a first code-reading pass:
 7. Read the [declared code inventory contract](development/ipa-code-inventory.md),
    then follow `discover_candidates`, `validate_candidate_set`,
    `inspect_ipa_code_inventory`, and their role/rejection tests.
-8. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
+8. Read the [private worktree contract](development/ipa-private-worktree.md),
+   then follow `build_worktree_plan`, `open_verified_directory`,
+   `materialize_ipa_private_worktree`, and their cleanup/adversarial tests.
+9. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
    `open_regular_file` to see CLI error and host file-safety conventions.
-9. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
+10. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
    `parse_fat`, then `parse_slice`, range helpers, and adversarial tests.
-10. Read `crates/orchardprobe-core/src/lib.rs` beside
+11. Read `crates/orchardprobe-core/src/lib.rs` beside
    `schemas/v0/export-manifest-v2.schema.json` to compare Rust invariants with
    the wire contract.
-11. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
-12. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
+12. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
+13. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
    project-generated binaries.
-13. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
+14. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
    record to understand why implementation remains blocked on evidence.
 
 When adding a module, preserve the invariant that untrusted values are evidence

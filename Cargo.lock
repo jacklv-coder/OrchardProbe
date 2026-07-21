@@ -694,6 +694,7 @@ version = "0.1.0-alpha.1"
 dependencies = [
  "jsonschema",
  "plist",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

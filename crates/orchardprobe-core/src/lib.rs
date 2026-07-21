@@ -9,6 +9,8 @@ pub mod ipa_app;
 pub mod ipa_bundle;
 pub mod ipa_catalog;
 pub mod ipa_code;
+#[cfg(unix)]
+pub mod ipa_materialize;
 pub mod macho;
 pub mod wire;
 

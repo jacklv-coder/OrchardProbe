@@ -147,6 +147,8 @@ Run the focused tests with:
 cargo test -p orchardprobe-core ipa_catalog::tests --locked
 ```
 
-The next ledger step is `HOST-008`: materialize the already validated archive
-into a private bounded worktree without symlink or path escape. That step is not
-implemented or activated by this inventory.
+The next layer is `HOST-008`, documented in the
+[private bounded IPA worktree contract](ipa-private-worktree.md). It
+materializes the already validated archive without symlink or path escape and
+remains independent from this declaration inventory. Deterministic IPA
+repackaging is a later ledger step.
