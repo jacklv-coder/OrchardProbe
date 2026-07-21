@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::{self, File, Permissions};
 use std::io::{Read, Seek, Write};
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
@@ -69,18 +69,58 @@ pub struct IpaWorktreeEntry {
 
 /// Owned private worktree and its source-bound materialization evidence.
 pub struct IpaPrivateWorktree {
+    root_fd: OwnedFd,
     root: TempDir,
-    pub inventory: IpaInventory,
-    pub entries: Vec<IpaWorktreeEntry>,
-    pub excluded_entries: Vec<IpaWorktreeExcludedEntry>,
-    pub included_compressed_bytes: u64,
-    pub included_uncompressed_bytes: u64,
+    directory_identities: BTreeMap<String, FileIdentity>,
+    file_identities: BTreeMap<String, FileIdentity>,
+    inventory: IpaInventory,
+    entries: Vec<IpaWorktreeEntry>,
+    excluded_entries: Vec<IpaWorktreeExcludedEntry>,
+    included_compressed_bytes: u64,
+    included_uncompressed_bytes: u64,
 }
 
 impl IpaPrivateWorktree {
     /// Borrow the private, non-published host path while this owner is alive.
     pub fn path(&self) -> &Path {
         self.root.path()
+    }
+
+    /// Authoritative source inventory used to create this worktree.
+    pub fn inventory(&self) -> &IpaInventory {
+        &self.inventory
+    }
+
+    /// Canonical-path-sorted materialized records.
+    pub fn entries(&self) -> &[IpaWorktreeEntry] {
+        &self.entries
+    }
+
+    /// Canonical-path-sorted excluded source records.
+    pub fn excluded_entries(&self) -> &[IpaWorktreeExcludedEntry] {
+        &self.excluded_entries
+    }
+
+    /// Checked compressed bytes declared by included source files.
+    pub fn included_compressed_bytes(&self) -> u64 {
+        self.included_compressed_bytes
+    }
+
+    /// Checked uncompressed bytes declared by included source files.
+    pub fn included_uncompressed_bytes(&self) -> u64 {
+        self.included_uncompressed_bytes
+    }
+
+    pub(crate) fn root_fd(&self) -> &OwnedFd {
+        &self.root_fd
+    }
+
+    pub(crate) fn directory_identities(&self) -> &BTreeMap<String, FileIdentity> {
+        &self.directory_identities
+    }
+
+    pub(crate) fn file_identities(&self) -> &BTreeMap<String, FileIdentity> {
+        &self.file_identities
     }
 }
 
@@ -206,10 +246,17 @@ pub enum IpaWorktreeError {
         #[source]
         source: std::io::Error,
     },
+
+    #[error("could not query private file identity for `{path}`: {source}")]
+    FileIdentity {
+        path: String,
+        #[source]
+        source: rustix::io::Errno,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct FileIdentity {
+pub(crate) struct FileIdentity {
     device: u64,
     inode: u64,
 }
@@ -259,6 +306,7 @@ where
 
     let mut identities = BTreeMap::new();
     identities.insert(String::new(), file_identity(&root_fd, "")?);
+    let mut file_identities = BTreeMap::new();
     let mut entries = Vec::with_capacity(plan.directories.len() + plan.files.len());
 
     let mut directories = plan.directories.iter().collect::<Vec<_>>();
@@ -313,6 +361,13 @@ where
                 path: entry.path.clone(),
                 source,
             })?;
+        file_identities.insert(
+            entry.path.clone(),
+            descriptor_identity(&output).map_err(|source| IpaWorktreeError::FileIdentity {
+                path: entry.path.clone(),
+                source,
+            })?,
+        );
         drop(output);
         entries.push(IpaWorktreeEntry {
             path: entry.path.clone(),
@@ -323,7 +378,10 @@ where
 
     entries.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(IpaPrivateWorktree {
+        root_fd,
         root,
+        directory_identities: identities,
+        file_identities,
         inventory,
         entries,
         excluded_entries: plan.excluded_entries,
@@ -523,7 +581,7 @@ fn create_directory(
     Ok(())
 }
 
-fn open_verified_directory(
+pub(crate) fn open_verified_directory(
     root_fd: &OwnedFd,
     path: &str,
     identities: &BTreeMap<String, FileIdentity>,
@@ -569,11 +627,15 @@ fn verify_identity(
     Ok(())
 }
 
-fn file_identity(fd: &OwnedFd, path: &str) -> Result<FileIdentity, IpaWorktreeError> {
-    let stat = fstat(fd).map_err(|source| IpaWorktreeError::DirectoryIdentity {
+fn file_identity<Fd: AsFd>(fd: Fd, path: &str) -> Result<FileIdentity, IpaWorktreeError> {
+    descriptor_identity(fd).map_err(|source| IpaWorktreeError::DirectoryIdentity {
         path: path.to_owned(),
         source,
-    })?;
+    })
+}
+
+pub(crate) fn descriptor_identity<Fd: AsFd>(fd: Fd) -> Result<FileIdentity, rustix::io::Errno> {
+    let stat = fstat(fd)?;
     Ok(FileIdentity {
         device: stat.st_dev as u64,
         inode: stat.st_ino as u64,
@@ -593,7 +655,7 @@ fn ensure_inventory_unchanged(
     Ok(())
 }
 
-fn split_parent(path: &str) -> (&str, &str) {
+pub(crate) fn split_parent(path: &str) -> (&str, &str) {
     path.rsplit_once('/').unwrap_or(("", path))
 }
 
@@ -1076,6 +1138,7 @@ mod tests {
         IpaEntry {
             path: path.to_owned(),
             kind: IpaEntryKind::File,
+            executable: false,
             compressed_size,
             uncompressed_size,
             crc32: 0,

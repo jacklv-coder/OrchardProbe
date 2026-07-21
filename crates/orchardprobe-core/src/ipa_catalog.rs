@@ -716,6 +716,7 @@ mod tests {
             IpaEntry {
                 path: "Payload/Demo.app/libDirectory.dylib".to_owned(),
                 kind: IpaEntryKind::Directory,
+                executable: false,
                 compressed_size: 0,
                 uncompressed_size: 0,
                 crc32: 0,
@@ -872,6 +873,7 @@ mod tests {
         IpaEntry {
             path: path.to_owned(),
             kind: IpaEntryKind::File,
+            executable: true,
             compressed_size: size,
             uncompressed_size: size,
             crc32: 0,

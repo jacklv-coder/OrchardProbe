@@ -85,7 +85,10 @@ The implementation fails closed in two bounded passes:
 7. Validate each local-header range, reject overlaps, and compare its name,
    flags, compression method, and applicable CRC/size fields with the central
    record.
-8. Return the inventory only after every entry succeeds.
+8. Record only whether a regular file has any source execute bit; the later
+   packager may normalize that class to `0755`, but no complete untrusted mode
+   becomes authority.
+9. Return the inventory only after every entry succeeds.
 
 The preflight parser necessarily reads raw archive byte ranges to find ZIP
 footers and local headers. It never requests decompression or returns payload

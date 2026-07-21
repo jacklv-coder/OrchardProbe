@@ -75,6 +75,8 @@ pub enum IpaEntryKind {
 pub struct IpaEntry {
     pub path: String,
     pub kind: IpaEntryKind,
+    /// Whether source ZIP metadata grants any regular-file execute bit.
+    pub executable: bool,
     pub compressed_size: u64,
     pub uncompressed_size: u64,
     pub crc32: u32,
@@ -376,11 +378,11 @@ pub fn inspect_ipa<R: Read + Seek>(
             });
         }
 
-        let kind = classify_entry_kind(
-            &central_entry.path,
-            central_entry.directory_name,
-            file.unix_mode(),
-        )?;
+        let unix_mode = file.unix_mode();
+        let kind =
+            classify_entry_kind(&central_entry.path, central_entry.directory_name, unix_mode)?;
+        let executable =
+            kind == IpaEntryKind::File && unix_mode.is_some_and(|mode| mode & 0o111 != 0);
         let compressed_size = file.compressed_size();
         let uncompressed_size = file.size();
 
@@ -435,6 +437,7 @@ pub fn inspect_ipa<R: Read + Seek>(
         entries.push(IpaEntry {
             path: central_entry.path.clone(),
             kind,
+            executable,
             compressed_size,
             uncompressed_size,
             crc32: file.crc32(),
@@ -686,6 +689,7 @@ fn validate_reopened_entry<R: Read>(
         || file.size() != expected.uncompressed_size
         || file.crc32() != expected.crc32
         || !file.is_file()
+        || file.unix_mode().is_some_and(|mode| mode & 0o111 != 0) != expected.executable
     {
         return Err(IpaEntryReadError::MetadataChanged {
             path: expected.path.clone(),
@@ -1556,6 +1560,7 @@ mod tests {
         let oversized = IpaEntry {
             path: "Payload/Demo.app/large".to_owned(),
             kind: IpaEntryKind::File,
+            executable: false,
             compressed_size: MAX_IPA_ENTRY_READ_COMPRESSED_BYTES + 1,
             uncompressed_size: 1,
             crc32: 0,

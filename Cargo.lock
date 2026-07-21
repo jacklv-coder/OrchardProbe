@@ -692,6 +692,7 @@ dependencies = [
 name = "orchardprobe-core"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "crc32fast",
  "jsonschema",
  "plist",
  "rustix",

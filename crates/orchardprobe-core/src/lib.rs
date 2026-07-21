@@ -11,6 +11,8 @@ pub mod ipa_catalog;
 pub mod ipa_code;
 #[cfg(unix)]
 pub mod ipa_materialize;
+#[cfg(unix)]
+pub mod ipa_package;
 pub mod macho;
 pub mod wire;
 

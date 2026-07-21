@@ -751,6 +751,7 @@ mod tests {
         IpaEntry {
             path: path.to_owned(),
             kind: IpaEntryKind::File,
+            executable: false,
             compressed_size,
             uncompressed_size,
             crc32: 0,
