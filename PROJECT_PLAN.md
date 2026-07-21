@@ -5,7 +5,7 @@
 状态：执行中的 pre-alpha 蓝图
 日期：2026-07-21
 
-当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、`oprobe inspect`，以及 capability/error/export 三类带版本的 pre-v1 JSON 契约已落地并由必需 CI 覆盖。设备发现、真机 Helper、导出后端、重建与 IPA 打包仍未实现，也没有任何正式设备兼容性声明。
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约，以及仅含规范的有界 Host/Helper 协议已落地并由必需 CI 覆盖。设备发现、真机 Helper、transport、导出后端、重建与 IPA 打包仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 
@@ -195,6 +195,7 @@ MVP 不承诺：
 - [x] 建立 Apache-2.0、`LEGAL.md`、`ACCEPTABLE_USE.md`、`SECURITY.md`。
 - [x] 创建 DemoLab：Swift 主程序 + Objective-C 动态 Framework + Extension。
 - [x] 定义 capability、export manifest、error code 三个带版本、边界明确且由 Rust/CI 验证的 JSON schema。
+- [x] 固化 `RFC-0002` 有界 Host/Helper 协议、状态机、资源上限与 No-Go 条件；该 RFC 不实现 transport、Helper 或设备后端。
 - [ ] 用一台目标设备分别验证候选后端，在不修改或重装目标 App 的前提下能否取得所需能力并读出精确代码区间。
 - [ ] 退出条件：能对自有 fixture 生成可重复的字节级真机验证结果；若声称受保护到明文的能力，fixture 必须确实处于有独立证据的相应初始保护状态，普通未加密开发构建不能满足该声明。
 
