@@ -5,7 +5,7 @@
 状态：执行中的 pre-alpha 蓝图
 日期：2026-07-22
 
-当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范，以及 FAT/secure-open/Archive 对抗测试已落地并由必需 CI 覆盖。设备发现、真机 Helper、transport、导出后端、Archive 物化、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检与单个 Stored/Deflate Entry 内存读取、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范，以及 FAT/secure-open/Archive 对抗测试已落地并由必需 CI 覆盖。Plist 解析、可执行文件清单、设备发现、真机 Helper、transport、导出后端、Archive 物化、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 
