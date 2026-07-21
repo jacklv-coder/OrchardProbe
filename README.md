@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform a library-only bounded IPA archive preflight, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform a library-only bounded IPA archive preflight and one bounded in-memory entry read, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -24,9 +24,11 @@ cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 
 These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. `inspect` accepts one regular Mach-O file and reads only bounded container, slice, and load-command metadata; see [its exact contract](docs/development/macho-inspect.md). Capability, structured-error, and export-manifest values now have [versioned, bounded pre-v1 contracts](docs/development/schemas.md), and a separate [bounded host/helper protocol RFC](docs/architecture/RFC-0002-bounded-host-helper-protocol.md) specifies the design gate for any future transport. Both are device-free contracts; no device backend implements them yet. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
-The internal [bounded IPA preflight](docs/development/ipa-preflight.md) validates
-archive metadata without decompression or extraction. It is not wired to the
-CLI and does not change the statement above about current commands.
+The internal [bounded IPA ingest foundation](docs/development/ipa-preflight.md)
+validates archive metadata without decompression, then optionally reads one
+exact Stored/Deflate entry into a bounded CRC-checked memory buffer. It never
+extracts to disk, is not wired to the CLI, and does not change the statement
+above about current commands.
 
 ## Documentation
 

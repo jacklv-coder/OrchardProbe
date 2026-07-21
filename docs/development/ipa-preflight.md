@@ -1,19 +1,24 @@
-# Bounded IPA preflight
+# Bounded IPA preflight and entry read
 
-The `orchardprobe_core::ipa` module performs the first implemented stage behind
+The `orchardprobe_core::ipa` module performs the first implemented stages behind
 the planned one-command workflow: a deterministic, read-only inventory of one
-untrusted IPA archive.
+untrusted IPA archive and an opt-in bounded read of one validated entry.
 
 > [!IMPORTANT]
 > This is a library foundation, not a user-facing decrypt feature. No current
 > CLI command accepts an IPA. The module does not connect to a device,
-> decompress or extract entries, parse app identity, inspect embedded Mach-O
-> payloads, decrypt code, reconstruct files, or create an output IPA.
+> extract entries to disk, parse plist app identity, inspect embedded Mach-O
+> payloads, decrypt code, reconstruct files, or create an output IPA. The
+> single-entry API can decompress only one explicitly selected entry into a
+> bounded in-memory buffer after the full archive preflight succeeds.
 
 ## API contract
 
 ```rust
 inspect_ipa(reader, archive_size) -> Result<IpaInventory, IpaInspectError>
+
+read_ipa_entry_bounded(reader, archive_size, path, max_output_bytes)
+    -> Result<Vec<u8>, IpaEntryReadError>
 ```
 
 The caller supplies an existing `Read + Seek` object and the byte length
@@ -32,6 +37,23 @@ On success, `IpaInventory` contains only:
 
 Entries are sorted by canonical path. CRC32 is ZIP metadata and is not a
 cryptographic integrity or plaintext claim.
+
+`read_ipa_entry_bounded` independently repeats that complete preflight on the
+same reader and declared size. It then requires an exact canonical regular-file
+path from the validated inventory, reopens the archive at known offset zero,
+and binds the selected ZIP metadata back to the inventory before reading. It
+supports only Stored and Deflate, returns bytes in memory, and never interprets
+the entry path as a host filesystem path.
+
+A caller chooses an output limit from 1 byte through 16 MiB. The selected entry
+must also declare at most 64 MiB of compressed input. A declared output above
+the caller limit is rejected before decompression; a stream that produces more
+than its declaration or caller limit is rejected after reading at most one
+extra byte. A successful read reaches EOF so the ZIP implementation checks
+CRC32, then OrchardProbe separately compares actual and declared lengths.
+These checks detect corruption and inconsistent archive metadata; CRC32 still
+does not prove origin, authorization, cryptographic authenticity, or decrypted
+plaintext correctness.
 
 ## Validation order
 
@@ -52,9 +74,10 @@ The implementation fails closed in two bounded passes:
    record.
 8. Return the inventory only after every entry succeeds.
 
-The parser necessarily reads raw archive byte ranges to find ZIP footers and
-local headers. It never requests decompression, reads an entry as uncompressed
-content, materializes an archive path, or returns payload bytes.
+The preflight parser necessarily reads raw archive byte ranges to find ZIP
+footers and local headers. It never requests decompression or returns payload
+bytes. Only the separate bounded entry API requests decompression, and neither
+API materializes an archive path or writes a payload to disk.
 
 ## Fixed limits
 
@@ -69,6 +92,8 @@ content, materializes an archive path, or returns payload bytes.
 | One declared uncompressed entry | 8 GiB |
 | Aggregate declared uncompressed bytes | 32 GiB |
 | Declared uncompressed/compressed ratio | 1,000:1 |
+| One in-memory entry output | 16 MiB |
+| One in-memory entry compressed input | 64 MiB |
 
 These are compile-time safety limits, not compatibility claims. The command
 must not silently relax them. A future reviewed policy may lower a limit or
@@ -77,12 +102,14 @@ reason to retry with broader authority.
 
 ## ZIP dependency boundary
 
-The workspace pins `zip` exactly to `5.1.1` with default features disabled.
+The workspace pins `zip` exactly to `5.1.1` with default features disabled and
+enables only its `deflate-flate2-zlib-rs` feature for Stored/Deflate entry reads.
 At the 2026-07-22 decision point, that release declared Rust 1.83 compatibility,
 while OrchardProbe pinned Rust 1.85; the then-current `zip` 8.6.0 release
-required Rust 1.88. Disabling defaults keeps archive decryption and all
-decompression backends out of this metadata-only stage. The crate's MIT license
-is compatible with this Apache-2.0 project.
+required Rust 1.88. Disabling defaults keeps archive decryption and unrelated
+compression backends out of the dependency graph. The preflight path itself
+remains metadata-only. The crate's MIT license is compatible with this
+Apache-2.0 project.
 
 The project still performs its own pre-allocation footer/count checks, raw-name
 policy, duplicate/collision checks, local/central consistency checks, overlap
@@ -91,10 +118,14 @@ validate, not permission to create files.
 
 ## Test scope
 
-All tests generate synthetic archives in memory. They cover the valid stable
-inventory and adversarial size mismatch, malformed footer, unsafe path,
-encoding, collision, app-root, encryption, special-file, overlap, header
-disagreement, and numeric-limit paths. No test contains or processes a
+All tests generate synthetic archives in memory. Preflight tests cover the
+valid stable inventory and adversarial size mismatch, malformed footer, unsafe
+path, encoding, collision, app-root, encryption, special-file, overlap, header
+disagreement, and numeric-limit paths. Entry-read tests cover Stored and
+Deflate success, deterministic input preservation, selectors, both resource
+limits, unsupported compression, CRC corruption, observed output overflow,
+declared/actual length disagreement, reopened metadata drift, and preflight
+error propagation including special files. No test contains or processes a
 third-party IPA.
 
 Run the focused tests with:
@@ -103,6 +134,7 @@ Run the focused tests with:
 cargo test -p orchardprobe-core ipa::tests --locked
 ```
 
-The next safe implementation step is bounded plist and executable inventory
-over individually streamed entries. It must be designed separately; this
-preflight does not make extraction or payload parsing safe by implication.
+The next safe implementation step is bounded `Info.plist` parsing and executable
+inventory over this single-entry primitive. It must be designed separately;
+preflight and bounded byte reads do not make plist parsing, full extraction, or
+Mach-O payload interpretation safe by implication.

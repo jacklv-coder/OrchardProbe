@@ -1,8 +1,9 @@
-//! Bounded, read-only inspection of IPA archive metadata.
+//! Bounded, read-only inspection of IPA archives.
 //!
 //! This module treats an IPA as an untrusted ZIP archive. It validates the
-//! archive and local-entry metadata needed to build a deterministic inventory,
-//! but it never decompresses, extracts, or returns entry payload bytes.
+//! archive and local-entry metadata needed to build a deterministic inventory.
+//! A separate opt-in API can return one bounded, CRC-checked entry in memory
+//! after the entire archive passes that preflight. It never extracts to disk.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -51,6 +52,10 @@ pub const MAX_IPA_ENTRY_UNCOMPRESSED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 pub const MAX_IPA_TOTAL_UNCOMPRESSED_BYTES: u64 = 32 * 1024 * 1024 * 1024;
 /// Maximum accepted declared uncompressed-to-compressed ratio.
 pub const MAX_IPA_COMPRESSION_RATIO: u64 = 1_000;
+/// Maximum caller-selected uncompressed byte length for one in-memory read.
+pub const MAX_IPA_ENTRY_READ_BYTES: u64 = 16 * 1024 * 1024;
+/// Maximum declared compressed byte length accepted by one in-memory read.
+pub const MAX_IPA_ENTRY_READ_COMPRESSED_BYTES: u64 = 64 * 1024 * 1024;
 
 /// The only entry kinds that can enter a future private work tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -177,6 +182,65 @@ pub enum IpaInspectError {
 
     #[error("the selected app root `{path}` contains no regular files")]
     EmptyAppBundle { path: String },
+}
+
+/// Failure while reading one entry after a complete IPA metadata preflight.
+#[derive(Debug, Error)]
+pub enum IpaEntryReadError {
+    #[error("IPA preflight failed: {0}")]
+    Inspect(#[from] IpaInspectError),
+
+    #[error("entry selector is unsafe or ambiguous: {reason}")]
+    UnsafeSelector { reason: &'static str },
+
+    #[error("entry read limit must be between 1 and {maximum} bytes; got {actual}")]
+    InvalidOutputLimit { actual: u64, maximum: u64 },
+
+    #[error("entry `{path}` is not present in the validated IPA inventory")]
+    EntryNotFound { path: String },
+
+    #[error("entry `{path}` is a directory, not a readable regular file")]
+    EntryIsDirectory { path: String },
+
+    #[error("entry `{path}` declares {actual} compressed bytes; read maximum is {maximum}")]
+    CompressedInputTooLarge {
+        path: String,
+        actual: u64,
+        maximum: u64,
+    },
+
+    #[error("entry `{path}` declares {actual} output bytes; caller maximum is {maximum}")]
+    DeclaredOutputTooLarge {
+        path: String,
+        actual: u64,
+        maximum: u64,
+    },
+
+    #[error("entry `{path}` produced more than the caller's {maximum}-byte maximum")]
+    OutputLimitExceeded { path: String, maximum: u64 },
+
+    #[error("entry `{path}` uses unsupported ZIP compression method {method}")]
+    UnsupportedCompression { path: String, method: String },
+
+    #[error("entry `{path}` metadata changed after IPA preflight")]
+    MetadataChanged { path: String },
+
+    #[error("could not reopen the validated IPA for entry reading: {reason}")]
+    ArchiveChanged { reason: String },
+
+    #[error("could not read entry `{path}`: {source}")]
+    ReadFailed {
+        path: String,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("entry `{path}` produced {actual} bytes, but ZIP metadata declared {declared}")]
+    ActualSizeMismatch {
+        path: String,
+        declared: u64,
+        actual: u64,
+    },
 }
 
 #[derive(Debug)]
@@ -392,6 +456,170 @@ pub fn inspect_ipa<R: Read + Seek>(
         total_uncompressed_size,
         entries,
     })
+}
+
+/// Read one exact regular-file entry into memory after validating the full IPA.
+///
+/// The archive is never extracted or written to disk. `max_output_bytes` is a
+/// caller-selected limit that must not exceed [`MAX_IPA_ENTRY_READ_BYTES`]. A
+/// successful read reaches entry EOF, verifies the ZIP CRC, and confirms the
+/// actual length against the metadata returned by [`inspect_ipa`].
+pub fn read_ipa_entry_bounded<R: Read + Seek>(
+    mut reader: R,
+    archive_size: u64,
+    path: &str,
+    max_output_bytes: u64,
+) -> Result<Vec<u8>, IpaEntryReadError> {
+    validate_output_limit(max_output_bytes)?;
+
+    let inventory = inspect_ipa(&mut reader, archive_size)?;
+    let canonical_path = validate_entry_selector(path)?;
+    let expected = inventory
+        .entries
+        .into_iter()
+        .find(|entry| entry.path == canonical_path)
+        .ok_or_else(|| IpaEntryReadError::EntryNotFound {
+            path: canonical_path.clone(),
+        })?;
+    if expected.kind == IpaEntryKind::Directory {
+        return Err(IpaEntryReadError::EntryIsDirectory {
+            path: expected.path,
+        });
+    }
+    validate_entry_read_limits(&expected, max_output_bytes)?;
+
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|source| IpaEntryReadError::ReadFailed {
+            path: expected.path.clone(),
+            source,
+        })?;
+    let config = Config {
+        archive_offset: ArchiveOffset::Known(0),
+    };
+    let mut archive = ZipArchive::with_config(config, reader).map_err(|error| {
+        IpaEntryReadError::ArchiveChanged {
+            reason: error.to_string(),
+        }
+    })?;
+    let index = archive.index_for_name(&expected.path).ok_or_else(|| {
+        IpaEntryReadError::MetadataChanged {
+            path: expected.path.clone(),
+        }
+    })?;
+
+    let compression_method = {
+        let file =
+            archive
+                .by_index_raw(index)
+                .map_err(|error| IpaEntryReadError::ArchiveChanged {
+                    reason: error.to_string(),
+                })?;
+        validate_reopened_entry(&file, &expected)?;
+        file.compression()
+    };
+    if !matches!(
+        compression_method,
+        zip::CompressionMethod::Stored | zip::CompressionMethod::Deflated
+    ) {
+        return Err(IpaEntryReadError::UnsupportedCompression {
+            path: expected.path,
+            method: format!("{compression_method:?}"),
+        });
+    }
+
+    let file = archive
+        .by_index(index)
+        .map_err(|error| IpaEntryReadError::ArchiveChanged {
+            reason: error.to_string(),
+        })?;
+    validate_reopened_entry(&file, &expected)?;
+
+    let reserve = usize::try_from(expected.uncompressed_size)
+        .expect("the fixed in-memory entry limit fits usize");
+    let mut output = Vec::with_capacity(reserve);
+    let read_limit = max_output_bytes + 1;
+    file.take(read_limit)
+        .read_to_end(&mut output)
+        .map_err(|source| IpaEntryReadError::ReadFailed {
+            path: expected.path.clone(),
+            source,
+        })?;
+    let actual = output.len() as u64;
+    if actual > max_output_bytes {
+        return Err(IpaEntryReadError::OutputLimitExceeded {
+            path: expected.path,
+            maximum: max_output_bytes,
+        });
+    }
+    if actual != expected.uncompressed_size {
+        return Err(IpaEntryReadError::ActualSizeMismatch {
+            path: expected.path,
+            declared: expected.uncompressed_size,
+            actual,
+        });
+    }
+    Ok(output)
+}
+
+fn validate_reopened_entry<R: Read>(
+    file: &zip::read::ZipFile<'_, R>,
+    expected: &IpaEntry,
+) -> Result<(), IpaEntryReadError> {
+    if file.name() != expected.path
+        || file.encrypted()
+        || file.compressed_size() != expected.compressed_size
+        || file.size() != expected.uncompressed_size
+        || file.crc32() != expected.crc32
+        || !file.is_file()
+    {
+        return Err(IpaEntryReadError::MetadataChanged {
+            path: expected.path.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_output_limit(max_output_bytes: u64) -> Result<(), IpaEntryReadError> {
+    if max_output_bytes == 0 || max_output_bytes > MAX_IPA_ENTRY_READ_BYTES {
+        return Err(IpaEntryReadError::InvalidOutputLimit {
+            actual: max_output_bytes,
+            maximum: MAX_IPA_ENTRY_READ_BYTES,
+        });
+    }
+    Ok(())
+}
+
+fn validate_entry_selector(path: &str) -> Result<String, IpaEntryReadError> {
+    validate_entry_path(0, path, false).map_err(|error| match error {
+        IpaInspectError::UnsafeEntryPath { reason, .. } => {
+            IpaEntryReadError::UnsafeSelector { reason }
+        }
+        _ => IpaEntryReadError::UnsafeSelector {
+            reason: "selector could not be canonicalized",
+        },
+    })
+}
+
+fn validate_entry_read_limits(
+    entry: &IpaEntry,
+    max_output_bytes: u64,
+) -> Result<(), IpaEntryReadError> {
+    if entry.compressed_size > MAX_IPA_ENTRY_READ_COMPRESSED_BYTES {
+        return Err(IpaEntryReadError::CompressedInputTooLarge {
+            path: entry.path.clone(),
+            actual: entry.compressed_size,
+            maximum: MAX_IPA_ENTRY_READ_COMPRESSED_BYTES,
+        });
+    }
+    if entry.uncompressed_size > max_output_bytes {
+        return Err(IpaEntryReadError::DeclaredOutputTooLarge {
+            path: entry.path.clone(),
+            actual: entry.uncompressed_size,
+            maximum: max_output_bytes,
+        });
+    }
+    Ok(())
 }
 
 fn read_central_directory<R: Read + Seek>(
@@ -1001,13 +1229,24 @@ mod tests {
         Symlink(&'a str, &'a str),
     }
 
-    fn options() -> SimpleFileOptions {
+    fn options_with_method(method: CompressionMethod) -> SimpleFileOptions {
         SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored)
+            .compression_method(method)
             .unix_permissions(0o644)
     }
 
+    fn options() -> SimpleFileOptions {
+        options_with_method(CompressionMethod::Stored)
+    }
+
     fn make_archive(entries: &[FixtureEntry<'_>]) -> Vec<u8> {
+        make_archive_with_file_method(entries, CompressionMethod::Stored)
+    }
+
+    fn make_archive_with_file_method(
+        entries: &[FixtureEntry<'_>],
+        file_method: CompressionMethod,
+    ) -> Vec<u8> {
         let cursor = Cursor::new(Vec::new());
         let mut writer = ZipWriter::new(cursor);
         for entry in entries {
@@ -1018,7 +1257,9 @@ mod tests {
                         .expect("add directory");
                 }
                 FixtureEntry::File(path, bytes) => {
-                    writer.start_file(*path, options()).expect("start file");
+                    writer
+                        .start_file(*path, options_with_method(file_method))
+                        .expect("start file");
                     writer.write_all(bytes).expect("write fixture bytes");
                 }
                 FixtureEntry::Symlink(path, target) => {
@@ -1067,6 +1308,24 @@ mod tests {
         bytes[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
     }
 
+    fn central_offset_for(bytes: &[u8], path: &str) -> usize {
+        signature_offsets(bytes, CENTRAL_ENTRY_SIGNATURE)
+            .into_iter()
+            .find(|offset| {
+                let name_len = usize::from(le_u16(bytes, offset + 28));
+                let name_start = offset + CENTRAL_ENTRY_FIXED_BYTES;
+                bytes.get(name_start..name_start + name_len) == Some(path.as_bytes())
+            })
+            .expect("fixture central entry")
+    }
+
+    fn set_declared_uncompressed_size(bytes: &mut [u8], path: &str, size: u32) {
+        let central = central_offset_for(bytes, path);
+        let local = le_u32(bytes, central + 42) as usize;
+        set_u32(bytes, central + 24, size);
+        set_u32(bytes, local + 22, size);
+    }
+
     #[test]
     fn valid_ipa_is_deterministic_and_does_not_modify_input() {
         let bytes = valid_archive();
@@ -1098,6 +1357,195 @@ mod tests {
                 "Payload/Demo.app/Info.plist",
             ]
         );
+    }
+
+    #[test]
+    fn reads_stored_entry_deterministically_without_modifying_input() {
+        let bytes = valid_archive();
+        let original = bytes.clone();
+        let mut cursor = Cursor::new(bytes);
+        let size = cursor.get_ref().len() as u64;
+
+        let first = read_ipa_entry_bounded(&mut cursor, size, "Payload/Demo.app/Info.plist", 1024)
+            .expect("read stored entry");
+        let second = read_ipa_entry_bounded(&mut cursor, size, "Payload/Demo.app/Info.plist", 1024)
+            .expect("repeat stored entry");
+
+        assert_eq!(first, b"plist");
+        assert_eq!(first, second);
+        assert_eq!(cursor.get_ref(), &original);
+    }
+
+    #[test]
+    fn reads_deflated_entry_and_checks_declared_size() {
+        let payload = vec![b'A'; 2048];
+        let bytes = make_archive_with_file_method(
+            &[FixtureEntry::File("Payload/Demo.app/Info.plist", &payload)],
+            CompressionMethod::Deflated,
+        );
+
+        let output = read_ipa_entry_bounded(
+            Cursor::new(&bytes),
+            bytes.len() as u64,
+            "Payload/Demo.app/Info.plist",
+            payload.len() as u64,
+        )
+        .expect("read deflated entry");
+
+        assert_eq!(output, payload);
+    }
+
+    #[test]
+    fn rejects_unsafe_missing_and_directory_selectors() {
+        let bytes = valid_archive();
+        let size = bytes.len() as u64;
+
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&bytes), size, "../Info.plist", 1024),
+            Err(IpaEntryReadError::UnsafeSelector { .. })
+        ));
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&bytes), size, "Payload/Demo.app/Missing", 1024,),
+            Err(IpaEntryReadError::EntryNotFound { .. })
+        ));
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&bytes), size, "Payload/Demo.app", 1024,),
+            Err(IpaEntryReadError::EntryIsDirectory { .. })
+        ));
+    }
+
+    #[test]
+    fn enforces_caller_and_fixed_read_limits_before_payload_read() {
+        let bytes = valid_archive();
+        let size = bytes.len() as u64;
+
+        for invalid in [0, MAX_IPA_ENTRY_READ_BYTES + 1] {
+            assert!(matches!(
+                read_ipa_entry_bounded(
+                    Cursor::new(&bytes),
+                    size,
+                    "Payload/Demo.app/Info.plist",
+                    invalid,
+                ),
+                Err(IpaEntryReadError::InvalidOutputLimit { .. })
+            ));
+        }
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&bytes), size, "Payload/Demo.app/Info.plist", 4,),
+            Err(IpaEntryReadError::DeclaredOutputTooLarge { .. })
+        ));
+
+        let oversized = IpaEntry {
+            path: "Payload/Demo.app/large".to_owned(),
+            kind: IpaEntryKind::File,
+            compressed_size: MAX_IPA_ENTRY_READ_COMPRESSED_BYTES + 1,
+            uncompressed_size: 1,
+            crc32: 0,
+        };
+        assert!(matches!(
+            validate_entry_read_limits(&oversized, 1),
+            Err(IpaEntryReadError::CompressedInputTooLarge { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_unsupported_compression_before_decompression() {
+        let path = "Payload/Demo.app/Demo";
+        let mut bytes = make_archive(&[FixtureEntry::File(path, b"data")]);
+        let central = central_offset_for(&bytes, path);
+        let local = le_u32(&bytes, central + 42) as usize;
+        set_u16(&mut bytes, central + 10, 12);
+        set_u16(&mut bytes, local + 8, 12);
+
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&bytes), bytes.len() as u64, path, 1024),
+            Err(IpaEntryReadError::UnsupportedCompression { ref method, .. })
+                if method.contains("12")
+        ));
+    }
+
+    #[test]
+    fn rejects_reopened_entry_metadata_drift() {
+        let path = "Payload/Demo.app/Demo";
+        let bytes = make_archive(&[FixtureEntry::File(path, b"data")]);
+        let mut expected = inspect(&bytes)
+            .expect("valid inventory")
+            .entries
+            .into_iter()
+            .find(|entry| entry.path == path)
+            .expect("fixture entry");
+        expected.crc32 ^= 1;
+
+        let mut archive = ZipArchive::new(Cursor::new(&bytes)).expect("reopen fixture");
+        let index = archive.index_for_name(path).expect("fixture entry index");
+        let file = archive.by_index_raw(index).expect("raw fixture entry");
+
+        assert!(matches!(
+            validate_reopened_entry(&file, &expected),
+            Err(IpaEntryReadError::MetadataChanged { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_crc_corruption_and_observed_output_over_limit() {
+        let path = "Payload/Demo.app/Demo";
+        let mut corrupt = make_archive(&[FixtureEntry::File(path, b"data")]);
+        let central = central_offset_for(&corrupt, path);
+        let local = le_u32(&corrupt, central + 42) as usize;
+        let name_len = usize::from(le_u16(&corrupt, local + 26));
+        let extra_len = usize::from(le_u16(&corrupt, local + 28));
+        corrupt[local + LOCAL_ENTRY_FIXED_BYTES + name_len + extra_len] ^= 0xff;
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&corrupt), corrupt.len() as u64, path, 1024),
+            Err(IpaEntryReadError::ReadFailed { .. })
+        ));
+
+        let mut understated = make_archive(&[FixtureEntry::File(path, b"data")]);
+        set_declared_uncompressed_size(&mut understated, path, 3);
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&understated), understated.len() as u64, path, 3),
+            Err(IpaEntryReadError::OutputLimitExceeded { .. })
+        ));
+        assert!(matches!(
+            read_ipa_entry_bounded(Cursor::new(&understated), understated.len() as u64, path, 4),
+            Err(IpaEntryReadError::ActualSizeMismatch {
+                declared: 3,
+                actual: 4,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn entry_read_propagates_full_preflight_failures() {
+        let malformed = b"not a zip";
+        assert!(matches!(
+            read_ipa_entry_bounded(
+                Cursor::new(malformed),
+                malformed.len() as u64,
+                "Payload/Demo.app/Demo",
+                1024,
+            ),
+            Err(IpaEntryReadError::Inspect(
+                IpaInspectError::InvalidArchive { .. }
+            ))
+        ));
+
+        let symlink = make_archive(&[
+            FixtureEntry::File("Payload/Demo.app/Demo", b"data"),
+            FixtureEntry::Symlink("Payload/Demo.app/link", "Demo"),
+        ]);
+        assert!(matches!(
+            read_ipa_entry_bounded(
+                Cursor::new(&symlink),
+                symlink.len() as u64,
+                "Payload/Demo.app/Demo",
+                1024,
+            ),
+            Err(IpaEntryReadError::Inspect(
+                IpaInspectError::UnsupportedEntryKind { .. }
+            ))
+        ));
     }
 
     #[test]
