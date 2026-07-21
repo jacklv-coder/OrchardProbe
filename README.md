@@ -116,8 +116,8 @@ The host is planned as a Rust workspace. A small Objective-C/C helper will perfo
 
 ## Privacy and safety principles
 
-- Local-first: app bundles, reports, logs, and device details stay on the user's machines.
-- No telemetry: the project will not collect usage, IPA, log, or device data.
+- Local-first operation: app bundles, generated reports, logs, and raw device details stay on the user's machines. A user may separately choose to submit only the sanitized environment metadata requested by the public compatibility form, without stable device identifiers.
+- No automatic telemetry: official software does not automatically collect or transmit usage, IPA, log, or device data. GitHub issues are manual, opt-in submissions governed by the [compatibility evidence policy](docs/compatibility/README.md).
 - Minimal collection: only the `.app` bundle is in scope; receipts, `SC_Info`, and data containers are excluded by design.
 - Auditable output: structured reports explain backend choice, per-file status, hashes, signing state, and evidence level. Metadata such as `cryptid == 0` alone is never treated as proof of correct plaintext; results without a plaintext oracle are marked inconclusive.
 - Honest compatibility: public support claims require maintainer reproduction and a sanitized real-device record under the [compatibility evidence policy](docs/compatibility/README.md).

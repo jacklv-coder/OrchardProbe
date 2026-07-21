@@ -60,11 +60,11 @@ hardware alone is not evidence for this status.
 
 ## Unverified reports
 
-Public compatibility issues are structured intake reports, not test records and
-not support declarations. Their result always begins with `Unverified report`.
-Maintainers first check authorization, fixture provenance, completeness, and
-redaction. A useful report may lead to a separate maintainer test record, but it
-does not itself change a compatibility status.
+Public compatibility issues are manual, opt-in, structured intake reports, not
+automatic telemetry, test records, or support declarations. Their result always
+begins with `Unverified report`. Maintainers first check authorization, fixture
+provenance, completeness, and redaction. A useful report may lead to a separate
+maintainer test record, but it does not itself change a compatibility status.
 
 ## Permitted record fields
 
@@ -90,9 +90,12 @@ identifiers, IPAs, binary contents, or raw/unsanitized logs. Do not attach or
 link to those materials. A maintainer's GitHub identity in the sign-off is
 record process metadata, not host or device metadata.
 
-Use only DemoLab or another original, redistributable first-party fixture. A
-third-party or proprietary application cannot be used to establish public
-compatibility, even if the reporter says they are authorized to test it.
+Use DemoLab whenever it can reproduce the observation. Public diagnostic intake
+may instead describe another original, publicly redistributable first-party
+fixture, but that report cannot establish Verified compatibility under the
+current policy. A third-party or proprietary application cannot be named or
+used to establish public compatibility, even if the reporter says they are
+authorized to test it. Maintainer verification currently uses DemoLab only.
 
 ## Evidence vocabulary
 
