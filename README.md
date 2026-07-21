@@ -5,11 +5,23 @@
 [简体中文](README.zh-CN.md)
 
 > [!IMPORTANT]
-> **Planning / Pre-alpha:** OrchardProbe is a working name and the tool has not been implemented yet. This repository currently contains a project plan and foundational policies—not a working exporter, supported-device matrix, release, or installation instructions.
+> **Pre-alpha:** OrchardProbe is a working name. The repository now contains a device-free Rust host skeleton, project plan, and foundational policies—but no device backend, working exporter, supported-device matrix, release, or installation instructions.
 
 OrchardProbe is intended to make authorized iOS binary research more transparent and reproducible. The planned workflow will detect device capabilities, select a narrowly scoped export backend, verify every relevant Mach-O independently, and record what succeeded, failed, or was skipped in a machine-readable manifest.
 
 It is not intended to promise support for every iOS version, device, jailbreak, or app. The first usable milestone will deliberately target Apple Silicon macOS and one explicitly documented, physically tested device environment before compatibility expands.
+
+## Development snapshot
+
+The current code is intentionally host-only. It can report local pre-alpha status, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants:
+
+```sh
+cargo run --locked -p orchardprobe-cli -- doctor --json
+cargo run --locked -p orchardprobe-cli -- demo --json
+cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
+```
+
+These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
 ## Authorized use only
 
@@ -59,20 +71,26 @@ OrchardProbe will not provide or facilitate:
 
 Requests or contributions that add these capabilities are outside the project scope.
 
-## Planned CLI
+## Current and planned CLI
 
-The command surface below is a draft design, not an available interface:
+The host-only commands available from source today are:
 
 ```text
 oprobe doctor [--json]
+oprobe demo [--json]
+oprobe verify <manifest.json> [--json]
+```
+
+The device and artifact commands below are future design placeholders and are not implemented:
+
+```text
 oprobe devices
 oprobe apps
 oprobe export <bundle-id> --output <path>
 oprobe verify <ipa-or-app> [--json]
-oprobe demo
 ```
 
-There are intentionally no installation commands yet. Installation documentation will be added only after a reproducible alpha release exists.
+There are intentionally no release installation commands yet. The Cargo commands above are for contributors and will be replaced with installation documentation only after a reproducible alpha release exists.
 
 ## Architecture overview
 
