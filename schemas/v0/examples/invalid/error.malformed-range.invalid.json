@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "message_type": "error",
+  "category": "collection",
+  "code": "invalid_range",
+  "terminal": true,
+  "retryable": false,
+  "operation": "code_range_stream",
+  "state": "collecting",
+  "context": [
+    {
+      "kind": "range",
+      "relative_path": "Payload/DemoLab.app/DemoLab",
+      "file_offset": 4096,
+      "requested_size": 0
+    }
+  ]
+}

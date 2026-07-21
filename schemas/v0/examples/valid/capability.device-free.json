@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "message_type": "capability_report",
+  "protocol_version": {
+    "major": 0,
+    "minor": 1
+  },
+  "backend_id": "not_implemented",
+  "capabilities": [],
+  "disabled_capabilities": [
+    {
+      "id": "transport.framed_json",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    },
+    {
+      "id": "target.catalog",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    },
+    {
+      "id": "bundle.enumerate",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    },
+    {
+      "id": "bundle.entry_stream",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    },
+    {
+      "id": "binary.code_range_stream",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    },
+    {
+      "id": "session.cancel",
+      "revision": 1,
+      "reason": "backend_not_implemented"
+    }
+  ]
+}

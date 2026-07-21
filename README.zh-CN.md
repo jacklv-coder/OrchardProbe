@@ -22,7 +22,7 @@ cargo run --locked -p orchardprobe-cli -- demo --json
 cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 ```
 
-这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。`inspect` 只接受一个普通 Mach-O 文件，并仅读取有界的容器、Slice 与 Load Command 元数据；精确契约见 [Mach-O inspect 开发文档](docs/development/macho-inspect.md)。仓库自有的 [DemoLab fixture](fixtures/DemoLab/README.md) 提供 Swift 主 App、Objective-C 动态 Framework 和 Share Extension，用于安全且可复现的模拟器构建。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
+这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。`inspect` 只接受一个普通 Mach-O 文件，并仅读取有界的容器、Slice 与 Load Command 元数据；精确契约见 [Mach-O inspect 开发文档](docs/development/macho-inspect.md)。Capability、结构化错误和导出 manifest 现已有[带版本、边界明确的 pre-v1 契约](docs/development/schemas.md)，但当前仍没有设备后端实现它们。仓库自有的 [DemoLab fixture](fixtures/DemoLab/README.md) 提供 Swift 主 App、Objective-C 动态 Framework 和 Share Extension，用于安全且可复现的模拟器构建。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
 
 ## 仅限授权用途
 

@@ -54,6 +54,8 @@ cargo run --locked -p orchardprobe-cli -- inspect path/to/Mach-O --json
 
 `--locked` makes Cargo use the committed `Cargo.lock` exactly. If dependency metadata changes intentionally, regenerate the lockfile in the same change and then rerun all four commands without removing `--locked`.
 
+The workspace tests also compile the checked-in Draft 2020-12 schemas, validate all golden and negative fixtures, and round-trip each golden through its Rust wire type. See the [versioned contract guide](schemas.md) for versions, limits, and evidence semantics.
+
 ## Architecture boundary
 
 Host parsing and orchestration live in Rust. A future Objective-C/C device helper will be deliberately narrow and capability-scoped. See [ADR-0001](../architecture/ADR-0001-rust-host.md) for the trust boundary and the requirements that must be met before a device backend is added.

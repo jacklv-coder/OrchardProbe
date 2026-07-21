@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "contract": "capability",
+  "contract_schema": "../../capability-v1.schema.json",
+  "instance": "capability.unknown-version.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "const"
+    ],
+    "instance_pointer": "/schema_version",
+    "reason_code": "unsupported_schema_version",
+    "reason": "Capability schema version 2 is not supported by this pre-v1 contract."
+  }
+}

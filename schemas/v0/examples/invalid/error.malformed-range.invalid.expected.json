@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "contract": "error",
+  "contract_schema": "../../error-v1.schema.json",
+  "instance": "error.malformed-range.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "minimum",
+      "oneOf"
+    ],
+    "instance_pointer": "/context/0/requested_size",
+    "reason_code": "malformed_range",
+    "reason": "A requested range must contain at least one byte."
+  }
+}

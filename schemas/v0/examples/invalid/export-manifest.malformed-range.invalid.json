@@ -1,0 +1,39 @@
+{
+  "schema_version": 2,
+  "tool_version": "0.1.0-pre-alpha",
+  "target": {
+    "bundle_id": "com.example.orchardprobe.demolab",
+    "display_name": "OrchardProbe DemoLab",
+    "version": "0.0.0-demo"
+  },
+  "backend": "device_free_demo",
+  "capability_ids": [],
+  "binaries": [
+    {
+      "path": "Payload/DemoLab.app/DemoLab",
+      "role": "main_executable",
+      "architecture": "arm64",
+      "outcome": "inconclusive",
+      "evidence_level": "structure",
+      "known_plaintext_evaluated": false,
+      "signature": {
+        "presence": "unknown",
+        "kind": "unknown",
+        "validation": "not_checked"
+      },
+      "ranges": [
+        {
+          "file_offset": 4096,
+          "requested_size": 0,
+          "accepted_size": 0,
+          "written_size": 0,
+          "accepted_sha256": null,
+          "written_sha256": null
+        }
+      ],
+      "reason_codes": [
+        "collection.incomplete"
+      ]
+    }
+  ]
+}

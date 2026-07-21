@@ -1,0 +1,822 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jacklv-coder/OrchardProbe/main/schemas/v0/error-v1.schema.json",
+  "title": "OrchardProbe pre-v1 structured error envelope",
+  "description": "A bounded error report with stable codes and typed, sanitized context. It cannot carry logs, credentials, process identifiers, addresses, or arbitrary paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "message_type",
+    "category",
+    "code",
+    "terminal",
+    "retryable",
+    "operation",
+    "state",
+    "context"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "message_type": {
+      "const": "error"
+    },
+    "category": {
+      "enum": [
+        "policy",
+        "capability",
+        "transport",
+        "protocol",
+        "collection",
+        "reconstruction",
+        "verification",
+        "reporting",
+        "internal"
+      ]
+    },
+    "code": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "terminal": {
+      "type": "boolean"
+    },
+    "retryable": {
+      "type": "boolean"
+    },
+    "operation": {
+      "enum": [
+        "authorization",
+        "handshake",
+        "capability_report",
+        "target_catalog",
+        "target_select",
+        "bundle_enumerate",
+        "bundle_entry_stream",
+        "code_range_stream",
+        "cancel",
+        "teardown",
+        "reconstruct",
+        "manifest_validate",
+        "evidence_verify",
+        "report_write"
+      ]
+    },
+    "state": {
+      "enum": [
+        "host_local",
+        "negotiating",
+        "target_selected",
+        "collecting",
+        "reconstructing",
+        "verifying",
+        "reporting",
+        "tearing_down",
+        "closed"
+      ]
+    },
+    "context": {
+      "type": "array",
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/context"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {
+            "category": {
+              "const": "policy"
+            },
+            "code": {
+              "enum": [
+                "authorization_required",
+                "acknowledgement_required",
+                "target_not_allowed"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "capability"
+            },
+            "code": {
+              "enum": [
+                "incompatible_schema_version",
+                "incompatible_protocol_version",
+                "required_capability_missing"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "transport"
+            },
+            "code": {
+              "enum": [
+                "transport_unavailable",
+                "transport_interrupted"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "protocol"
+            },
+            "code": {
+              "enum": [
+                "malformed_message",
+                "invalid_state",
+                "limit_exceeded"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "collection"
+            },
+            "code": {
+              "enum": [
+                "target_changed",
+                "unsafe_relative_path",
+                "invalid_range",
+                "resource_changed"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "reconstruction"
+            },
+            "code": {
+              "enum": [
+                "unsupported_binary",
+                "reconstruction_failed"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "verification"
+            },
+            "code": {
+              "enum": [
+                "insufficient_evidence",
+                "hash_mismatch",
+                "signature_state_inconsistent"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "reporting"
+            },
+            "code": {
+              "enum": [
+                "manifest_invalid",
+                "output_failed"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "category": {
+              "const": "internal"
+            },
+            "code": {
+              "const": "invariant_failed"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "$ref": "#/$defs/disposition"
+    },
+    {
+      "$ref": "#/$defs/context_requirements"
+    }
+  ],
+  "$defs": {
+    "disposition": {
+      "type": "object",
+      "oneOf": [
+        {
+          "properties": {
+            "code": {
+              "enum": [
+                "transport_unavailable",
+                "transport_interrupted",
+                "resource_changed",
+                "output_failed"
+              ]
+            },
+            "terminal": {
+              "const": true
+            },
+            "retryable": {
+              "const": true
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": {
+              "enum": [
+                "limit_exceeded",
+                "unsupported_binary",
+                "insufficient_evidence",
+                "signature_state_inconsistent",
+                "manifest_invalid"
+              ]
+            },
+            "terminal": {
+              "const": false
+            },
+            "retryable": {
+              "const": false
+            }
+          }
+        },
+        {
+          "properties": {
+            "code": {
+              "enum": [
+                "authorization_required",
+                "acknowledgement_required",
+                "target_not_allowed",
+                "incompatible_schema_version",
+                "incompatible_protocol_version",
+                "required_capability_missing",
+                "malformed_message",
+                "invalid_state",
+                "target_changed",
+                "unsafe_relative_path",
+                "invalid_range",
+                "reconstruction_failed",
+                "hash_mismatch",
+                "invariant_failed"
+              ]
+            },
+            "terminal": {
+              "const": true
+            },
+            "retryable": {
+              "const": false
+            }
+          }
+        }
+      ]
+    },
+    "context_requirements": {
+      "type": "object",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "incompatible_schema_version"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_version_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "incompatible_protocol_version"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_protocol_version_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "required_capability_missing"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_capability_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "limit_exceeded"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_limit_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "unsafe_relative_path"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_path_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_range"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_range_context"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "insufficient_evidence",
+                  "hash_mismatch",
+                  "signature_state_inconsistent"
+                ]
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/requires_evidence_context"
+          }
+        }
+      ]
+    },
+    "requires_version_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "version"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_protocol_version_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "protocol_version"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_capability_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "capability"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_limit_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "limit"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_path_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "relative_path"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_range_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "range"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "requires_evidence_context": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "type": "array",
+          "contains": {
+            "type": "object",
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "evidence"
+              }
+            }
+          },
+          "minContains": 1
+        }
+      }
+    },
+    "safe_relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![A-Za-z]:)(?!.*[\\\\\\u0000-\\u001F\\u007F-\\u009F])(?!(?:\\.{1,2})(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
+    },
+    "capability_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "context": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/version_context"
+        },
+        {
+          "$ref": "#/$defs/protocol_version_context"
+        },
+        {
+          "$ref": "#/$defs/capability_context"
+        },
+        {
+          "$ref": "#/$defs/limit_context"
+        },
+        {
+          "$ref": "#/$defs/path_context"
+        },
+        {
+          "$ref": "#/$defs/range_context"
+        },
+        {
+          "$ref": "#/$defs/evidence_context"
+        }
+      ]
+    },
+    "version_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "contract",
+        "received",
+        "supported"
+      ],
+      "properties": {
+        "kind": {
+          "const": "version"
+        },
+        "contract": {
+          "enum": [
+            "capability",
+            "error",
+            "export_manifest"
+          ]
+        },
+        "received": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "supported": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "contract": {
+              "enum": [
+                "capability",
+                "error"
+              ]
+            },
+            "supported": {
+              "type": "array",
+              "items": {
+                "const": 1
+              }
+            }
+          }
+        },
+        {
+          "properties": {
+            "contract": {
+              "const": "export_manifest"
+            },
+            "supported": {
+              "type": "array",
+              "items": {
+                "const": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    "capability_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "capability_id"
+      ],
+      "properties": {
+        "kind": {
+          "const": "capability"
+        },
+        "capability_id": {
+          "$ref": "#/$defs/capability_id"
+        }
+      }
+    },
+    "protocol_version_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "received_major",
+        "received_minor",
+        "supported_major",
+        "minimum_minor",
+        "maximum_minor"
+      ],
+      "properties": {
+        "kind": {
+          "const": "protocol_version"
+        },
+        "received_major": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "received_minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "supported_major": {
+          "const": 0
+        },
+        "minimum_minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "maximum_minor": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535
+        }
+      }
+    },
+    "limit_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "limit",
+        "observed",
+        "allowed"
+      ],
+      "properties": {
+        "kind": {
+          "const": "limit"
+        },
+        "limit": {
+          "enum": [
+            "frame_bytes",
+            "message_bytes",
+            "target_count",
+            "entry_count",
+            "relative_path_utf8_bytes",
+            "entry_bytes",
+            "range_count",
+            "range_bytes",
+            "total_bytes",
+            "diagnostic_context_count"
+          ]
+        },
+        "observed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "allowed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "path_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "relative_path"
+      ],
+      "properties": {
+        "kind": {
+          "const": "relative_path"
+        },
+        "relative_path": {
+          "$ref": "#/$defs/safe_relative_path"
+        }
+      }
+    },
+    "range_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "relative_path",
+        "file_offset",
+        "requested_size"
+      ],
+      "properties": {
+        "kind": {
+          "const": "range"
+        },
+        "relative_path": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "file_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requested_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        }
+      }
+    },
+    "evidence_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "evidence_level",
+        "outcome"
+      ],
+      "properties": {
+        "kind": {
+          "const": "evidence"
+        },
+        "evidence_level": {
+          "enum": [
+            "metadata",
+            "structure",
+            "range_hash",
+            "known_plaintext"
+          ]
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive",
+            "skipped"
+          ]
+        }
+      }
+    }
+  }
+}

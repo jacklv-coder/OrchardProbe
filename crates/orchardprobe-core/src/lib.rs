@@ -5,6 +5,7 @@
 //! in an export manifest.
 
 pub mod macho;
+pub mod wire;
 
 use std::collections::HashSet;
 
@@ -12,7 +13,25 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The manifest schema understood by this version of the crate.
-pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
+
+/// Maximum encoded manifest size accepted by the CLI.
+pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+const MAX_SAFE_JSON_INTEGER: u64 = 9_007_199_254_740_991;
+const MAX_BINARIES: usize = 256;
+const MAX_CAPABILITY_IDS: usize = 16;
+const MAX_BINARY_RANGES: usize = 256;
+const MAX_TOTAL_RANGES: usize = 8192;
+const MAX_RANGE_BYTES: u64 = 268_435_456;
+const MAX_PATH_CHARS: usize = 1024;
+const MAX_PATH_UTF8_BYTES: usize = 1024;
+const MAX_PATH_DEPTH: usize = 32;
+const MAX_PATH_COMPONENT_CHARS: usize = 255;
+const MAX_PATH_COMPONENT_UTF8_BYTES: usize = 255;
+const MAX_REASON_CODES: usize = 16;
+const MAX_NOTES: usize = 16;
+const MAX_WARNINGS: usize = 32;
 
 /// The schema used by non-manifest JSON command reports.
 pub const CLI_OUTPUT_SCHEMA_VERSION: u32 = 1;
@@ -35,6 +54,17 @@ pub enum EvidenceLevel {
     Structure,
     RangeHash,
     KnownPlaintext,
+}
+
+/// The role of a Mach-O binary inside the selected app bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BinaryRole {
+    MainExecutable,
+    Framework,
+    DynamicLibrary,
+    Extension,
+    Other,
 }
 
 /// Whether an embedded code signature was observed.
@@ -88,20 +118,63 @@ pub struct TargetSummary {
     pub version: String,
 }
 
+/// Stable identity for one Mach-O slice when that identity was observed.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SliceIdentity {
+    pub cpu_type: i32,
+    pub cpu_subtype: i32,
+    pub file_offset: u64,
+    pub file_size: u64,
+    pub architecture: String,
+}
+
+/// Bounded evidence for one helper-approved code range.
+///
+/// `file_offset` is relative to the containing Mach-O file, never the start of
+/// a slice and never a VM address. The sizes record a typed operation over an
+/// opaque, session-bound range handle; they are not caller-selected memory
+/// coordinates.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RangeEvidence {
+    pub file_offset: u64,
+    pub requested_size: u64,
+    pub accepted_size: u64,
+    pub written_size: u64,
+    #[serde(default)]
+    pub accepted_sha256: Option<String>,
+    #[serde(default)]
+    pub written_sha256: Option<String>,
+}
+
 /// Evidence and outcome for one Mach-O binary in an app bundle.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BinaryEvidence {
     /// A bundle-relative path using `/` separators.
     pub path: String,
+    pub role: BinaryRole,
     pub architecture: String,
+    #[serde(default)]
+    pub slice: Option<SliceIdentity>,
+    #[serde(default)]
+    pub input_size: Option<u64>,
+    #[serde(default)]
+    pub output_size: Option<u64>,
     pub outcome: Outcome,
     pub evidence_level: EvidenceLevel,
+    #[serde(default)]
     pub input_sha256: Option<String>,
+    #[serde(default)]
     pub output_sha256: Option<String>,
     /// A first-party expected plaintext hash, when a real oracle exists.
+    #[serde(default)]
     pub known_plaintext_sha256: Option<String>,
+    pub known_plaintext_evaluated: bool,
     pub signature: SignatureInfo,
+    pub ranges: Vec<RangeEvidence>,
+    pub reason_codes: Vec<String>,
     #[serde(default)]
     pub notes: Vec<String>,
 }
@@ -112,8 +185,11 @@ pub struct BinaryEvidence {
 pub struct ExportManifest {
     pub schema_version: u32,
     pub tool_version: String,
+    #[serde(default)]
+    pub tool_revision: Option<String>,
     pub target: TargetSummary,
     pub backend: String,
+    pub capability_ids: Vec<String>,
     pub binaries: Vec<BinaryEvidence>,
     #[serde(default)]
     pub warnings: Vec<String>,
@@ -128,6 +204,21 @@ pub enum ManifestValidationError {
     #[error("manifest field `{field}` must not be empty")]
     EmptyField { field: String },
 
+    #[error("manifest field `{field}` exceeds the maximum of {maximum}")]
+    FieldTooLong { field: String, maximum: usize },
+
+    #[error("manifest field `{field}` contains unsupported control characters")]
+    UnsafeText { field: String },
+
+    #[error("manifest field `{field}` is not a valid bounded identifier")]
+    InvalidIdentifier { field: String },
+
+    #[error("manifest collection `{field}` exceeds the maximum of {maximum} items")]
+    TooManyItems { field: String, maximum: usize },
+
+    #[error("manifest field `{field}` is outside its permitted interoperable integer range")]
+    IntegerOutOfRange { field: String },
+
     #[error("manifest must contain at least one binary")]
     NoBinaries,
 
@@ -137,11 +228,51 @@ pub enum ManifestValidationError {
     #[error("binary path `{path}` appears more than once")]
     DuplicateBinaryPath { path: String },
 
+    #[error("capability ID `{capability_id}` appears more than once")]
+    DuplicateCapabilityId { capability_id: String },
+
+    #[error("reason code `{reason_code}` appears more than once for binary `{path}`")]
+    DuplicateReasonCode { path: String, reason_code: String },
+
+    #[error("binary `{path}` must contain at least one stable reason code")]
+    NoReasonCodes { path: String },
+
+    #[error("binary `{path}` has reason codes that contradict its evidence or outcome")]
+    InconsistentReasonCodes { path: String },
+
     #[error("manifest field `{field}` must be a 64-character hexadecimal SHA-256")]
     InvalidSha256 { field: String },
 
     #[error("signature fields for binary `{path}` are inconsistent")]
     InconsistentSignature { path: String },
+
+    #[error("slice architecture for binary `{path}` does not match its architecture field")]
+    SliceArchitectureMismatch { path: String },
+
+    #[error("slice identity for binary `{path}` is outside the recorded input size")]
+    SliceOutOfBounds { path: String },
+
+    #[error("binary `{path}` records a hash without its corresponding byte size")]
+    MissingSizeForHash { path: String },
+
+    #[error("range {index} for binary `{path}` is invalid: {reason}")]
+    InvalidRange {
+        path: String,
+        index: usize,
+        reason: String,
+    },
+
+    #[error("range {index} for binary `{path}` overlaps or is out of order")]
+    OverlappingRange { path: String, index: usize },
+
+    #[error("binary `{path}` requires complete range-hash evidence")]
+    MissingRangeEvidence { path: String },
+
+    #[error("range {index} for binary `{path}` has mismatched accepted and written hashes")]
+    RangeHashMismatch { path: String, index: usize },
+
+    #[error("binary `{path}` has an inconsistent known-plaintext evaluation flag")]
+    InconsistentKnownPlaintextFlag { path: String },
 
     #[error("binary `{path}` declares pass without known-plaintext evidence")]
     InsufficientEvidenceForPass { path: String },
@@ -158,6 +289,9 @@ pub enum ManifestValidationError {
         "binary `{path}` declares pass but its output hash does not match the known-plaintext oracle"
     )]
     KnownPlaintextMismatch { path: String },
+
+    #[error("binary `{path}` has an outcome that contradicts its known-plaintext comparison")]
+    KnownPlaintextOutcomeMismatch { path: String },
 }
 
 impl ExportManifest {
@@ -170,45 +304,128 @@ impl ExportManifest {
             });
         }
 
-        require_non_empty("tool_version", &self.tool_version)?;
-        require_non_empty("target.bundle_id", &self.target.bundle_id)?;
-        require_non_empty("target.display_name", &self.target.display_name)?;
-        require_non_empty("target.version", &self.target.version)?;
-        require_non_empty("backend", &self.backend)?;
+        require_bounded_text("tool_version", &self.tool_version, 128)?;
+        if let Some(tool_revision) = &self.tool_revision {
+            if tool_revision.len() != 40
+                || !tool_revision
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                return Err(ManifestValidationError::InvalidIdentifier {
+                    field: "tool_revision".to_owned(),
+                });
+            }
+        }
+        require_bounded_text("target.bundle_id", &self.target.bundle_id, 255)?;
+        require_bounded_text("target.display_name", &self.target.display_name, 128)?;
+        require_bounded_text("target.version", &self.target.version, 64)?;
+        require_bounded_wire_id("backend", &self.backend, 64)?;
+
+        require_max_items(
+            "capability_ids",
+            self.capability_ids.len(),
+            MAX_CAPABILITY_IDS,
+        )?;
+        let mut capability_ids = HashSet::with_capacity(self.capability_ids.len());
+        for (index, capability_id) in self.capability_ids.iter().enumerate() {
+            let field = format!("capability_ids[{index}]");
+            if !wire::is_known_capability_id(capability_id) {
+                return Err(ManifestValidationError::InvalidIdentifier { field });
+            }
+            if !capability_ids.insert(capability_id.as_str()) {
+                return Err(ManifestValidationError::DuplicateCapabilityId {
+                    capability_id: capability_id.clone(),
+                });
+            }
+        }
 
         if self.binaries.is_empty() {
             return Err(ManifestValidationError::NoBinaries);
         }
+        require_max_items("binaries", self.binaries.len(), MAX_BINARIES)?;
+        require_max_items("warnings", self.warnings.len(), MAX_WARNINGS)?;
 
         let mut paths = HashSet::with_capacity(self.binaries.len());
+        let mut total_ranges = 0usize;
         for (index, binary) in self.binaries.iter().enumerate() {
-            let path_field = format!("binaries[{index}].path");
-            require_non_empty(&path_field, &binary.path)?;
-
-            let architecture_field = format!("binaries[{index}].architecture");
-            require_non_empty(&architecture_field, &binary.architecture)?;
-
-            if let Some(input_sha256) = &binary.input_sha256 {
-                let input_hash_field = format!("binaries[{index}].input_sha256");
-                require_sha256(&input_hash_field, input_sha256)?;
-            }
-            if let Some(output_sha256) = &binary.output_sha256 {
-                let output_hash_field = format!("binaries[{index}].output_sha256");
-                require_sha256(&output_hash_field, output_sha256)?;
-            }
-            if let Some(known_plaintext_sha256) = &binary.known_plaintext_sha256 {
-                let oracle_hash_field = format!("binaries[{index}].known_plaintext_sha256");
-                require_sha256(&oracle_hash_field, known_plaintext_sha256)?;
-            }
-            for (note_index, note) in binary.notes.iter().enumerate() {
-                let note_field = format!("binaries[{index}].notes[{note_index}]");
-                require_non_empty(&note_field, note)?;
-            }
-
             if !is_safe_relative_path(&binary.path) {
                 return Err(ManifestValidationError::UnsafeBinaryPath {
                     path: binary.path.clone(),
                 });
+            }
+
+            let architecture_field = format!("binaries[{index}].architecture");
+            require_bounded_identifier(&architecture_field, &binary.architecture, 32)?;
+
+            validate_optional_size(&format!("binaries[{index}].input_size"), binary.input_size)?;
+            validate_optional_size(
+                &format!("binaries[{index}].output_size"),
+                binary.output_size,
+            )?;
+
+            if let Some(slice) = &binary.slice {
+                require_bounded_identifier(
+                    &format!("binaries[{index}].slice.architecture"),
+                    &slice.architecture,
+                    32,
+                )?;
+                if slice.architecture != binary.architecture {
+                    return Err(ManifestValidationError::SliceArchitectureMismatch {
+                        path: binary.path.clone(),
+                    });
+                }
+                let slice_end = slice
+                    .file_offset
+                    .checked_add(slice.file_size)
+                    .filter(|end| *end <= MAX_SAFE_JSON_INTEGER);
+                if slice.file_size == 0
+                    || slice_end.is_none()
+                    || binary
+                        .input_size
+                        .is_some_and(|input_size| slice_end.is_some_and(|end| end > input_size))
+                {
+                    return Err(ManifestValidationError::SliceOutOfBounds {
+                        path: binary.path.clone(),
+                    });
+                }
+            }
+
+            if let Some(input_sha256) = &binary.input_sha256 {
+                let input_hash_field = format!("binaries[{index}].input_sha256");
+                require_sha256(&input_hash_field, input_sha256)?;
+                if binary.input_size.is_none_or(|size| size == 0) {
+                    return Err(ManifestValidationError::MissingSizeForHash {
+                        path: binary.path.clone(),
+                    });
+                }
+            }
+            if let Some(output_sha256) = &binary.output_sha256 {
+                let output_hash_field = format!("binaries[{index}].output_sha256");
+                require_sha256(&output_hash_field, output_sha256)?;
+                if binary.output_size.is_none_or(|size| size == 0) {
+                    return Err(ManifestValidationError::MissingSizeForHash {
+                        path: binary.path.clone(),
+                    });
+                }
+            }
+            if let Some(known_plaintext_sha256) = &binary.known_plaintext_sha256 {
+                let oracle_hash_field = format!("binaries[{index}].known_plaintext_sha256");
+                require_sha256(&oracle_hash_field, known_plaintext_sha256)?;
+                if binary.output_size.is_none_or(|size| size == 0) {
+                    return Err(ManifestValidationError::MissingSizeForHash {
+                        path: binary.path.clone(),
+                    });
+                }
+            }
+
+            require_max_items(
+                &format!("binaries[{index}].notes"),
+                binary.notes.len(),
+                MAX_NOTES,
+            )?;
+            for (note_index, note) in binary.notes.iter().enumerate() {
+                let note_field = format!("binaries[{index}].notes[{note_index}]");
+                require_bounded_text(&note_field, note, 256)?;
             }
 
             if !paths.insert(binary.path.as_str()) {
@@ -216,6 +433,27 @@ impl ExportManifest {
                     path: binary.path.clone(),
                 });
             }
+
+            validate_reason_codes(binary)?;
+
+            require_max_items(
+                &format!("binaries[{index}].ranges"),
+                binary.ranges.len(),
+                MAX_BINARY_RANGES,
+            )?;
+            total_ranges = total_ranges
+                .checked_add(binary.ranges.len())
+                .ok_or_else(|| ManifestValidationError::TooManyItems {
+                    field: "binaries[].ranges".to_owned(),
+                    maximum: MAX_TOTAL_RANGES,
+                })?;
+            if total_ranges > MAX_TOTAL_RANGES {
+                return Err(ManifestValidationError::TooManyItems {
+                    field: "binaries[].ranges".to_owned(),
+                    maximum: MAX_TOTAL_RANGES,
+                });
+            }
+            validate_ranges(binary)?;
 
             if !signature_is_consistent(&binary.signature) {
                 return Err(ManifestValidationError::InconsistentSignature {
@@ -228,7 +466,7 @@ impl ExportManifest {
 
         for (index, warning) in self.warnings.iter().enumerate() {
             let warning_field = format!("warnings[{index}]");
-            require_non_empty(&warning_field, warning)?;
+            require_bounded_text(&warning_field, warning, 512)?;
         }
 
         Ok(())
@@ -269,10 +507,43 @@ impl ExportManifest {
 fn validate_evidence(binary: &BinaryEvidence) -> Result<(), ManifestValidationError> {
     let has_oracle = binary.known_plaintext_sha256.is_some();
 
+    if binary.known_plaintext_evaluated != has_oracle {
+        return Err(ManifestValidationError::InconsistentKnownPlaintextFlag {
+            path: binary.path.clone(),
+        });
+    }
+
     if has_oracle && binary.evidence_level != EvidenceLevel::KnownPlaintext {
         return Err(ManifestValidationError::InconsistentEvidenceLevel {
             path: binary.path.clone(),
         });
+    }
+
+    if matches!(
+        binary.evidence_level,
+        EvidenceLevel::RangeHash | EvidenceLevel::KnownPlaintext
+    ) {
+        if binary.ranges.is_empty() {
+            return Err(ManifestValidationError::MissingRangeEvidence {
+                path: binary.path.clone(),
+            });
+        }
+
+        for (index, range) in binary.ranges.iter().enumerate() {
+            let complete = range.requested_size == range.accepted_size
+                && range.accepted_size == range.written_size;
+            let hashes_match = range
+                .accepted_sha256
+                .as_deref()
+                .zip(range.written_sha256.as_deref())
+                .is_some_and(|(accepted, written)| accepted.eq_ignore_ascii_case(written));
+            if !complete || !hashes_match {
+                return Err(ManifestValidationError::RangeHashMismatch {
+                    path: binary.path.clone(),
+                    index,
+                });
+            }
+        }
     }
 
     if binary.evidence_level == EvidenceLevel::KnownPlaintext
@@ -281,6 +552,29 @@ fn validate_evidence(binary: &BinaryEvidence) -> Result<(), ManifestValidationEr
         return Err(ManifestValidationError::MissingKnownPlaintextEvidence {
             path: binary.path.clone(),
         });
+    }
+
+    if binary.evidence_level == EvidenceLevel::KnownPlaintext {
+        let hashes_match = binary
+            .output_sha256
+            .as_deref()
+            .zip(binary.known_plaintext_sha256.as_deref())
+            .is_some_and(|(output, oracle)| output.eq_ignore_ascii_case(oracle));
+        let expected_outcome = if hashes_match {
+            Outcome::Pass
+        } else {
+            Outcome::Fail
+        };
+        if binary.outcome != expected_outcome {
+            if binary.outcome == Outcome::Pass {
+                return Err(ManifestValidationError::KnownPlaintextMismatch {
+                    path: binary.path.clone(),
+                });
+            }
+            return Err(ManifestValidationError::KnownPlaintextOutcomeMismatch {
+                path: binary.path.clone(),
+            });
+        }
     }
 
     if binary.outcome == Outcome::Pass {
@@ -299,7 +593,222 @@ fn validate_evidence(binary: &BinaryEvidence) -> Result<(), ManifestValidationEr
         }
     }
 
+    validate_reason_semantics(binary)?;
+
     Ok(())
+}
+
+fn validate_reason_semantics(binary: &BinaryEvidence) -> Result<(), ManifestValidationError> {
+    let has = |reason: &str| {
+        binary
+            .reason_codes
+            .iter()
+            .any(|candidate| candidate == reason)
+    };
+    let hashes_match = binary
+        .output_sha256
+        .as_deref()
+        .zip(binary.known_plaintext_sha256.as_deref())
+        .is_some_and(|(output, oracle)| output.eq_ignore_ascii_case(oracle));
+
+    let expected_evidence_reason = match binary.evidence_level {
+        EvidenceLevel::Metadata => "evidence.metadata_only",
+        EvidenceLevel::Structure => "evidence.structure_only",
+        EvidenceLevel::RangeHash => "evidence.range_hash_match",
+        EvidenceLevel::KnownPlaintext if hashes_match => "evidence.known_plaintext_match",
+        EvidenceLevel::KnownPlaintext => "evidence.known_plaintext_mismatch",
+    };
+
+    let contradictory_evidence_reason = binary.reason_codes.iter().any(|reason| {
+        matches!(
+            reason.as_str(),
+            "evidence.metadata_only"
+                | "evidence.structure_only"
+                | "evidence.range_hash_match"
+                | "evidence.known_plaintext_match"
+                | "evidence.known_plaintext_mismatch"
+        ) && reason != expected_evidence_reason
+    });
+    let oracle_reason_is_consistent = (!has("evidence.oracle_not_evaluated")
+        || !binary.known_plaintext_evaluated)
+        && (!has("evidence.oracle_missing") || binary.known_plaintext_sha256.is_none());
+    let signature_reason_is_consistent = !has("signature.not_checked")
+        || binary.signature.validation == SignatureValidation::NotChecked;
+    let skipped_reason_is_consistent = !has("binary.skipped") || binary.outcome == Outcome::Skipped;
+    let pass_reasons_are_consistent = binary.outcome != Outcome::Pass
+        || binary.reason_codes.iter().all(|reason| {
+            matches!(
+                reason.as_str(),
+                "evidence.known_plaintext_match" | "signature.not_checked"
+            )
+        });
+    let failure_has_cause = binary.outcome != Outcome::Fail
+        || binary.reason_codes.iter().any(|reason| {
+            matches!(
+                reason.as_str(),
+                "backend.not_implemented"
+                    | "binary.unsupported"
+                    | "collection.incomplete"
+                    | "evidence.known_plaintext_mismatch"
+            )
+        });
+
+    if !has(expected_evidence_reason)
+        || contradictory_evidence_reason
+        || !oracle_reason_is_consistent
+        || !signature_reason_is_consistent
+        || !skipped_reason_is_consistent
+        || !pass_reasons_are_consistent
+        || !failure_has_cause
+        || (binary.outcome == Outcome::Skipped && !has("binary.skipped"))
+    {
+        return Err(ManifestValidationError::InconsistentReasonCodes {
+            path: binary.path.clone(),
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_reason_codes(binary: &BinaryEvidence) -> Result<(), ManifestValidationError> {
+    if binary.reason_codes.is_empty() {
+        return Err(ManifestValidationError::NoReasonCodes {
+            path: binary.path.clone(),
+        });
+    }
+    require_max_items(
+        "binary.reason_codes",
+        binary.reason_codes.len(),
+        MAX_REASON_CODES,
+    )?;
+
+    let mut reason_codes = HashSet::with_capacity(binary.reason_codes.len());
+    for reason_code in &binary.reason_codes {
+        if !wire::is_known_reason_code(reason_code) {
+            return Err(ManifestValidationError::InvalidIdentifier {
+                field: format!("binaries[{}].reason_codes[]", binary.path),
+            });
+        }
+        if !reason_codes.insert(reason_code.as_str()) {
+            return Err(ManifestValidationError::DuplicateReasonCode {
+                path: binary.path.clone(),
+                reason_code: reason_code.clone(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_ranges(binary: &BinaryEvidence) -> Result<(), ManifestValidationError> {
+    let mut previous_end = None;
+
+    for (index, range) in binary.ranges.iter().enumerate() {
+        let invalid = |reason: &str| ManifestValidationError::InvalidRange {
+            path: binary.path.clone(),
+            index,
+            reason: reason.to_owned(),
+        };
+
+        if range.file_offset > MAX_SAFE_JSON_INTEGER
+            || range.requested_size == 0
+            || range.requested_size > MAX_RANGE_BYTES
+            || range.accepted_size > MAX_RANGE_BYTES
+            || range.written_size > MAX_RANGE_BYTES
+            || range.accepted_size > range.requested_size
+            || range.written_size > range.accepted_size
+        {
+            return Err(invalid(
+                "size or offset is outside the bounded relationship",
+            ));
+        }
+
+        let requested_end = range
+            .file_offset
+            .checked_add(range.requested_size)
+            .filter(|end| *end <= MAX_SAFE_JSON_INTEGER)
+            .ok_or_else(|| invalid("requested range overflows"))?;
+        let written_end = range
+            .file_offset
+            .checked_add(range.written_size)
+            .filter(|end| *end <= MAX_SAFE_JSON_INTEGER)
+            .ok_or_else(|| invalid("written range overflows"))?;
+
+        if binary
+            .input_size
+            .is_some_and(|input_size| requested_end > input_size)
+            || binary
+                .output_size
+                .is_some_and(|output_size| written_end > output_size)
+        {
+            return Err(invalid("range exceeds the recorded binary size"));
+        }
+
+        if let Some(slice) = &binary.slice {
+            let slice_end = slice
+                .file_offset
+                .checked_add(slice.file_size)
+                .ok_or_else(|| invalid("slice identity overflows"))?;
+            if range.file_offset < slice.file_offset || requested_end > slice_end {
+                return Err(invalid("range escapes the recorded slice"));
+            }
+        }
+
+        if previous_end.is_some_and(|end| range.file_offset < end) {
+            return Err(ManifestValidationError::OverlappingRange {
+                path: binary.path.clone(),
+                index,
+            });
+        }
+        previous_end = Some(requested_end);
+
+        validate_range_hash(
+            &binary.path,
+            index,
+            "accepted_sha256",
+            range.accepted_size,
+            range.accepted_sha256.as_deref(),
+        )?;
+        validate_range_hash(
+            &binary.path,
+            index,
+            "written_sha256",
+            range.written_size,
+            range.written_sha256.as_deref(),
+        )?;
+    }
+
+    Ok(())
+}
+
+fn validate_range_hash(
+    path: &str,
+    index: usize,
+    name: &str,
+    size: u64,
+    hash: Option<&str>,
+) -> Result<(), ManifestValidationError> {
+    if (size == 0) != hash.is_none() {
+        return Err(ManifestValidationError::InvalidRange {
+            path: path.to_owned(),
+            index,
+            reason: format!("{name} presence does not match its byte count"),
+        });
+    }
+    if let Some(hash) = hash {
+        require_sha256(&format!("binaries[].ranges[{index}].{name}"), hash)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_size(field: &str, value: Option<u64>) -> Result<(), ManifestValidationError> {
+    if value.is_some_and(|size| size == 0 || size > MAX_SAFE_JSON_INTEGER) {
+        Err(ManifestValidationError::IntegerOutOfRange {
+            field: field.to_owned(),
+        })
+    } else {
+        Ok(())
+    }
 }
 
 fn require_sha256(field: &str, value: &str) -> Result<(), ManifestValidationError> {
@@ -339,8 +848,87 @@ fn require_non_empty(field: &str, value: &str) -> Result<(), ManifestValidationE
     }
 }
 
+fn require_bounded_text(
+    field: &str,
+    value: &str,
+    maximum: usize,
+) -> Result<(), ManifestValidationError> {
+    require_non_empty(field, value)?;
+    if value.chars().count() > maximum {
+        return Err(ManifestValidationError::FieldTooLong {
+            field: field.to_owned(),
+            maximum,
+        });
+    }
+    if value.chars().any(char::is_control) {
+        return Err(ManifestValidationError::UnsafeText {
+            field: field.to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn require_bounded_identifier(
+    field: &str,
+    value: &str,
+    maximum: usize,
+) -> Result<(), ManifestValidationError> {
+    require_bounded_text(field, value, maximum)?;
+    let mut characters = value.chars();
+    let first_is_valid = characters
+        .next()
+        .is_some_and(|character| character.is_ascii_alphanumeric());
+    let remainder_is_valid = characters.all(|character| {
+        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '+' | '-')
+    });
+    if first_is_valid && remainder_is_valid {
+        Ok(())
+    } else {
+        Err(ManifestValidationError::InvalidIdentifier {
+            field: field.to_owned(),
+        })
+    }
+}
+
+fn require_bounded_wire_id(
+    field: &str,
+    value: &str,
+    maximum: usize,
+) -> Result<(), ManifestValidationError> {
+    require_bounded_text(field, value, maximum)?;
+    let mut bytes = value.bytes();
+    let first_is_valid = bytes.next().is_some_and(|byte| byte.is_ascii_lowercase());
+    let remainder_is_valid = bytes.all(|byte| {
+        byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+    });
+    if first_is_valid && remainder_is_valid {
+        Ok(())
+    } else {
+        Err(ManifestValidationError::InvalidIdentifier {
+            field: field.to_owned(),
+        })
+    }
+}
+
+fn require_max_items(
+    field: &str,
+    actual: usize,
+    maximum: usize,
+) -> Result<(), ManifestValidationError> {
+    if actual > maximum {
+        Err(ManifestValidationError::TooManyItems {
+            field: field.to_owned(),
+            maximum,
+        })
+    } else {
+        Ok(())
+    }
+}
+
 fn is_safe_relative_path(path: &str) -> bool {
     if path.is_empty()
+        || path.chars().count() > MAX_PATH_CHARS
+        || path.len() > MAX_PATH_UTF8_BYTES
         || path.starts_with('/')
         || path.starts_with('\\')
         || path.contains('\\')
@@ -350,8 +938,16 @@ fn is_safe_relative_path(path: &str) -> bool {
         return false;
     }
 
-    path.split('/')
-        .all(|component| !component.is_empty() && component != "." && component != "..")
+    let mut depth = 0usize;
+    path.split('/').all(|component| {
+        depth += 1;
+        depth <= MAX_PATH_DEPTH
+            && !component.is_empty()
+            && component != "."
+            && component != ".."
+            && component.chars().count() <= MAX_PATH_COMPONENT_CHARS
+            && component.len() <= MAX_PATH_COMPONENT_UTF8_BYTES
+    })
 }
 
 fn looks_like_windows_drive_path(path: &str) -> bool {
@@ -368,25 +964,38 @@ pub fn demo_manifest(tool_version: &str) -> ExportManifest {
     ExportManifest {
         schema_version: MANIFEST_SCHEMA_VERSION,
         tool_version: tool_version.to_owned(),
+        tool_revision: None,
         target: TargetSummary {
             bundle_id: "com.example.orchardprobe.demolab".to_owned(),
             display_name: "OrchardProbe DemoLab".to_owned(),
             version: "0.0.0-demo".to_owned(),
         },
         backend: "device_free_demo".to_owned(),
+        capability_ids: Vec::new(),
         binaries: vec![BinaryEvidence {
             path: "Payload/DemoLab.app/DemoLab".to_owned(),
+            role: BinaryRole::MainExecutable,
             architecture: "arm64".to_owned(),
+            slice: None,
+            input_size: None,
+            output_size: None,
             outcome: Outcome::Inconclusive,
             evidence_level: EvidenceLevel::Structure,
             input_sha256: None,
             output_sha256: None,
             known_plaintext_sha256: None,
+            known_plaintext_evaluated: false,
             signature: SignatureInfo {
                 presence: SignaturePresence::Absent,
                 kind: SignatureKind::NotApplicable,
                 validation: SignatureValidation::NotApplicable,
             },
+            ranges: Vec::new(),
+            reason_codes: vec![
+                "backend.not_implemented".to_owned(),
+                "evidence.structure_only".to_owned(),
+                "evidence.oracle_not_evaluated".to_owned(),
+            ],
             notes: vec![
                 "device-free first-party fixture description only; no plaintext oracle was evaluated"
                     .to_owned(),
@@ -437,25 +1046,60 @@ mod tests {
     use serde_json::json;
 
     fn binary(path: &str, outcome: Outcome) -> BinaryEvidence {
-        let (evidence_level, known_plaintext_sha256) = if outcome == Outcome::Pass {
-            (EvidenceLevel::KnownPlaintext, Some("22".repeat(32)))
+        let (evidence_level, known_plaintext_sha256, known_plaintext_evaluated) =
+            if outcome == Outcome::Pass {
+                (EvidenceLevel::KnownPlaintext, Some("22".repeat(32)), true)
+            } else {
+                (EvidenceLevel::RangeHash, None, false)
+            };
+        let mut reason_codes = if outcome == Outcome::Pass {
+            vec!["evidence.known_plaintext_match".to_owned()]
         } else {
-            (EvidenceLevel::RangeHash, None)
+            vec!["evidence.range_hash_match".to_owned()]
         };
+        match outcome {
+            Outcome::Fail => reason_codes.push("collection.incomplete".to_owned()),
+            Outcome::Inconclusive => {
+                reason_codes.push("evidence.oracle_not_evaluated".to_owned());
+            }
+            Outcome::Skipped => reason_codes.push("binary.skipped".to_owned()),
+            Outcome::Pass => {}
+        }
+        reason_codes.push("signature.not_checked".to_owned());
 
         BinaryEvidence {
             path: path.to_owned(),
+            role: BinaryRole::MainExecutable,
             architecture: "arm64".to_owned(),
+            slice: Some(SliceIdentity {
+                cpu_type: 0x0100_000c,
+                cpu_subtype: 0,
+                file_offset: 0,
+                file_size: 4096,
+                architecture: "arm64".to_owned(),
+            }),
+            input_size: Some(4096),
+            output_size: Some(4096),
             outcome,
             evidence_level,
             input_sha256: Some("11".repeat(32)),
             output_sha256: Some("22".repeat(32)),
             known_plaintext_sha256,
+            known_plaintext_evaluated,
             signature: SignatureInfo {
                 presence: SignaturePresence::Present,
                 kind: SignatureKind::Cms,
                 validation: SignatureValidation::NotChecked,
             },
+            ranges: vec![RangeEvidence {
+                file_offset: 0,
+                requested_size: 4096,
+                accepted_size: 4096,
+                written_size: 4096,
+                accepted_sha256: Some("aa".repeat(32)),
+                written_sha256: Some("AA".repeat(32)),
+            }],
+            reason_codes,
             notes: Vec::new(),
         }
     }
@@ -464,12 +1108,14 @@ mod tests {
         ExportManifest {
             schema_version: MANIFEST_SCHEMA_VERSION,
             tool_version: "0.1.0-test".to_owned(),
+            tool_revision: None,
             target: TargetSummary {
                 bundle_id: "com.example.test".to_owned(),
                 display_name: "Test App".to_owned(),
                 version: "1.0".to_owned(),
             },
             backend: "test_fixture".to_owned(),
+            capability_ids: vec!["binary.code_range_stream".to_owned()],
             binaries,
             warnings: Vec::new(),
         }
@@ -586,12 +1232,61 @@ mod tests {
     }
 
     #[test]
+    fn signature_consistency_truth_table_is_closed() {
+        let presences = [
+            SignaturePresence::Absent,
+            SignaturePresence::Present,
+            SignaturePresence::Unknown,
+        ];
+        let kinds = [
+            SignatureKind::Cms,
+            SignatureKind::AdHoc,
+            SignatureKind::Unknown,
+            SignatureKind::NotApplicable,
+        ];
+        let validations = [
+            SignatureValidation::Valid,
+            SignatureValidation::Invalid,
+            SignatureValidation::NotChecked,
+            SignatureValidation::NotApplicable,
+        ];
+
+        for presence in presences {
+            for kind in kinds {
+                for validation in validations {
+                    let signature = SignatureInfo {
+                        presence,
+                        kind,
+                        validation,
+                    };
+                    let expected = match presence {
+                        SignaturePresence::Absent => {
+                            kind == SignatureKind::NotApplicable
+                                && validation == SignatureValidation::NotApplicable
+                        }
+                        SignaturePresence::Present => {
+                            kind != SignatureKind::NotApplicable
+                                && validation != SignatureValidation::NotApplicable
+                        }
+                        SignaturePresence::Unknown => {
+                            kind == SignatureKind::Unknown
+                                && validation == SignatureValidation::NotChecked
+                        }
+                    };
+                    assert_eq!(signature_is_consistent(&signature), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn rejects_pass_without_matching_known_plaintext() {
         let path = "Payload/Test.app/Test";
 
         let mut insufficient = binary(path, Outcome::Pass);
         insufficient.evidence_level = EvidenceLevel::Metadata;
         insufficient.known_plaintext_sha256 = None;
+        insufficient.known_plaintext_evaluated = false;
         assert_eq!(
             manifest_with(vec![insufficient]).validate(),
             Err(ManifestValidationError::InsufficientEvidenceForPass {
@@ -601,6 +1296,7 @@ mod tests {
 
         let mut missing = binary(path, Outcome::Pass);
         missing.known_plaintext_sha256 = None;
+        missing.known_plaintext_evaluated = false;
         assert_eq!(
             manifest_with(vec![missing]).validate(),
             Err(ManifestValidationError::MissingKnownPlaintextEvidence {
@@ -634,6 +1330,7 @@ mod tests {
         let path = "Payload/Test.app/Test";
         let mut evidence = binary(path, Outcome::Inconclusive);
         evidence.known_plaintext_sha256 = Some("22".repeat(32));
+        evidence.known_plaintext_evaluated = true;
 
         assert_eq!(
             manifest_with(vec![evidence]).validate(),
@@ -654,7 +1351,9 @@ mod tests {
             "Payload//Test.app/Test",
             "Payload/./Test.app/Test",
             "Payload/Test.app/..",
+            "Payload/Test.app/Test/",
             "Payload/Test.app/Test\0suffix",
+            "Payload/Test.app/Test\u{0085}suffix",
         ] {
             let manifest = manifest_with(vec![binary(path, Outcome::Pass)]);
             assert!(
@@ -665,6 +1364,155 @@ mod tests {
                 "path should have been rejected: {path:?}"
             );
         }
+    }
+
+    #[test]
+    fn enforces_relative_path_byte_component_and_depth_limits() {
+        let component_at_limit = "a".repeat(MAX_PATH_COMPONENT_UTF8_BYTES);
+        manifest_with(vec![binary(
+            &format!("Payload/Test.app/{component_at_limit}"),
+            Outcome::Pass,
+        )])
+        .validate()
+        .expect("255-byte component is accepted");
+
+        let paths = [
+            format!("Payload/Test.app/{}", "a".repeat(256)),
+            format!("Payload/Test.app/{}", "é".repeat(128)),
+            std::iter::repeat_n("a", MAX_PATH_DEPTH + 1)
+                .collect::<Vec<_>>()
+                .join("/"),
+            std::iter::repeat_n("é".repeat(127), 5)
+                .collect::<Vec<_>>()
+                .join("/"),
+        ];
+        for path in paths {
+            assert!(matches!(
+                manifest_with(vec![binary(&path, Outcome::Pass)]).validate(),
+                Err(ManifestValidationError::UnsafeBinaryPath { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_range_relationships_hashes_and_order() {
+        let path = "Payload/Test.app/Test";
+
+        let mut oversized_accept = binary(path, Outcome::Pass);
+        oversized_accept.ranges[0].accepted_size = 4097;
+        assert!(matches!(
+            manifest_with(vec![oversized_accept]).validate(),
+            Err(ManifestValidationError::InvalidRange { .. })
+        ));
+
+        let mut missing_hash = binary(path, Outcome::Pass);
+        missing_hash.ranges[0].accepted_sha256 = None;
+        assert!(matches!(
+            manifest_with(vec![missing_hash]).validate(),
+            Err(ManifestValidationError::InvalidRange { .. })
+        ));
+
+        let mut overlap = binary(path, Outcome::Pass);
+        overlap.input_size = Some(8192);
+        overlap.output_size = Some(8192);
+        overlap.slice.as_mut().unwrap().file_size = 8192;
+        overlap.ranges.push(RangeEvidence {
+            file_offset: 2048,
+            requested_size: 4096,
+            accepted_size: 4096,
+            written_size: 4096,
+            accepted_sha256: Some("bb".repeat(32)),
+            written_sha256: Some("BB".repeat(32)),
+        });
+        assert_eq!(
+            manifest_with(vec![overlap]).validate(),
+            Err(ManifestValidationError::OverlappingRange {
+                path: path.to_owned(),
+                index: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_slice_size_capability_and_reason_contradictions() {
+        let path = "Payload/Test.app/Test";
+
+        let mut zero_size = binary(path, Outcome::Pass);
+        zero_size.input_size = Some(0);
+        assert!(matches!(
+            manifest_with(vec![zero_size]).validate(),
+            Err(ManifestValidationError::IntegerOutOfRange { .. })
+        ));
+
+        let mut wrong_slice = binary(path, Outcome::Pass);
+        wrong_slice.slice.as_mut().unwrap().architecture = "x86_64".to_owned();
+        assert_eq!(
+            manifest_with(vec![wrong_slice]).validate(),
+            Err(ManifestValidationError::SliceArchitectureMismatch {
+                path: path.to_owned(),
+            })
+        );
+
+        let mut manifest = manifest_with(vec![binary(path, Outcome::Pass)]);
+        manifest.capability_ids = vec!["session.cancel".to_owned(), "session.cancel".to_owned()];
+        assert_eq!(
+            manifest.validate(),
+            Err(ManifestValidationError::DuplicateCapabilityId {
+                capability_id: "session.cancel".to_owned(),
+            })
+        );
+
+        let mut contradictory = binary(path, Outcome::Pass);
+        contradictory
+            .reason_codes
+            .push("backend.not_implemented".to_owned());
+        assert_eq!(
+            manifest_with(vec![contradictory]).validate(),
+            Err(ManifestValidationError::InconsistentReasonCodes {
+                path: path.to_owned(),
+            })
+        );
+
+        let mut unexplained_failure = binary(path, Outcome::Fail);
+        unexplained_failure
+            .reason_codes
+            .retain(|reason| reason != "collection.incomplete");
+        assert_eq!(
+            manifest_with(vec![unexplained_failure]).validate(),
+            Err(ManifestValidationError::InconsistentReasonCodes {
+                path: path.to_owned(),
+            })
+        );
+    }
+
+    #[test]
+    fn known_plaintext_mismatch_must_be_a_failure() {
+        let path = "Payload/Test.app/Test";
+        let mut evidence = binary(path, Outcome::Pass);
+        evidence.outcome = Outcome::Inconclusive;
+        evidence.known_plaintext_sha256 = Some("33".repeat(32));
+        evidence.reason_codes = vec![
+            "evidence.known_plaintext_mismatch".to_owned(),
+            "signature.not_checked".to_owned(),
+        ];
+
+        assert_eq!(
+            manifest_with(vec![evidence]).validate(),
+            Err(ManifestValidationError::KnownPlaintextOutcomeMismatch {
+                path: path.to_owned(),
+            })
+        );
+
+        let mut failed = binary(path, Outcome::Pass);
+        failed.outcome = Outcome::Fail;
+        failed.known_plaintext_sha256 = Some("33".repeat(32));
+        failed.reason_codes = vec![
+            "evidence.known_plaintext_mismatch".to_owned(),
+            "signature.not_checked".to_owned(),
+        ];
+        manifest_with(vec![failed])
+            .validate()
+            .expect("an independently observed mismatch is an explicit failure");
     }
 
     #[test]

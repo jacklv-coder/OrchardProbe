@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "contract": "export_manifest",
+  "contract_schema": "../../export-manifest-v2.schema.json",
+  "instance": "export-manifest.inconsistent-signature.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "const",
+      "oneOf"
+    ],
+    "instance_pointer": "/binaries/0/signature",
+    "reason_code": "inconsistent_signature",
+    "reason": "An absent signature has not-applicable kind and validation fields."
+  }
+}

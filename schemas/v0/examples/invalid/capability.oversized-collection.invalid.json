@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "message_type": "capability_report",
+  "protocol_version": {
+    "major": 0,
+    "minor": 1
+  },
+  "backend_id": "device_free_fixture",
+  "capabilities": [],
+  "disabled_capabilities": [
+    { "id": "fixture.optional00", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional01", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional02", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional03", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional04", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional05", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional06", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional07", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional08", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional09", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional10", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional11", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional12", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional13", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional14", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional15", "revision": 1, "reason": "unknown_optional" },
+    { "id": "fixture.optional16", "revision": 1, "reason": "unknown_optional" }
+  ]
+}

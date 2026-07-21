@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jacklv-coder/OrchardProbe/main/schemas/fixture-expectation.schema.json",
+  "title": "OrchardProbe invalid-fixture expectation",
+  "description": "Machine-readable metadata stored beside a deliberately invalid JSON instance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "contract",
+    "contract_schema",
+    "instance",
+    "expected_valid",
+    "expected_failure"
+  ],
+  "properties": {
+    "format_version": {
+      "const": 1
+    },
+    "contract": {
+      "enum": [
+        "capability",
+        "error",
+        "export_manifest"
+      ]
+    },
+    "contract_schema": {
+      "enum": [
+        "../../capability-v1.schema.json",
+        "../../error-v1.schema.json",
+        "../../export-manifest-v2.schema.json"
+      ]
+    },
+    "instance": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*\\.invalid\\.json$"
+    },
+    "expected_valid": {
+      "const": false
+    },
+    "expected_failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "accepted_keywords",
+        "instance_pointer",
+        "reason_code",
+        "reason"
+      ],
+      "properties": {
+        "accepted_keywords": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "additionalProperties",
+              "const",
+              "contains",
+              "enum",
+              "maxItems",
+              "maximum",
+              "minItems",
+              "minimum",
+              "oneOf",
+              "pattern",
+              "required",
+              "type"
+            ]
+          }
+        },
+        "instance_pointer": {
+          "type": "string",
+          "maxLength": 256,
+          "pattern": "^(?:/(?:[^~/]|~[01])*)*$"
+        },
+        "reason_code": {
+          "enum": [
+            "unsupported_schema_version",
+            "unknown_field",
+            "unknown_wire_value",
+            "collection_limit_exceeded",
+            "unsafe_relative_path",
+            "inconsistent_evidence",
+            "inconsistent_signature",
+            "malformed_range"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "\\S"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "contract": {
+          "const": "capability"
+        },
+        "contract_schema": {
+          "const": "../../capability-v1.schema.json"
+        }
+      }
+    },
+    {
+      "properties": {
+        "contract": {
+          "const": "error"
+        },
+        "contract_schema": {
+          "const": "../../error-v1.schema.json"
+        }
+      }
+    },
+    {
+      "properties": {
+        "contract": {
+          "const": "export_manifest"
+        },
+        "contract_schema": {
+          "const": "../../export-manifest-v2.schema.json"
+        }
+      }
+    }
+  ]
+}

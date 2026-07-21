@@ -1,0 +1,741 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jacklv-coder/OrchardProbe/main/schemas/v0/export-manifest-v2.schema.json",
+  "title": "OrchardProbe pre-v1 export evidence manifest",
+  "description": "A bounded evidence report compatible with orchardprobe_core::ExportManifest schema_version 2. It is not an authorization token, an installable-artifact claim, or by itself proof of plaintext.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tool_version",
+    "target",
+    "backend",
+    "capability_ids",
+    "binaries"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 2
+    },
+    "tool_version": {
+      "$ref": "#/$defs/short_text"
+    },
+    "tool_revision": {
+      "$ref": "#/$defs/revision_or_null"
+    },
+    "target": {
+      "$ref": "#/$defs/target"
+    },
+    "backend": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_.-]{0,63}$"
+    },
+    "capability_ids": {
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/capability_id"
+      }
+    },
+    "binaries": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {
+        "$ref": "#/$defs/binary_evidence"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "$ref": "#/$defs/warning_text"
+      }
+    }
+  },
+  "$defs": {
+    "short_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+    },
+    "note_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+    },
+    "warning_text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+    },
+    "sha256_or_null": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[A-Fa-f0-9]{64}$"
+    },
+    "revision_or_null": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "safe_size_or_null": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "capability_id": {
+      "enum": [
+        "transport.framed_json",
+        "target.catalog",
+        "bundle.enumerate",
+        "bundle.entry_stream",
+        "binary.code_range_stream",
+        "session.cancel"
+      ]
+    },
+    "safe_relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![A-Za-z]:)(?!.*[\\\\\\u0000-\\u001F\\u007F-\\u009F])(?!(?:\\.{1,2})(?:/|$))(?!.*\\/\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*$"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bundle_id",
+        "display_name",
+        "version"
+      ],
+      "properties": {
+        "bundle_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+        },
+        "display_name": {
+          "$ref": "#/$defs/short_text"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^(?=.*\\S)[^\\u0000-\\u001F\\u007F-\\u009F]+$"
+        }
+      }
+    },
+    "binary_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "role",
+        "architecture",
+        "outcome",
+        "evidence_level",
+        "known_plaintext_evaluated",
+        "signature",
+        "ranges",
+        "reason_codes"
+      ],
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/safe_relative_path"
+        },
+        "role": {
+          "enum": [
+            "main_executable",
+            "framework",
+            "dynamic_library",
+            "extension",
+            "other"
+          ]
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+-]{0,31}$"
+        },
+        "slice": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/slice_identity"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "input_size": {
+          "$ref": "#/$defs/safe_size_or_null"
+        },
+        "output_size": {
+          "$ref": "#/$defs/safe_size_or_null"
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive",
+            "skipped"
+          ]
+        },
+        "evidence_level": {
+          "enum": [
+            "metadata",
+            "structure",
+            "range_hash",
+            "known_plaintext"
+          ]
+        },
+        "input_sha256": {
+          "$ref": "#/$defs/sha256_or_null"
+        },
+        "output_sha256": {
+          "$ref": "#/$defs/sha256_or_null"
+        },
+        "known_plaintext_sha256": {
+          "$ref": "#/$defs/sha256_or_null"
+        },
+        "known_plaintext_evaluated": {
+          "type": "boolean"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "ranges": {
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/range_evidence"
+          }
+        },
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "backend.not_implemented",
+              "binary.unsupported",
+              "binary.skipped",
+              "collection.incomplete",
+              "evidence.metadata_only",
+              "evidence.structure_only",
+              "evidence.range_hash_match",
+              "evidence.oracle_not_evaluated",
+              "evidence.oracle_missing",
+              "evidence.known_plaintext_match",
+              "evidence.known_plaintext_mismatch",
+              "signature.not_checked"
+            ]
+          }
+        },
+        "notes": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/note_text"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "input_sha256"
+            ],
+            "properties": {
+              "input_sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "input_size"
+            ],
+            "properties": {
+              "input_size": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "output_sha256"
+            ],
+            "properties": {
+              "output_sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "output_size"
+            ],
+            "properties": {
+              "output_size": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "known_plaintext_evaluated": {
+                "const": true
+              }
+            },
+            "required": [
+              "known_plaintext_evaluated"
+            ]
+          },
+          "then": {
+            "required": [
+              "output_size",
+              "output_sha256",
+              "known_plaintext_sha256"
+            ],
+            "properties": {
+              "evidence_level": {
+                "const": "known_plaintext"
+              },
+              "output_size": {
+                "type": "integer"
+              },
+              "output_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "known_plaintext_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "known_plaintext_sha256"
+            ],
+            "properties": {
+              "known_plaintext_sha256": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence_level": {
+                "const": "known_plaintext"
+              },
+              "known_plaintext_evaluated": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "known_plaintext_evaluated": {
+                "const": false
+              }
+            },
+            "required": [
+              "known_plaintext_evaluated"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence_level": {
+                "enum": [
+                  "metadata",
+                  "structure",
+                  "range_hash"
+                ]
+              },
+              "known_plaintext_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "evidence_level": {
+                "const": "known_plaintext"
+              }
+            },
+            "required": [
+              "evidence_level"
+            ]
+          },
+          "then": {
+            "required": [
+              "output_sha256",
+              "known_plaintext_sha256"
+            ],
+            "properties": {
+              "output_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "known_plaintext_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "known_plaintext_evaluated": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "evidence_level": {
+                "const": "known_plaintext"
+              },
+              "output_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "known_plaintext_sha256": {
+                "$ref": "#/$defs/sha256"
+              },
+              "known_plaintext_evaluated": {
+                "const": true
+              }
+            },
+            "required": [
+              "output_sha256",
+              "known_plaintext_sha256"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "evidence_level": {
+                "enum": [
+                  "range_hash",
+                  "known_plaintext"
+                ]
+              }
+            },
+            "required": [
+              "evidence_level"
+            ]
+          },
+          "then": {
+            "required": [
+              "ranges"
+            ],
+            "properties": {
+              "ranges": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "accepted_sha256",
+                    "written_sha256"
+                  ],
+                  "properties": {
+                    "accepted_sha256": {
+                      "$ref": "#/$defs/sha256"
+                    },
+                    "written_sha256": {
+                      "$ref": "#/$defs/sha256"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "slice_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cpu_type",
+        "cpu_subtype",
+        "file_offset",
+        "file_size",
+        "architecture"
+      ],
+      "properties": {
+        "cpu_type": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "cpu_subtype": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "file_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "file_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "architecture": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.+-]{0,31}$"
+        }
+      }
+    },
+    "range_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file_offset",
+        "requested_size",
+        "accepted_size",
+        "written_size"
+      ],
+      "properties": {
+        "file_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "requested_size": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 268435456
+        },
+        "accepted_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "written_size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 268435456
+        },
+        "accepted_sha256": {
+          "$ref": "#/$defs/sha256_or_null"
+        },
+        "written_sha256": {
+          "$ref": "#/$defs/sha256_or_null"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "accepted_size": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "accepted_size"
+            ]
+          },
+          "then": {
+            "required": [
+              "accepted_sha256"
+            ],
+            "properties": {
+              "accepted_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "written_size": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "written_size"
+            ]
+          },
+          "then": {
+            "required": [
+              "written_sha256"
+            ],
+            "properties": {
+              "written_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "accepted_size": {
+                "const": 0
+              }
+            },
+            "required": [
+              "accepted_size"
+            ]
+          },
+          "then": {
+            "properties": {
+              "accepted_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "written_size": {
+                "const": 0
+              }
+            },
+            "required": [
+              "written_size"
+            ]
+          },
+          "then": {
+            "properties": {
+              "written_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "presence",
+        "kind",
+        "validation"
+      ],
+      "properties": {
+        "presence": {
+          "enum": [
+            "absent",
+            "present",
+            "unknown"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "cms",
+            "ad_hoc",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "validation": {
+          "enum": [
+            "valid",
+            "invalid",
+            "not_checked",
+            "not_applicable"
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "presence": {
+              "const": "absent"
+            },
+            "kind": {
+              "const": "not_applicable"
+            },
+            "validation": {
+              "const": "not_applicable"
+            }
+          }
+        },
+        {
+          "properties": {
+            "presence": {
+              "const": "present"
+            },
+            "kind": {
+              "enum": [
+                "cms",
+                "ad_hoc",
+                "unknown"
+              ]
+            },
+            "validation": {
+              "enum": [
+                "valid",
+                "invalid",
+                "not_checked"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "presence": {
+              "const": "unknown"
+            },
+            "kind": {
+              "const": "unknown"
+            },
+            "validation": {
+              "const": "not_checked"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
