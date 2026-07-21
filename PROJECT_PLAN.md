@@ -3,9 +3,9 @@
 > 面向自有或明确获授权 App 的、本地优先、可审计的 iOS 二进制导出与验证工具链。
 
 状态：执行中的 pre-alpha 蓝图
-日期：2026-07-21
+日期：2026-07-22
 
-当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约，以及仅含规范的有界 Host/Helper 协议已落地并由必需 CI 覆盖。设备发现、真机 Helper、transport、导出后端、重建与 IPA 打包仍未实现，也没有任何正式设备兼容性声明。
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范，以及 FAT/secure-open 对抗测试已落地并由必需 CI 覆盖。设备发现、真机 Helper、transport、导出后端、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 
@@ -72,22 +72,26 @@ CLI：`oprobe`
 首版命令面：
 
 ```text
+oprobe decrypt <input.ipa> [--output <output.ipa>] [--json]
 oprobe doctor [--json]
 oprobe inspect <macho> [--json]
-oprobe devices
-oprobe apps
-oprobe export <bundle-id> --output <path>
+oprobe devices [--json]
+oprobe apps [--json]
 oprobe verify <ipa-or-app> [--json]
 oprobe demo
 ```
 
+其中 `verify <ipa-or-app>` 是未来产物验证接口；当前 pre-alpha 只实现
+`verify <manifest.json>`，两者不能混为已经可用的同一命令。
+
 关键体验：
 
-1. `oprobe doctor` 先做能力探测，不让用户靠 Issue 猜环境问题。
-2. `oprobe export` 自动选择最佳后端，并在日志和 manifest 中说明原因。
-3. 输出为未重签、仅供分析的 IPA/Bundle 与独立 `manifest.json`；嵌入签名可能仍存在但已经失效。
-4. `oprobe verify` 逐个 Mach-O 报告证据等级，不用 `cryptid == 0` 或“生成 ZIP 成功”冒充明文字节已验证。
-5. `oprobe demo` 无需设备，使用项目自建 fixture 展示解析、重建和验证流程。
+1. 正常用户只运行 `oprobe decrypt MyApp.ipa`，默认得到 `MyApp.decrypted.ipa` 和 `MyApp.decrypted.manifest.json`。
+2. 输入 IPA 作为不可变本地重建模板；工具自动匹配受支持设备上已经安装的同一构建。输入文件本身不能替代授权设备端代码证据。
+3. `decrypt` 自动执行 Doctor、设备/构建匹配、后端选择、逐 Mach-O 重建、验证和原子打包；`devices/apps` 只用于诊断。
+4. 输出为未重签、仅供分析的 IPA/Bundle 与独立 `manifest.json`；嵌入签名可能仍存在但已经失效。
+5. `oprobe verify` 逐个 Mach-O 报告证据等级，不用 `cryptid == 0` 或“生成 ZIP 成功”冒充明文字节已验证。
+6. `oprobe demo` 无需设备，使用项目自建 fixture 展示解析、重建和验证流程。
 
 ## 5. 技术路线
 
@@ -115,6 +119,9 @@ oprobe demo
 
 ```mermaid
 flowchart LR
+  IPA["授权输入 IPA"] --> Ingest["有界 Archive Ingest"]
+  Ingest --> Inventory["Bundle / Mach-O Inventory"]
+  Inventory --> CLI
   CLI["Rust CLI"] --> Policy["授权与范围策略"]
   Policy --> Doctor["Doctor / 能力探测"]
   Doctor --> Router["Backend Router"]
@@ -130,13 +137,15 @@ flowchart LR
   Bundle --> Pack["Bundle / IPA 打包"]
   Rebuild --> Pack["Bundle / IPA 打包"]
   Pack --> Verify["逐二进制验证 + Manifest"]
+  Verify --> Output["*.decrypted.ipa + Manifest"]
 ```
 
 核心模块：
 
+- `ingest`：把 IPA 当作不可信 Archive，在物化前执行 Entry、路径、链接、压缩比、文件数量和总大小限制；源 IPA 永远不原地修改。
 - `doctor`：设备、iOS、SoC、页大小、rootless/rootful、可用权限、依赖和磁盘空间。
 - `transport`：USB tunnel、开发期 SSH fallback、断线重连、chunked streaming。
-- `catalog`：只枚举允许范围内的用户 App，识别主程序、Framework、dylib、Extension。
+- `catalog`：从输入 IPA 建立主程序、Framework、dylib、Extension 清单，并将其唯一匹配到设备上的同一已安装构建。
 - `macho`：安全解析 load commands，只替换明确标记的代码区间，不覆盖已发生 relocation/PAC fixup 的其他内存页。
 - `collector`：只复制 `.app` bundle，阻止路径穿越和 symlink escape，默认剔除 receipt、`SC_Info` 和数据容器。
 - `packager`：确定性 ZIP、保持相对路径和权限，不重签、不安装。
@@ -174,6 +183,7 @@ MVP 只承诺：
 
 - Apple Silicon macOS host；
 - 一种明确记录的越狱/设备组合；
+- `oprobe decrypt <input.ipa>` 一条命令的成功路径；输入 IPA 与设备上已经安装的同一构建必须唯一匹配；
 - 首个实测设备的 native slice；arm64e/A12+ 只有通过独立实机验证后才加入支持矩阵；
 - 主可执行文件；如果 Framework/Extension 未完成，manifest 必须明确标记；
 - USB 连接、结构化日志、输出哈希、验证报告；
@@ -201,7 +211,7 @@ MVP 不承诺：
 
 ### v0.1：第 2–4 周
 
-- Rust CLI 骨架和 `doctor/devices/apps`。
+- 一条命令的 `oprobe decrypt <input.ipa>` 用户流程，以及用于排错的 `doctor/devices/apps`。
 - USB transport 与最小 helper。
 - 单一后端处理主程序。
 - Host 端 Mach-O 重建、打包和 `verify`。
@@ -244,7 +254,7 @@ MVP 不承诺：
 README 默认英文，完整提供 `README.zh-CN.md`。首屏依次展示：
 
 1. 一句话定位与 Authorized use only；
-2. 安装命令；
+2. 安装命令与 `oprobe decrypt DemoLab.ipa` 的一条命令 Quick Start；
 3. `oprobe demo`；
 4. 30–45 秒终端 GIF；
 5. 真实支持矩阵；

@@ -24,6 +24,21 @@ cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 
 These commands do not connect to a device, decrypt a binary, process an IPA, or prove plaintext. `inspect` accepts one regular Mach-O file and reads only bounded container, slice, and load-command metadata; see [its exact contract](docs/development/macho-inspect.md). Capability, structured-error, and export-manifest values now have [versioned, bounded pre-v1 contracts](docs/development/schemas.md), and a separate [bounded host/helper protocol RFC](docs/architecture/RFC-0002-bounded-host-helper-protocol.md) specifies the design gate for any future transport. Both are device-free contracts; no device backend implements them yet. The repository-owned [DemoLab fixture](fixtures/DemoLab/README.md) provides a Swift app, an Objective-C dynamic framework, and a share extension for safe, repeatable simulator builds. See [the Rust development guide](docs/development/getting-started.md) for the pinned toolchain and validation commands.
 
+## Documentation
+
+- [User guide](docs/user-guide.md) — the planned `oprobe decrypt MyApp.ipa`
+  experience, prerequisites, outputs, and failure behavior.
+- [Technical overview](docs/technical-overview.md) — the complete pipeline,
+  trust boundaries, reconstruction model, evidence semantics, and code-reading
+  path.
+- [Documentation index](docs/README.md) — architecture, development,
+  compatibility, and localized guides.
+- [简体中文用户指南](docs/zh-CN/user-guide.md) and
+  [简体中文技术总览](docs/zh-CN/technical-overview.md).
+
+The one-command IPA flow is a target contract for the first usable alpha. It is
+not implemented by the current pre-alpha code.
+
 ## Authorized use only
 
 Use OrchardProbe only with apps that you or your organization own, or where the owner has given you explicit authorization to perform the proposed testing. You are responsible for complying with applicable law, platform terms, contracts, and the limits of that authorization.
@@ -51,6 +66,8 @@ The goal is not merely to produce an archive. A successful export should be expl
 
 The planned toolchain will:
 
+- accept one authorized local IPA as the immutable reconstruction input and
+  automatically match it to the same installed build on a supported device;
 - discover explicitly connected devices and enumerate in-scope user apps;
 - prefer USB transport, with a constrained SSH path considered only as a fallback;
 - use a short-lived device helper with only the minimum necessary privileges and entitlements proven by the technical spike;
@@ -89,11 +106,17 @@ oprobe verify <manifest.json> [--json]
 The device and artifact commands below are future design placeholders and are not implemented:
 
 ```text
-oprobe devices
-oprobe apps
-oprobe export <bundle-id> --output <path>
+oprobe decrypt <input.ipa> [--output <output.ipa>] [--json]
+oprobe devices [--json]
+oprobe apps [--json]
 oprobe verify <ipa-or-app> [--json]
 ```
+
+The intended happy path is only `oprobe decrypt MyApp.ipa`. The input IPA alone
+cannot supply encrypted-to-plaintext bytes: the same build must already be
+installed on one supported, connected, authorized jailbroken device. Device and
+app listing commands are diagnostics, not required happy-path steps. See the
+[user guide](docs/user-guide.md).
 
 There are intentionally no release installation commands yet. The Cargo commands above are for contributors and will be replaced with installation documentation only after a reproducible alpha release exists.
 
@@ -101,6 +124,9 @@ There are intentionally no release installation commands yet. The Cargo commands
 
 ```mermaid
 flowchart LR
+  Input["Authorized input IPA"] --> Ingest["Bounded archive ingest"]
+  Ingest --> Inventory["Bundle and Mach-O inventory"]
+  Inventory --> CLI
   CLI["Rust host CLI"] --> Policy["Authorization and scope policy"]
   Policy --> Doctor["Doctor and capability probe"]
   Doctor --> Router["Backend router"]
@@ -111,6 +137,7 @@ flowchart LR
   Bundle --> Package["Not re-signed analysis package"]
   Rebuild --> Package
   Package --> Verify["Per-binary evidence report and manifest"]
+  Verify --> Output["*.decrypted.ipa + manifest"]
 ```
 
 The host is planned as a Rust workspace. A small Objective-C/C helper will perform only the required device-side operation. Sprint 0 will compare suspended-spawn and mapped-file candidates before choosing an MVP backend; neither is currently claimed to work. Backend adapters will remain isolated behind a versioned capability handshake, allowing the project to add a second implementation without widening the helper into a general-purpose remote access service.

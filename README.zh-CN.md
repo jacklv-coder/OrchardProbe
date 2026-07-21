@@ -24,6 +24,17 @@ cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 
 这些命令不会连接设备、解密二进制、处理 IPA，也不能证明明文字节正确。`inspect` 只接受一个普通 Mach-O 文件，并仅读取有界的容器、Slice 与 Load Command 元数据；精确契约见 [Mach-O inspect 开发文档](docs/development/macho-inspect.md)。Capability、结构化错误和导出 manifest 现已有[带版本、边界明确的 pre-v1 契约](docs/development/schemas.md)，未来 transport 还必须先满足独立的[有界 Host/Helper 协议 RFC](docs/architecture/RFC-0002-bounded-host-helper-protocol.md)。两者都只是无设备契约；当前仍没有设备后端实现它们。仓库自有的 [DemoLab fixture](fixtures/DemoLab/README.md) 提供 Swift 主 App、Objective-C 动态 Framework 和 Share Extension，用于安全且可复现的模拟器构建。固定工具链和验证命令见 [Rust 开发指南](docs/development/getting-started.md)。
 
+## 文档
+
+- [用户指南](docs/zh-CN/user-guide.md)：计划中的
+  `oprobe decrypt MyApp.ipa` 使用体验、运行条件、输出与失败行为。
+- [技术总览](docs/zh-CN/technical-overview.md)：完整流水线、信任边界、重建模型、
+  证据语义和源码学习顺序。
+- [简体中文文档索引](docs/zh-CN/README.md)：架构、开发、兼容性和英文原始文档。
+- [English documentation index](docs/README.md)。
+
+一条命令处理 IPA 是首个可用 Alpha 的目标契约，当前 pre-alpha 代码尚未实现。
+
 ## 仅限授权用途
 
 只能将 OrchardProbe 用于你本人或所在组织拥有的 App，或 App 所有者已经明确授权你开展相应测试的场景。你有责任遵守适用法律、平台条款、合同以及授权范围。
@@ -51,6 +62,8 @@ cargo run --locked -p orchardprobe-cli -- verify path/to/manifest.json --json
 
 计划中的工具链将会：
 
+- 接受一个授权本地 IPA 作为不可变重建输入，并自动匹配受支持设备上的同一
+  已安装构建；
 - 发现明确连接的设备，并只枚举政策范围内的用户 App；
 - 优先使用 USB，仅将受约束的 SSH 通道作为备选方案；
 - 使用短生命周期的设备 Helper，并只申请技术 Spike 证明必需的最小权限和 entitlements；
@@ -89,11 +102,16 @@ oprobe verify <manifest.json> [--json]
 以下设备与产物命令仍只是未来设计占位，目前尚未实现：
 
 ```text
-oprobe devices
-oprobe apps
-oprobe export <bundle-id> --output <path>
+oprobe decrypt <input.ipa> [--output <output.ipa>] [--json]
+oprobe devices [--json]
+oprobe apps [--json]
 oprobe verify <ipa-or-app> [--json]
 ```
+
+目标成功路径只有 `oprobe decrypt MyApp.ipa`。输入 IPA 本身不能提供从加密到
+明文的字节；同一构建必须已安装在一台受支持、已连接且明确授权的越狱设备上。
+设备和 App 列表命令只用于诊断，不是正常流程必需步骤。详见
+[用户指南](docs/zh-CN/user-guide.md)。
 
 目前有意不提供 Release 安装命令。上面的 Cargo 命令只面向贡献者；只有在可复现的 alpha 版本发布后，项目才会添加正式安装文档。
 
@@ -101,6 +119,9 @@ oprobe verify <ipa-or-app> [--json]
 
 ```mermaid
 flowchart LR
+  Input["授权输入 IPA"] --> Ingest["有界 Archive 接收与检查"]
+  Ingest --> Inventory["Bundle 与 Mach-O 清单"]
+  Inventory --> CLI
   CLI["Rust Host CLI"] --> Policy["授权与范围策略"]
   Policy --> Doctor["Doctor 与能力探测"]
   Doctor --> Router["后端路由"]
@@ -111,6 +132,7 @@ flowchart LR
   Bundle --> Package["未重签分析包"]
   Rebuild --> Package
   Package --> Verify["逐二进制证据报告与 Manifest"]
+  Verify --> Output["*.decrypted.ipa + Manifest"]
 ```
 
 Host 端计划采用 Rust workspace。小型 Objective-C/C Helper 只执行必要的设备端操作。Sprint 0 会先比较 suspended-spawn 和 mapped-file 两个候选，再决定 MVP 后端；当前尚不宣称其中任何一个可用。各后端 Adapter 会隔离在版本化 capability handshake 之后，使项目可以增加第二种实现，同时避免把 Helper 扩展为通用远程访问服务。
