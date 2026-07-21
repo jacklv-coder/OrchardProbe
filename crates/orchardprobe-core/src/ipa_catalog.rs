@@ -259,7 +259,7 @@ fn is_in_scope_dylib(inventory: &IpaInventory, path: &str) -> bool {
     if components.is_empty()
         || components
             .iter()
-            .any(|component| is_nonempty_bundle_component(component, ".app"))
+            .any(|component| component.ends_with(".app"))
     {
         return false;
     }
@@ -267,21 +267,24 @@ fn is_in_scope_dylib(inventory: &IpaInventory, path: &str) -> bool {
     let extension_indexes = components
         .iter()
         .enumerate()
-        .filter_map(|(index, component)| {
-            is_nonempty_bundle_component(component, ".appex").then_some(index)
-        })
+        .filter_map(|(index, component)| component.ends_with(".appex").then_some(index))
         .collect::<Vec<_>>();
     if !(extension_indexes.is_empty()
-        || (extension_indexes == [1] && components.first() == Some(&"PlugIns")))
+        || (extension_indexes == [1]
+            && components.first() == Some(&"PlugIns")
+            && is_nonempty_bundle_component(components[1], ".appex")))
     {
         return false;
     }
 
-    components
+    let framework_components = components
         .iter()
-        .filter(|component| is_nonempty_bundle_component(component, ".framework"))
-        .count()
-        <= 1
+        .filter(|component| component.ends_with(".framework"))
+        .collect::<Vec<_>>();
+    framework_components.len() <= 1
+        && framework_components
+            .iter()
+            .all(|component| is_nonempty_bundle_component(component, ".framework"))
 }
 
 fn is_nonempty_bundle_component(component: &str, suffix: &str) -> bool {
@@ -701,11 +704,14 @@ mod tests {
             entry("Payload/Demo.app/PlugIns/E.appex/libExt.dylib", 1),
             entry("Payload/Demo.app/Frameworks/F.framework/libWithin.dylib", 1),
             entry("Payload/Demo.app/Nested.app/libNested.dylib", 1),
+            entry("Payload/Demo.app/.app/libEmptyApp.dylib", 1),
             entry("Payload/Demo.app/Other/E.appex/libOther.dylib", 1),
+            entry("Payload/Demo.app/PlugIns/.appex/libEmptyExtension.dylib", 1),
             entry(
                 "Payload/Demo.app/Frameworks/F.framework/G.framework/libDeep.dylib",
                 1,
             ),
+            entry("Payload/Demo.app/.framework/libEmptyFramework.dylib", 1),
             entry("Payload/Demo.app/libUpper.DYLIB", 1),
             IpaEntry {
                 path: "Payload/Demo.app/libDirectory.dylib".to_owned(),

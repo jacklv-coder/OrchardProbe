@@ -60,15 +60,16 @@ is interpreted as a host path.
 ### Lowercase dylib ancestry
 
 An otherwise valid lowercase `.dylib` path may be beneath the root app and may
-optionally be beneath exactly one direct `PlugIns/*.appex`. It may traverse at
-most one non-empty `.framework` component.
+optionally be beneath exactly one direct `PlugIns/<non-empty>.appex`. It may
+traverse at most one non-empty `.framework` component.
 
 The convention excludes a path containing:
 
-- any nested non-empty `.app` component, including normal Watch/App Clip app
-  shapes;
+- any component ending in `.app`, including empty-stem, normal Watch, and App
+  Clip app shapes;
 - an `.appex` anywhere other than the direct `PlugIns/<name>.appex` position;
-- more than one `.framework` component; or
+- an empty-stem `.appex` or `.framework`, or more than one `.framework`
+  component; or
 - an uppercase or mixed-case suffix such as `.DYLIB`.
 
 These exclusions are coverage boundaries, not claims that omitted bytes are
