@@ -141,13 +141,33 @@ pub(crate) fn inspect_ipa_nested_bundle_metadata_with_inventory<R: Read + Seek>(
 ) -> Result<(IpaNestedBundleMetadata, IpaInventory), IpaNestedBundleMetadataError> {
     let (app, authoritative_inventory) =
         inspect_ipa_app_metadata_with_inventory(&mut reader, archive_size)?;
-    let roots = discover_bundle_roots(&authoritative_inventory);
-    let selected = select_bundle_plists(&authoritative_inventory, &roots)?;
+    let metadata = inspect_ipa_nested_bundle_metadata_from_inventory(
+        &mut reader,
+        archive_size,
+        app,
+        &authoritative_inventory,
+    )?;
+    Ok((metadata, authoritative_inventory))
+}
+
+/// Resolve nested metadata against a caller-owned authoritative inventory.
+///
+/// This internal entry point lets later IPA layers reuse the exact inventory
+/// that was already bound to the root executable. Every nested plist read is
+/// compared with that same observation before its declaration is accepted.
+pub(crate) fn inspect_ipa_nested_bundle_metadata_from_inventory<R: Read + Seek>(
+    reader: &mut R,
+    archive_size: u64,
+    app: IpaAppMetadata,
+    authoritative_inventory: &IpaInventory,
+) -> Result<IpaNestedBundleMetadata, IpaNestedBundleMetadataError> {
+    let roots = discover_bundle_roots(authoritative_inventory);
+    let selected = select_bundle_plists(authoritative_inventory, &roots)?;
     let mut bundles = Vec::with_capacity(selected.len());
 
     for selected_bundle in selected {
         let (bytes, observed_inventory) = read_ipa_entry_bounded_with_inventory(
-            &mut reader,
+            &mut *reader,
             archive_size,
             &selected_bundle.info_plist_path,
             MAX_IPA_INFO_PLIST_BYTES,
@@ -158,7 +178,7 @@ pub(crate) fn inspect_ipa_nested_bundle_metadata_with_inventory<R: Read + Seek>(
         })?;
         ensure_inventory_unchanged(
             &selected_bundle.info_plist_path,
-            &authoritative_inventory,
+            authoritative_inventory,
             &observed_inventory,
         )?;
 
@@ -198,10 +218,7 @@ pub(crate) fn inspect_ipa_nested_bundle_metadata_with_inventory<R: Read + Seek>(
         });
     }
 
-    Ok((
-        IpaNestedBundleMetadata { app, bundles },
-        authoritative_inventory,
-    ))
+    Ok(IpaNestedBundleMetadata { app, bundles })
 }
 
 fn discover_bundle_roots(inventory: &IpaInventory) -> BTreeMap<String, IpaNestedBundleRole> {
