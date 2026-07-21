@@ -7,8 +7,9 @@
 > [!IMPORTANT]
 > The workflow in this guide is the target for the first usable alpha. It is
 > not implemented in the current pre-alpha checkout. Today, OrchardProbe can
-> inspect bounded metadata from one Mach-O file and validate its device-free
-> schemas, but it cannot connect to an iPhone, decrypt an app, or create an IPA.
+> inspect bounded metadata from one Mach-O file, validate its device-free
+> schemas, and run a library-only IPA archive preflight. No current command
+> accepts an IPA, connects to an iPhone, decrypts an app, or creates an IPA.
 
 The intended experience is deliberately simple:
 
@@ -194,6 +195,8 @@ They do not process an IPA or contact a device. See the
 and the [technical overview](technical-overview.md) to understand how they fit
 into the planned pipeline. The future `oprobe verify <ipa-or-app>` interface is
 separate from today's manifest-only `verify` command and is not implemented.
+The internal [IPA preflight](development/ipa-preflight.md) is a tested library
+foundation, not an additional command.
 
 ## Frequently asked questions
 

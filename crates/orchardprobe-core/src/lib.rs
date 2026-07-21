@@ -4,6 +4,7 @@
 //! models auditable evidence and validates the untrusted paths that may appear
 //! in an export manifest.
 
+pub mod ipa;
 pub mod macho;
 pub mod wire;
 
