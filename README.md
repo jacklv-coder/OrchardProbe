@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform a library-only bounded IPA archive preflight and one bounded in-memory entry read, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry reads, parse bounded root app identity metadata, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -29,6 +29,11 @@ validates archive metadata without decompression, then optionally reads one
 exact Stored/Deflate entry into a bounded CRC-checked memory buffer. It never
 extracts to disk, is not wired to the CLI, and does not change the statement
 above about current commands.
+
+The separate [bounded `Info.plist` metadata parser](docs/development/ipa-info-plist.md)
+resolves the root Bundle ID, versions, and exact main executable entry from XML
+or binary plist events. It does not inspect that executable's payload or prove
+an installed-build match, decryption, or plaintext.
 
 ## Documentation
 

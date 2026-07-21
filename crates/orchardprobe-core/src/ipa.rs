@@ -465,19 +465,30 @@ pub fn inspect_ipa<R: Read + Seek>(
 /// successful read reaches entry EOF, verifies the ZIP CRC, and confirms the
 /// actual length against the metadata returned by [`inspect_ipa`].
 pub fn read_ipa_entry_bounded<R: Read + Seek>(
-    mut reader: R,
+    reader: R,
     archive_size: u64,
     path: &str,
     max_output_bytes: u64,
 ) -> Result<Vec<u8>, IpaEntryReadError> {
+    read_ipa_entry_bounded_with_inventory(reader, archive_size, path, max_output_bytes)
+        .map(|(output, _)| output)
+}
+
+pub(crate) fn read_ipa_entry_bounded_with_inventory<R: Read + Seek>(
+    mut reader: R,
+    archive_size: u64,
+    path: &str,
+    max_output_bytes: u64,
+) -> Result<(Vec<u8>, IpaInventory), IpaEntryReadError> {
     validate_output_limit(max_output_bytes)?;
 
     let inventory = inspect_ipa(&mut reader, archive_size)?;
     let canonical_path = validate_entry_selector(path)?;
     let expected = inventory
         .entries
-        .into_iter()
+        .iter()
         .find(|entry| entry.path == canonical_path)
+        .cloned()
         .ok_or_else(|| IpaEntryReadError::EntryNotFound {
             path: canonical_path.clone(),
         })?;
@@ -559,7 +570,7 @@ pub fn read_ipa_entry_bounded<R: Read + Seek>(
             actual,
         });
     }
-    Ok(output)
+    Ok((output, inventory))
 }
 
 fn validate_reopened_entry<R: Read>(
