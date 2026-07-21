@@ -5,6 +5,12 @@
 状态：执行中的 pre-alpha 蓝图
 日期：2026-07-22
 
+> [!IMPORTANT]
+> 本文件说明产品方向、技术边界和版本发布门槛。可执行步骤的权威顺序、当前
+> 状态、Issue/PR 定位和“完成后才能进入下一步”的门禁，以
+> [串行执行计划](docs/zh-CN/execution-plan.md)为准。任何只存在于聊天或未合并
+> 分支中的计划都不生效。
+
 当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、Stored/Deflate Entry 内存/流式读取、根 App XML/Binary `Info.plist` 事件流身份解析、通过匿名临时文件完成的声明主程序 Mach-O 结构检查，以及只把约定路径作为候选且必须通过 Mach-O 解析的 Framework/dylib/Extension 确定性清单、`oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范和相应对抗测试已落地并由必需 CI 覆盖。非标准嵌套 Bundle 可执行名的完整清单、设备发现、真机 Helper、transport、导出后端、Archive 物化、重建、IPA 打包与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
@@ -199,6 +205,10 @@ MVP 不承诺：
 
 ## 7. 实施计划
 
+本节保留里程碑视角，不直接驱动开发顺序。实际工作必须逐项遵守
+[串行执行计划](docs/zh-CN/execution-plan.md)，同一时间最多只能有一个
+`active` 步骤。
+
 ### Sprint 0：1 周，先证明方向
 
 - [x] 固化 `RFC-0001 Scope and Threat Model`。
@@ -304,12 +314,8 @@ Release 下载量包含机器人和重复下载，只作趋势信号。Stars 可
 
 ## 11. 下一步
 
-公开仓库当前处于 foundation/pre-alpha 阶段。接下来依次完成：
-
-1. 确认工作名和品牌检查；
-2. 确认首台测试设备的型号、SoC、iOS 版本、越狱方案及 rootless/rootful；
-3. 先完成 Sprint 0 技术 spike；
-4. 完善 monorepo、CI 和社区健康文件；
-5. v0.1 alpha 可复现后再推广项目并发布可执行制品。
+公开仓库当前处于 foundation/pre-alpha 阶段。下一步不再由本节的静态清单决定，
+而是以[串行执行计划](docs/zh-CN/execution-plan.md)中第一个可激活的 `planned`
+条目为准。该条目必须先经过计划激活 PR；当前步骤未完成时，不得启动下一步。
 
 `OrchardProbe` 目前仅是工作名。除本仓库外，GitHub 仓库搜索未发现明显同名项目，但这不等于商标许可；仍需检查 organization、crates.io、Homebrew、npm/PyPI、域名和相关商标。当前公开仓库为 `jacklv-coder/OrchardProbe`，本地已初始化 Git 并连接 `origin/main`。

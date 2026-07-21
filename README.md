@@ -43,6 +43,8 @@ remaining incomplete for nonstandard nested bundle executable names.
 
 ## Documentation
 
+- [Sequential execution plan](EXECUTION_PLAN.md) — the authoritative ordered
+  ledger, current gate, acceptance criteria, Issues, PRs, and completion rules.
 - [User guide](docs/user-guide.md) — the planned `oprobe decrypt MyApp.ipa`
   experience, prerequisites, outputs, and failure behavior.
 - [Technical overview](docs/technical-overview.md) — the complete pipeline,
@@ -178,7 +180,10 @@ OrchardProbe is currently in **Sprint 0 / project foundation**.
 4. **v0.6:** harden resumability, structured integration, fuzzing, and self-hosted device testing.
 5. **v1.0:** stabilize the protocol and manifest only after an independent security review and measurable reliability targets are met.
 
-This roadmap describes direction, not guaranteed dates or compatibility. The detailed plan and release gates live in [PROJECT_PLAN.md](PROJECT_PLAN.md).
+This roadmap describes direction, not guaranteed dates or compatibility. The
+product blueprint and release gates live in [PROJECT_PLAN.md](PROJECT_PLAN.md);
+the authoritative step order and current gate live in
+[EXECUTION_PLAN.md](EXECUTION_PLAN.md).
 
 ## Contributing
 
