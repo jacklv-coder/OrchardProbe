@@ -31,6 +31,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Bounded IPA preflight and entry read](development/ipa-preflight.md)
 - [Bounded IPA Info.plist metadata](development/ipa-info-plist.md)
 - [Bounded IPA main-executable inspection](development/ipa-main-executable.md)
+- [Deterministic IPA code candidate inventory](development/ipa-code-inventory.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)

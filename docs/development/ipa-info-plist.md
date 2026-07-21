@@ -135,6 +135,8 @@ The exact root executable is now consumed by the separate
 [bounded IPA main-executable inspection](ipa-main-executable.md), which streams
 it to an automatically cleaned anonymous temporary file and applies the
 existing Mach-O parser. The following ingest step is a deterministic bundle
-code inventory for framework, dylib, and extension candidates. Filename
-extensions and plist metadata remain candidate signals, not proof that an
-entry is Mach-O.
+[code candidate inventory](ipa-code-inventory.md) for conventional framework,
+dylib, and extension paths. Filename extensions and plist metadata remain
+candidate signals, not proof that an entry is Mach-O. Reusing this bounded
+parser for nested bundle plists is the next step needed to resolve nonstandard
+declared executable names.

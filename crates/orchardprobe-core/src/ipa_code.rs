@@ -72,9 +72,16 @@ pub enum IpaMainExecutableError {
 /// and again while copying the executable. Any difference fails closed. The
 /// anonymous temporary file is removed automatically on success or failure.
 pub fn inspect_ipa_main_executable<R: Read + Seek>(
-    mut reader: R,
+    reader: R,
     archive_size: u64,
 ) -> Result<IpaMainExecutable, IpaMainExecutableError> {
+    inspect_ipa_main_executable_with_inventory(reader, archive_size).map(|(main, _)| main)
+}
+
+pub(crate) fn inspect_ipa_main_executable_with_inventory<R: Read + Seek>(
+    mut reader: R,
+    archive_size: u64,
+) -> Result<(IpaMainExecutable, IpaInventory), IpaMainExecutableError> {
     let (app, metadata_inventory) =
         inspect_ipa_app_metadata_with_inventory(&mut reader, archive_size)?;
     let entry = metadata_inventory
@@ -103,7 +110,7 @@ pub fn inspect_ipa_main_executable<R: Read + Seek>(
         source,
     })?;
 
-    Ok(IpaMainExecutable { app, entry, macho })
+    Ok((IpaMainExecutable { app, entry, macho }, copied.inventory))
 }
 
 fn validate_main_entry_size(entry: &IpaEntry) -> Result<(), IpaMainExecutableError> {
