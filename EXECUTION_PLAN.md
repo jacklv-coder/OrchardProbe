@@ -69,9 +69,11 @@ decryption support.
 
 ## Current gate
 
-There is no active implementation step once the `HOST-007` implementation PR
-is present on `main`. `HOST-008` is the only step eligible for activation next;
-its implementation must not start until a separate activation PR is merged.
+`HOST-008` is the only active implementation step. Its private-worktree scope,
+exclusions, host-filesystem boundary, resource limits, cleanup behavior, and
+acceptance criteria are fixed by Issue #37. `HOST-009` and every later step
+must remain untouched until the `HOST-008` implementation PR satisfies the
+complete gate and is merged.
 
 ## Execution ledger
 
@@ -88,7 +90,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 6 | `HOST-005` | `done` | Inventory bounded conventional framework, dylib, and extension candidates only after Mach-O parsing; report coverage as incomplete. | `HOST-004` | [#27](https://github.com/jacklv-coder/OrchardProbe/issues/27) | Predates ledger | [#28](https://github.com/jacklv-coder/OrchardProbe/pull/28) |
 | 7 | `HOST-006` | `done` | Resolve bounded `Info.plist` metadata and exact declared executables for conventional nested bundles; reject missing, duplicate, escaping, oversized, or malformed declarations visibly. | `HOST-005` | [#31](https://github.com/jacklv-coder/OrchardProbe/issues/31) | [#32](https://github.com/jacklv-coder/OrchardProbe/pull/32) | [#33](https://github.com/jacklv-coder/OrchardProbe/pull/33) |
 | 8 | `HOST-007` | `done` | Produce a deterministic declared-executable inventory for all supported standard bundle types, with explicit coverage and ambiguity semantics. | `HOST-006` | [#34](https://github.com/jacklv-coder/OrchardProbe/issues/34) | [#35](https://github.com/jacklv-coder/OrchardProbe/pull/35) | [#36](https://github.com/jacklv-coder/OrchardProbe/pull/36) |
-| 9 | `HOST-008` | `planned` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | To create during activation | To record during activation | — |
+| 9 | `HOST-008` | `active` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | Pending activation PR | — |
 | 10 | `HOST-009` | `planned` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | To create during activation | To record during activation | — |
 | 11 | `HOST-010` | `planned` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | To create during activation | To record during activation | — |
 | 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | To record during activation | — |
