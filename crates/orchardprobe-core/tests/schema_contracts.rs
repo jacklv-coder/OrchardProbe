@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use jsonschema::error::ValidationErrorKind;
 use orchardprobe_core::{
-    BinaryRole, EvidenceLevel, ExportManifest, Outcome, SignatureKind, SignaturePresence,
+    BinaryRole, EvidenceLevel, ExportManifest, ManifestCodeCoverage, ManifestCodeRejectionReason,
+    ManifestExclusionReason, ManifestPackageState, Outcome, SignatureKind, SignaturePresence,
     SignatureValidation, demo_manifest,
     wire::{
         BundleEntryStreamLimits, BundleEnumerateLimits, CAPABILITY_MESSAGE_TYPE,
@@ -22,11 +23,12 @@ use serde::{
 };
 use serde_json::Value;
 
-const SCHEMA_FILES: [&str; 4] = [
+const SCHEMA_FILES: [&str; 5] = [
     "fixture-expectation.schema.json",
     "v0/capability-v1.schema.json",
     "v0/error-v1.schema.json",
     "v0/export-manifest-v2.schema.json",
+    "v0/export-manifest-v3.schema.json",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -227,7 +229,7 @@ fn every_checked_in_json_file_parses_and_every_schema_is_meta_valid() {
     let root = schema_root();
     let mut json_files = Vec::new();
     collect_json_files(&root, &mut json_files);
-    assert_eq!(json_files.len(), 27, "unexpected schema fixture inventory");
+    assert_eq!(json_files.len(), 31, "unexpected schema fixture inventory");
     for path in json_files {
         read_json(&path);
     }
@@ -259,8 +261,12 @@ fn golden_instances_match_schema_and_rust_wire_types_exactly() {
             "v0/examples/valid/error.incompatible-protocol.json",
         ),
         (
-            "v0/export-manifest-v2.schema.json",
+            "v0/export-manifest-v3.schema.json",
             "v0/examples/valid/export-manifest.demolab.json",
+        ),
+        (
+            "v0/export-manifest-v3.schema.json",
+            "v0/examples/valid/export-manifest.package-evidence.json",
         ),
     ];
 
@@ -299,6 +305,14 @@ fn golden_instances_match_schema_and_rust_wire_types_exactly() {
                 assert_eq!(manifest, demo_manifest("0.1.0-alpha.1"));
                 serde_json::to_value(manifest).expect("export manifest serializes")
             }
+            "v0/examples/valid/export-manifest.package-evidence.json" => {
+                let manifest: ExportManifest = serde_json::from_value(instance.clone())
+                    .expect("golden package-evidence manifest deserializes");
+                manifest
+                    .validate()
+                    .expect("golden package-evidence manifest validates");
+                serde_json::to_value(manifest).expect("package-evidence manifest serializes")
+            }
             _ => unreachable!("case list is closed"),
         };
         assert_eq!(
@@ -311,7 +325,7 @@ fn golden_instances_match_schema_and_rust_wire_types_exactly() {
 #[test]
 fn optional_manifest_fields_accept_both_missing_and_explicit_null() {
     let root = schema_root();
-    let schema = read_json(&root.join("v0/export-manifest-v2.schema.json"));
+    let schema = read_json(&root.join("v0/export-manifest-v3.schema.json"));
     let validator = jsonschema::draft202012::new(&schema).expect("compile manifest schema");
     let mut instance = read_json(&root.join("v0/examples/valid/export-manifest.demolab.json"));
 
@@ -355,6 +369,7 @@ fn golden_examples_do_not_add_device_or_secret_channels() {
         "v0/examples/valid/capability.device-free.json",
         "v0/examples/valid/error.incompatible-protocol.json",
         "v0/examples/valid/export-manifest.demolab.json",
+        "v0/examples/valid/export-manifest.package-evidence.json",
     ] {
         let encoded = fs::read_to_string(root.join(relative)).expect("read golden example");
         let lowercase = encoded.to_ascii_lowercase();
@@ -382,7 +397,7 @@ fn golden_examples_do_not_add_device_or_secret_channels() {
 #[test]
 fn every_closed_rust_wire_enum_matches_its_schema_values() {
     let root = schema_root();
-    let export = read_json(&root.join("v0/export-manifest-v2.schema.json"));
+    let export = read_json(&root.join("v0/export-manifest-v3.schema.json"));
     let capability = read_json(&root.join("v0/capability-v1.schema.json"));
     let error = read_json(&root.join("v0/error-v1.schema.json"));
 
@@ -449,6 +464,39 @@ fn every_closed_rust_wire_enum_matches_its_schema_values() {
     assert_eq!(
         KNOWN_REASON_CODES.map(str::to_owned).to_vec(),
         schema_strings(&binary_properties["reason_codes"]["items"]["enum"])
+    );
+    assert_eq!(
+        serialized_strings(&[ManifestPackageState::UnsignedAnalysisOnly]),
+        vec![
+            export["$defs"]["output_package"]["properties"]["state"]["const"]
+                .as_str()
+                .expect("package state const")
+                .to_owned()
+        ]
+    );
+    assert_eq!(
+        serialized_strings(&[
+            ManifestExclusionReason::MasReceipt,
+            ManifestExclusionReason::ScInfo,
+        ]),
+        schema_strings(&export["$defs"]["excluded_entry"]["properties"]["reason"]["enum"])
+    );
+    assert_eq!(
+        serialized_strings(&[ManifestCodeCoverage::DeclaredStandardBundles]),
+        vec![
+            export["$defs"]["code_inventory"]["properties"]["coverage"]["const"]
+                .as_str()
+                .expect("coverage const")
+                .to_owned()
+        ]
+    );
+    assert_eq!(
+        serialized_strings(&[
+            ManifestCodeRejectionReason::EntryTooLarge,
+            ManifestCodeRejectionReason::NotMacho,
+            ManifestCodeRejectionReason::InvalidMacho,
+        ]),
+        schema_strings(&export["$defs"]["rejected_code_candidate"]["properties"]["reason"]["enum"])
     );
 
     assert_eq!(
@@ -751,7 +799,7 @@ fn declared_negative_fixtures_fail_for_the_expected_schema_reason() {
         .collect();
     assert_eq!(
         expectation_files.len(),
-        10,
+        11,
         "unexpected negative fixture inventory"
     );
 

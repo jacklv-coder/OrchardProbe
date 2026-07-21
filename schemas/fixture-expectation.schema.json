@@ -28,7 +28,7 @@
       "enum": [
         "../../capability-v1.schema.json",
         "../../error-v1.schema.json",
-        "../../export-manifest-v2.schema.json"
+        "../../export-manifest-v3.schema.json"
       ]
     },
     "instance": {
@@ -83,6 +83,7 @@
             "unknown_field",
             "unknown_wire_value",
             "collection_limit_exceeded",
+            "incomplete_package_evidence",
             "unsafe_relative_path",
             "inconsistent_evidence",
             "inconsistent_signature",
@@ -125,7 +126,7 @@
           "const": "export_manifest"
         },
         "contract_schema": {
-          "const": "../../export-manifest-v2.schema.json"
+          "const": "../../export-manifest-v3.schema.json"
         }
       }
     }

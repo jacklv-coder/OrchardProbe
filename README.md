@@ -13,7 +13,7 @@ It is not intended to promise support for every iOS version, device, jailbreak, 
 
 ## Development snapshot
 
-The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, resolve exact declared executable metadata for conventional nested frameworks and direct extensions, build a deterministic declared-standard-bundle inventory only after Mach-O parsing, materialize a validated IPA app tree into an automatically cleaned private bounded worktree, repackage that unchanged tree as a deterministic unsigned analysis-only IPA, emit a deterministic synthetic manifest, and validate that manifest's schema and path-safety invariants. No current CLI command accepts an IPA:
+The current code is intentionally host-only. It can report local pre-alpha status, inspect bounded header metadata from one local Mach-O file, perform library-only bounded IPA preflight and entry streaming, parse bounded root app identity metadata and its declared main executable as Mach-O, resolve exact declared executable metadata for conventional nested frameworks and direct extensions, build a deterministic declared-standard-bundle inventory only after Mach-O parsing, materialize a validated IPA app tree into an automatically cleaned private bounded worktree, repackage that unchanged tree as a deterministic unsigned analysis-only IPA, bind source/output hashes, inventories, exclusions, package policy, and every confirmed Mach-O slice into an honest device-free version-3 manifest, and validate manifest schema and path-safety invariants. No current CLI command accepts an IPA:
 
 ```sh
 cargo run --locked -p orchardprobe-cli -- doctor --json
@@ -53,6 +53,12 @@ can consume only that owned worktree and return a private, automatically
 cleaned, byte-reproducible IPA with normalized metadata and a final bounded
 preflight. It remains a library primitive: it does not modify Mach-O, publish a
 caller-selected output, prove decryption, or make `oprobe decrypt` available.
+The subsequent
+[device-free package-evidence builder](docs/development/ipa-package-manifest.md)
+revalidates and hashes both complete archives and every confirmed code entry,
+records complete slice and exclusion evidence, and still reports only
+`inconclusive` structural evidence. It does not publish either artifact or
+recompute evidence in the current CLI.
 
 ## Documentation
 

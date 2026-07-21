@@ -80,7 +80,7 @@ fn stderr(output: &Output) -> String {
 
 fn valid_manifest(binary_path: &str) -> Value {
     json!({
-        "schema_version": 2,
+        "schema_version": 3,
         "tool_version": "0.1.0-test",
         "tool_revision": null,
         "target": {
@@ -224,7 +224,7 @@ fn demo_is_device_free_and_explicitly_inconclusive() {
     );
     let manifest: Value =
         serde_json::from_slice(&json_output.stdout).expect("demo emits a JSON manifest");
-    assert_eq!(manifest["schema_version"], 2);
+    assert_eq!(manifest["schema_version"], 3);
     assert_eq!(manifest["backend"], "device_free_demo");
     assert_eq!(manifest["capability_ids"], json!([]));
     assert_eq!(manifest["binaries"][0]["outcome"], "inconclusive");
@@ -487,8 +487,8 @@ fn verify_rejects_duplicate_json_keys_at_every_depth() {
         (
             "duplicate-top-level",
             base.replacen(
-                "\"schema_version\":2",
-                "\"schema_version\":2,\"schema_version\":2",
+                "\"schema_version\":3",
+                "\"schema_version\":3,\"schema_version\":3",
                 1,
             ),
         ),

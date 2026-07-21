@@ -47,7 +47,7 @@ contracts remain the source of truth for their object shapes and enum values:
   defines the capability report embedded in negotiation;
 - [`error-v1.schema.json`](../../schemas/v0/error-v1.schema.json) defines the
   typed error payload; and
-- [`export-manifest-v2.schema.json`](../../schemas/v0/export-manifest-v2.schema.json)
+- [`export-manifest-v3.schema.json`](../../schemas/v0/export-manifest-v3.schema.json)
   defines host-local evidence output, not a request format.
 
 The contract rules in [Versioned JSON contracts](../development/schemas.md)

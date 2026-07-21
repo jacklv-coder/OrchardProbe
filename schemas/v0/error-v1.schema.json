@@ -613,7 +613,7 @@
           "items": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 2
+            "maximum": 3
           }
         }
       },
@@ -642,7 +642,7 @@
             "supported": {
               "type": "array",
               "items": {
-                "const": 2
+                "const": 3
               }
             }
           }

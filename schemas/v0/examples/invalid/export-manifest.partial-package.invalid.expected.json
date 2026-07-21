@@ -1,0 +1,16 @@
+{
+  "format_version": 1,
+  "contract": "export_manifest",
+  "contract_schema": "../../export-manifest-v3.schema.json",
+  "instance": "export-manifest.partial-package.invalid.json",
+  "expected_valid": false,
+  "expected_failure": {
+    "accepted_keywords": [
+      "type",
+      "oneOf"
+    ],
+    "instance_pointer": "/output_package",
+    "reason_code": "incomplete_package_evidence",
+    "reason": "Source, output-package, and code-inventory evidence must be present together."
+  }
+}

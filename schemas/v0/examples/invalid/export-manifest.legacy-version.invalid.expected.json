@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "contract": "export_manifest",
-  "contract_schema": "../../export-manifest-v2.schema.json",
+  "contract_schema": "../../export-manifest-v3.schema.json",
   "instance": "export-manifest.legacy-version.invalid.json",
   "expected_valid": false,
   "expected_failure": {
@@ -10,6 +10,6 @@
     ],
     "instance_pointer": "/schema_version",
     "reason_code": "unsupported_schema_version",
-    "reason": "The pre-alpha manifest contract made a breaking bump and rejects legacy schema version 1."
+    "reason": "The pre-alpha manifest contract made a breaking bump and rejects historical schema version 2."
   }
 }

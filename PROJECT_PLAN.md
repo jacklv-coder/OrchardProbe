@@ -11,7 +11,7 @@
 > [串行执行计划](docs/zh-CN/execution-plan.md)为准。任何只存在于聊天或未合并
 > 分支中的计划都不生效。
 
-当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、Stored/Deflate Entry 内存/流式读取、根 App 与约定嵌套 Framework/Extension 的 XML/Binary `Info.plist` 事件流身份和声明可执行 Entry 解析、通过匿名临时文件完成的声明主程序 Mach-O 结构检查、合并精确声明与范围内小写 dylib 且必须通过 Mach-O 解析的声明标准 Bundle 确定性清单、自动清理且防 Symlink/Path Escape 的私有有界 IPA 工作树，以及从该工作树生成字节级可重复、未签名、仅供分析 IPA 的库内 Packager，连同 `oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范和相应对抗测试已落地并由必需 CI 覆盖。工作树与 Packager 均排除 Receipt/`SC_Info`，且后者会归一化 Metadata、执行最终有界预检并自动清理临时产物。该清单明确不覆盖任意嵌套 App、Watch/App Clip、未支持 Bundle 类型或看似可执行的普通资源；设备发现、真机 Helper、transport、导出后端、Mach-O 重建、产物原子发布与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
+当前实现快照：项目治理和安全政策、Rust Host CLI、首方 DemoLab fixture、bounded Mach-O parser、仅限库内的有界只读 IPA Archive 预检、Stored/Deflate Entry 内存/流式读取、根 App 与约定嵌套 Framework/Extension 的 XML/Binary `Info.plist` 事件流身份和声明可执行 Entry 解析、通过匿名临时文件完成的声明主程序 Mach-O 结构检查、合并精确声明与范围内小写 dylib 且必须通过 Mach-O 解析的声明标准 Bundle 确定性清单、自动清理且防 Symlink/Path Escape 的私有有界 IPA 工作树、从该工作树生成字节级可重复且未签名分析 IPA 的库内 Packager，以及把源/输出 Archive SHA-256、Canonical 清单摘要、排除项、打包政策、逐 Code Hash 和全部 Mach-O Slice 绑定到 Version-3 Manifest 的无设备 Builder，连同 `oprobe inspect`、capability/error/export 三类带版本的 pre-v1 JSON 契约、有界 Host/Helper 协议规范和相应对抗测试已落地并由必需 CI 覆盖。工作树与 Packager 均排除 Receipt/`SC_Info`；Packager 会归一化 Metadata、执行最终有界预检并自动清理临时产物；Manifest Builder 则强制逐二进制结果保持 `inconclusive`，绝不把 Hash 相等冒充明文。该清单明确不覆盖任意嵌套 App、Watch/App Clip、未支持 Bundle 类型或看似可执行的普通资源；设备发现、真机 Helper、transport、导出后端、Mach-O 重建、产物原子发布与 `oprobe decrypt` 仍未实现，也没有任何正式设备兼容性声明。
 
 ## 1. 核心判断
 

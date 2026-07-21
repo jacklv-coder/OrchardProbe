@@ -1,7 +1,7 @@
 {
   "format_version": 1,
   "contract": "export_manifest",
-  "contract_schema": "../../export-manifest-v2.schema.json",
+  "contract_schema": "../../export-manifest-v3.schema.json",
   "instance": "export-manifest.malformed-range.invalid.json",
   "expected_valid": false,
   "expected_failure": {

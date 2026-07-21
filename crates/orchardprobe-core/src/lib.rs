@@ -10,6 +10,8 @@ pub mod ipa_bundle;
 pub mod ipa_catalog;
 pub mod ipa_code;
 #[cfg(unix)]
+pub mod ipa_manifest;
+#[cfg(unix)]
 pub mod ipa_materialize;
 #[cfg(unix)]
 pub mod ipa_package;
@@ -22,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// The manifest schema understood by this version of the crate.
-pub const MANIFEST_SCHEMA_VERSION: u32 = 2;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 3;
 
 /// Maximum encoded manifest size accepted by the CLI.
 pub const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
@@ -41,6 +43,10 @@ const MAX_PATH_COMPONENT_UTF8_BYTES: usize = 255;
 const MAX_REASON_CODES: usize = 16;
 const MAX_NOTES: usize = 16;
 const MAX_WARNINGS: usize = 32;
+const MAX_BINARY_SLICES: usize = 64;
+const MAX_TOTAL_BINARY_SLICES: usize = 2_048;
+const MAX_PACKAGE_EXCLUSIONS: usize = 512;
+const MAX_REJECTED_CODE_CANDIDATES: usize = 256;
 
 /// The schema used by non-manifest JSON command reports.
 pub const CLI_OUTPUT_SCHEMA_VERSION: u32 = 1;
@@ -123,8 +129,101 @@ pub struct SignatureInfo {
 #[serde(deny_unknown_fields)]
 pub struct TargetSummary {
     pub bundle_id: String,
-    pub display_name: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
     pub version: String,
+    #[serde(default)]
+    pub short_version: Option<String>,
+}
+
+/// Whole-archive identity derived from bounded bytes and validated inventory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchiveArtifactEvidence {
+    pub byte_len: u64,
+    pub sha256: String,
+    pub app_root: String,
+    pub entry_count: u32,
+    pub inventory_sha256: String,
+}
+
+/// Explicit semantic state of an output package.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestPackageState {
+    UnsignedAnalysisOnly,
+}
+
+/// Closed deterministic archive-normalization policy evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestPackagePolicy {
+    pub version: u32,
+    pub compression: String,
+    pub compression_level: i64,
+    pub timestamp: String,
+    pub directory_mode: u32,
+    pub executable_file_mode: u32,
+    pub regular_file_mode: u32,
+}
+
+/// Closed reason that a source archive path was excluded from packaging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestExclusionReason {
+    MasReceipt,
+    ScInfo,
+}
+
+/// One canonical source path deliberately excluded from the output package.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestExcludedEntry {
+    pub path: String,
+    pub reason: ManifestExclusionReason,
+}
+
+/// Output archive identity, deterministic policy, state, and exclusions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OutputPackageEvidence {
+    pub artifact: ArchiveArtifactEvidence,
+    pub state: ManifestPackageState,
+    pub policy: ManifestPackagePolicy,
+    pub exclusions: Vec<ManifestExcludedEntry>,
+}
+
+/// Stable declared-code coverage represented by this manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestCodeCoverage {
+    DeclaredStandardBundles,
+}
+
+/// Closed reason that a selected code candidate was not accepted as Mach-O.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManifestCodeRejectionReason {
+    EntryTooLarge,
+    NotMacho,
+    InvalidMacho,
+}
+
+/// One visible candidate that was not classified as code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestRejectedCodeCandidate {
+    pub path: String,
+    pub role: BinaryRole,
+    pub reason: ManifestCodeRejectionReason,
+}
+
+/// Scope and visible rejections for the code inventory bound to this manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ManifestCodeInventoryEvidence {
+    pub coverage: ManifestCodeCoverage,
+    pub rejected_candidates: Vec<ManifestRejectedCodeCandidate>,
 }
 
 /// Stable identity for one Mach-O slice when that identity was observed.
@@ -167,6 +266,9 @@ pub struct BinaryEvidence {
     pub architecture: String,
     #[serde(default)]
     pub slice: Option<SliceIdentity>,
+    /// Every structurally parsed slice; never collapsed for universal binaries.
+    #[serde(default)]
+    pub slices: Vec<SliceIdentity>,
     #[serde(default)]
     pub input_size: Option<u64>,
     #[serde(default)]
@@ -199,6 +301,12 @@ pub struct ExportManifest {
     pub target: TargetSummary,
     pub backend: String,
     pub capability_ids: Vec<String>,
+    #[serde(default)]
+    pub source_artifact: Option<ArchiveArtifactEvidence>,
+    #[serde(default)]
+    pub output_package: Option<OutputPackageEvidence>,
+    #[serde(default)]
+    pub code_inventory: Option<ManifestCodeInventoryEvidence>,
     pub binaries: Vec<BinaryEvidence>,
     #[serde(default)]
     pub warnings: Vec<String>,
@@ -227,6 +335,18 @@ pub enum ManifestValidationError {
 
     #[error("manifest field `{field}` is outside its permitted interoperable integer range")]
     IntegerOutOfRange { field: String },
+
+    #[error("source, output-package, and code-inventory evidence must appear together")]
+    IncompletePackageEvidence,
+
+    #[error("package evidence field `{field}` is inconsistent with its bounded contract")]
+    InvalidPackageEvidence { field: String },
+
+    #[error("package evidence path `{path}` is unsafe, duplicated, or out of order")]
+    InvalidPackagePath { path: String },
+
+    #[error("device-free package evidence contradicts field `{field}`")]
+    InconsistentDeviceFreeEvidence { field: String },
 
     #[error("manifest must contain at least one binary")]
     NoBinaries,
@@ -260,6 +380,9 @@ pub enum ManifestValidationError {
 
     #[error("slice identity for binary `{path}` is outside the recorded input size")]
     SliceOutOfBounds { path: String },
+
+    #[error("slice identities for binary `{path}` are duplicated or out of order")]
+    InvalidSliceOrder { path: String },
 
     #[error("binary `{path}` records a hash without its corresponding byte size")]
     MissingSizeForHash { path: String },
@@ -326,8 +449,13 @@ impl ExportManifest {
             }
         }
         require_bounded_text("target.bundle_id", &self.target.bundle_id, 255)?;
-        require_bounded_text("target.display_name", &self.target.display_name, 128)?;
-        require_bounded_text("target.version", &self.target.version, 64)?;
+        if let Some(display_name) = &self.target.display_name {
+            require_bounded_text("target.display_name", display_name, 128)?;
+        }
+        require_bounded_text("target.version", &self.target.version, 128)?;
+        if let Some(short_version) = &self.target.short_version {
+            require_bounded_text("target.short_version", short_version, 128)?;
+        }
         require_bounded_wire_id("backend", &self.backend, 64)?;
 
         require_max_items(
@@ -347,6 +475,7 @@ impl ExportManifest {
                 });
             }
         }
+        validate_package_evidence(self)?;
 
         if self.binaries.is_empty() {
             return Err(ManifestValidationError::NoBinaries);
@@ -356,6 +485,7 @@ impl ExportManifest {
 
         let mut paths = HashSet::with_capacity(self.binaries.len());
         let mut total_ranges = 0usize;
+        let mut total_slices = 0usize;
         for (index, binary) in self.binaries.iter().enumerate() {
             if !is_safe_relative_path(&binary.path) {
                 return Err(ManifestValidationError::UnsafeBinaryPath {
@@ -398,6 +528,24 @@ impl ExportManifest {
                     });
                 }
             }
+            require_max_items(
+                &format!("binaries[{index}].slices"),
+                binary.slices.len(),
+                MAX_BINARY_SLICES,
+            )?;
+            total_slices = total_slices
+                .checked_add(binary.slices.len())
+                .ok_or_else(|| ManifestValidationError::TooManyItems {
+                    field: "binaries[].slices".to_owned(),
+                    maximum: MAX_TOTAL_BINARY_SLICES,
+                })?;
+            if total_slices > MAX_TOTAL_BINARY_SLICES {
+                return Err(ManifestValidationError::TooManyItems {
+                    field: "binaries[].slices".to_owned(),
+                    maximum: MAX_TOTAL_BINARY_SLICES,
+                });
+            }
+            validate_slices(binary, index)?;
 
             if let Some(input_sha256) = &binary.input_sha256 {
                 let input_hash_field = format!("binaries[{index}].input_sha256");
@@ -478,6 +626,8 @@ impl ExportManifest {
             require_bounded_text(&warning_field, warning, 512)?;
         }
 
+        validate_device_free_package_manifest(self)?;
+
         Ok(())
     }
 
@@ -511,6 +661,201 @@ impl ExportManifest {
             Outcome::Pass
         }
     }
+}
+
+fn validate_package_evidence(manifest: &ExportManifest) -> Result<(), ManifestValidationError> {
+    let evidence_count = usize::from(manifest.source_artifact.is_some())
+        + usize::from(manifest.output_package.is_some())
+        + usize::from(manifest.code_inventory.is_some());
+    if evidence_count != 0 && evidence_count != 3 {
+        return Err(ManifestValidationError::IncompletePackageEvidence);
+    }
+    let (Some(source), Some(package), Some(code)) = (
+        &manifest.source_artifact,
+        &manifest.output_package,
+        &manifest.code_inventory,
+    ) else {
+        return Ok(());
+    };
+
+    validate_archive_artifact("source_artifact", source)?;
+    validate_archive_artifact("output_package.artifact", &package.artifact)?;
+    if source.app_root != package.artifact.app_root {
+        return Err(ManifestValidationError::InvalidPackageEvidence {
+            field: "output_package.artifact.app_root".to_owned(),
+        });
+    }
+    let policy = &package.policy;
+    if policy.version != 1
+        || policy.compression != "deflate"
+        || policy.compression_level != 6
+        || policy.timestamp != "1980-01-01T00:00:00"
+        || policy.directory_mode != 0o755
+        || policy.executable_file_mode != 0o755
+        || policy.regular_file_mode != 0o644
+    {
+        return Err(ManifestValidationError::InvalidPackageEvidence {
+            field: "output_package.policy".to_owned(),
+        });
+    }
+
+    require_max_items(
+        "output_package.exclusions",
+        package.exclusions.len(),
+        MAX_PACKAGE_EXCLUSIONS,
+    )?;
+    let mut previous = None;
+    for excluded in &package.exclusions {
+        if !is_safe_relative_path(&excluded.path)
+            || !excluded.path.starts_with(&format!("{}/", source.app_root))
+            || previous.is_some_and(|path: &str| excluded.path.as_str() <= path)
+        {
+            return Err(ManifestValidationError::InvalidPackagePath {
+                path: excluded.path.clone(),
+            });
+        }
+        previous = Some(excluded.path.as_str());
+    }
+
+    require_max_items(
+        "code_inventory.rejected_candidates",
+        code.rejected_candidates.len(),
+        MAX_REJECTED_CODE_CANDIDATES,
+    )?;
+    previous = None;
+    for rejected in &code.rejected_candidates {
+        if !is_safe_relative_path(&rejected.path)
+            || !rejected.path.starts_with(&format!("{}/", source.app_root))
+            || previous.is_some_and(|path: &str| rejected.path.as_str() <= path)
+            || manifest
+                .binaries
+                .iter()
+                .any(|binary| binary.path == rejected.path)
+        {
+            return Err(ManifestValidationError::InvalidPackagePath {
+                path: rejected.path.clone(),
+            });
+        }
+        previous = Some(rejected.path.as_str());
+    }
+    Ok(())
+}
+
+fn validate_archive_artifact(
+    field: &str,
+    artifact: &ArchiveArtifactEvidence,
+) -> Result<(), ManifestValidationError> {
+    if artifact.byte_len == 0
+        || artifact.byte_len > ipa::MAX_IPA_ARCHIVE_BYTES
+        || artifact.entry_count == 0
+        || artifact.entry_count as usize > ipa::MAX_IPA_ENTRIES
+        || !is_safe_relative_path(&artifact.app_root)
+    {
+        return Err(ManifestValidationError::InvalidPackageEvidence {
+            field: field.to_owned(),
+        });
+    }
+    require_sha256(&format!("{field}.sha256"), &artifact.sha256)?;
+    require_sha256(
+        &format!("{field}.inventory_sha256"),
+        &artifact.inventory_sha256,
+    )?;
+    Ok(())
+}
+
+fn validate_slices(
+    binary: &BinaryEvidence,
+    binary_index: usize,
+) -> Result<(), ManifestValidationError> {
+    let mut previous_end = None;
+    for (slice_index, slice) in binary.slices.iter().enumerate() {
+        require_bounded_identifier(
+            &format!("binaries[{binary_index}].slices[{slice_index}].architecture"),
+            &slice.architecture,
+            32,
+        )?;
+        let end = slice
+            .file_offset
+            .checked_add(slice.file_size)
+            .filter(|end| *end <= MAX_SAFE_JSON_INTEGER);
+        if slice.file_size == 0
+            || end.is_none()
+            || binary
+                .input_size
+                .is_some_and(|input_size| end.is_some_and(|end| end > input_size))
+        {
+            return Err(ManifestValidationError::SliceOutOfBounds {
+                path: binary.path.clone(),
+            });
+        }
+        if previous_end.is_some_and(|previous| slice.file_offset < previous) {
+            return Err(ManifestValidationError::InvalidSliceOrder {
+                path: binary.path.clone(),
+            });
+        }
+        previous_end = end;
+    }
+    if binary
+        .slice
+        .as_ref()
+        .is_some_and(|selected| !binary.slices.is_empty() && !binary.slices.contains(selected))
+    {
+        return Err(ManifestValidationError::InvalidSliceOrder {
+            path: binary.path.clone(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_device_free_package_manifest(
+    manifest: &ExportManifest,
+) -> Result<(), ManifestValidationError> {
+    if manifest.backend != "device_free_package" {
+        return Ok(());
+    }
+    let (Some(source), Some(package), Some(_)) = (
+        &manifest.source_artifact,
+        &manifest.output_package,
+        &manifest.code_inventory,
+    ) else {
+        return Err(ManifestValidationError::IncompletePackageEvidence);
+    };
+    if !manifest.capability_ids.is_empty() {
+        return Err(ManifestValidationError::InconsistentDeviceFreeEvidence {
+            field: "capability_ids".to_owned(),
+        });
+    }
+    if source.app_root != package.artifact.app_root {
+        return Err(ManifestValidationError::InconsistentDeviceFreeEvidence {
+            field: "output_package.artifact.app_root".to_owned(),
+        });
+    }
+    for binary in &manifest.binaries {
+        let hashes_match = binary
+            .input_sha256
+            .as_deref()
+            .zip(binary.output_sha256.as_deref())
+            .is_some_and(|(input, output)| input.eq_ignore_ascii_case(output));
+        if binary.outcome != Outcome::Inconclusive
+            || binary.evidence_level != EvidenceLevel::Structure
+            || binary.input_size.is_none()
+            || binary.input_size != binary.output_size
+            || !hashes_match
+            || binary.known_plaintext_sha256.is_some()
+            || binary.known_plaintext_evaluated
+            || !binary.ranges.is_empty()
+            || binary.slices.is_empty()
+            || binary.signature.presence != SignaturePresence::Unknown
+            || binary.signature.kind != SignatureKind::Unknown
+            || binary.signature.validation != SignatureValidation::NotChecked
+            || !binary.path.starts_with(&format!("{}/", source.app_root))
+        {
+            return Err(ManifestValidationError::InconsistentDeviceFreeEvidence {
+                field: format!("binaries[{}]", binary.path),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validate_evidence(binary: &BinaryEvidence) -> Result<(), ManifestValidationError> {
@@ -761,6 +1106,17 @@ fn validate_ranges(binary: &BinaryEvidence) -> Result<(), ManifestValidationErro
             if range.file_offset < slice.file_offset || requested_end > slice_end {
                 return Err(invalid("range escapes the recorded slice"));
             }
+        } else if !binary.slices.is_empty()
+            && !binary.slices.iter().any(|slice| {
+                slice
+                    .file_offset
+                    .checked_add(slice.file_size)
+                    .is_some_and(|slice_end| {
+                        range.file_offset >= slice.file_offset && requested_end <= slice_end
+                    })
+            })
+        {
+            return Err(invalid("range escapes every recorded slice"));
         }
 
         if previous_end.is_some_and(|end| range.file_offset < end) {
@@ -976,16 +1332,21 @@ pub fn demo_manifest(tool_version: &str) -> ExportManifest {
         tool_revision: None,
         target: TargetSummary {
             bundle_id: "com.example.orchardprobe.demolab".to_owned(),
-            display_name: "OrchardProbe DemoLab".to_owned(),
+            display_name: Some("OrchardProbe DemoLab".to_owned()),
             version: "0.0.0-demo".to_owned(),
+            short_version: None,
         },
         backend: "device_free_demo".to_owned(),
         capability_ids: Vec::new(),
+        source_artifact: None,
+        output_package: None,
+        code_inventory: None,
         binaries: vec![BinaryEvidence {
             path: "Payload/DemoLab.app/DemoLab".to_owned(),
             role: BinaryRole::MainExecutable,
             architecture: "arm64".to_owned(),
             slice: None,
+            slices: Vec::new(),
             input_size: None,
             output_size: None,
             outcome: Outcome::Inconclusive,
@@ -1087,6 +1448,7 @@ mod tests {
                 file_size: 4096,
                 architecture: "arm64".to_owned(),
             }),
+            slices: Vec::new(),
             input_size: Some(4096),
             output_size: Some(4096),
             outcome,
@@ -1120,14 +1482,196 @@ mod tests {
             tool_revision: None,
             target: TargetSummary {
                 bundle_id: "com.example.test".to_owned(),
-                display_name: "Test App".to_owned(),
+                display_name: Some("Test App".to_owned()),
                 version: "1.0".to_owned(),
+                short_version: None,
             },
             backend: "test_fixture".to_owned(),
             capability_ids: vec!["binary.code_range_stream".to_owned()],
+            source_artifact: None,
+            output_package: None,
+            code_inventory: None,
             binaries,
             warnings: Vec::new(),
         }
+    }
+
+    fn device_free_package_manifest() -> ExportManifest {
+        let mut binary = binary("Payload/Test.app/Test", Outcome::Inconclusive);
+        binary.evidence_level = EvidenceLevel::Structure;
+        binary.output_sha256 = binary.input_sha256.clone();
+        binary.known_plaintext_sha256 = None;
+        binary.known_plaintext_evaluated = false;
+        binary.signature = SignatureInfo {
+            presence: SignaturePresence::Unknown,
+            kind: SignatureKind::Unknown,
+            validation: SignatureValidation::NotChecked,
+        };
+        binary.ranges.clear();
+        binary.slices = vec![binary.slice.clone().expect("fixture slice")];
+        binary.reason_codes = vec![
+            "backend.not_implemented".to_owned(),
+            "evidence.structure_only".to_owned(),
+            "evidence.oracle_not_evaluated".to_owned(),
+            "signature.not_checked".to_owned(),
+        ];
+        let artifact = ArchiveArtifactEvidence {
+            byte_len: 4096,
+            sha256: "11".repeat(32),
+            app_root: "Payload/Test.app".to_owned(),
+            entry_count: 3,
+            inventory_sha256: "22".repeat(32),
+        };
+        let mut manifest = manifest_with(vec![binary]);
+        manifest.backend = "device_free_package".to_owned();
+        manifest.capability_ids.clear();
+        manifest.source_artifact = Some(artifact.clone());
+        manifest.output_package = Some(OutputPackageEvidence {
+            artifact: ArchiveArtifactEvidence {
+                sha256: "33".repeat(32),
+                inventory_sha256: "44".repeat(32),
+                ..artifact
+            },
+            state: ManifestPackageState::UnsignedAnalysisOnly,
+            policy: ManifestPackagePolicy {
+                version: 1,
+                compression: "deflate".to_owned(),
+                compression_level: 6,
+                timestamp: "1980-01-01T00:00:00".to_owned(),
+                directory_mode: 0o755,
+                executable_file_mode: 0o755,
+                regular_file_mode: 0o644,
+            },
+            exclusions: vec![ManifestExcludedEntry {
+                path: "Payload/Test.app/SC_Info/data.sinf".to_owned(),
+                reason: ManifestExclusionReason::ScInfo,
+            }],
+        });
+        manifest.code_inventory = Some(ManifestCodeInventoryEvidence {
+            coverage: ManifestCodeCoverage::DeclaredStandardBundles,
+            rejected_candidates: vec![ManifestRejectedCodeCandidate {
+                path: "Payload/Test.app/Assets/rejected.dylib".to_owned(),
+                role: BinaryRole::DynamicLibrary,
+                reason: ManifestCodeRejectionReason::NotMacho,
+            }],
+        });
+        manifest
+    }
+
+    #[test]
+    fn validates_complete_device_free_package_evidence() {
+        device_free_package_manifest()
+            .validate()
+            .expect("device-free package evidence");
+    }
+
+    #[test]
+    fn rejects_partial_or_inconsistent_device_free_package_evidence() {
+        let mut partial = device_free_package_manifest();
+        partial.output_package = None;
+        assert_eq!(
+            partial.validate(),
+            Err(ManifestValidationError::IncompletePackageEvidence)
+        );
+
+        let mut mismatch = device_free_package_manifest();
+        mismatch.binaries[0].output_sha256 = Some("ff".repeat(32));
+        assert!(matches!(
+            mismatch.validate(),
+            Err(ManifestValidationError::InconsistentDeviceFreeEvidence { .. })
+        ));
+
+        let mut capability = device_free_package_manifest();
+        capability.capability_ids = vec!["binary.code_range_stream".to_owned()];
+        assert!(matches!(
+            capability.validate(),
+            Err(ManifestValidationError::InconsistentDeviceFreeEvidence { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_unsafe_unsorted_or_conflicting_package_paths() {
+        let mut unsafe_path = device_free_package_manifest();
+        unsafe_path
+            .output_package
+            .as_mut()
+            .expect("package")
+            .exclusions[0]
+            .path = "../escape".to_owned();
+        assert!(matches!(
+            unsafe_path.validate(),
+            Err(ManifestValidationError::InvalidPackagePath { .. })
+        ));
+
+        let mut conflict = device_free_package_manifest();
+        conflict
+            .code_inventory
+            .as_mut()
+            .expect("code inventory")
+            .rejected_candidates[0]
+            .path = "Payload/Test.app/Test".to_owned();
+        assert!(matches!(
+            conflict.validate(),
+            Err(ManifestValidationError::InvalidPackagePath { .. })
+        ));
+    }
+
+    #[test]
+    fn rejects_overlapping_complete_slice_inventory() {
+        let mut manifest = device_free_package_manifest();
+        let mut second = manifest.binaries[0].slices[0].clone();
+        second.file_offset = 1;
+        second.file_size -= 1;
+        manifest.binaries[0].slices.push(second);
+        assert!(matches!(
+            manifest.validate(),
+            Err(ManifestValidationError::InvalidSliceOrder { .. })
+        ));
+    }
+
+    #[test]
+    fn bounds_package_exclusions_rejections_and_slice_evidence() {
+        let mut exclusions = device_free_package_manifest();
+        let template = exclusions
+            .output_package
+            .as_ref()
+            .expect("package")
+            .exclusions[0]
+            .clone();
+        exclusions
+            .output_package
+            .as_mut()
+            .expect("package")
+            .exclusions = vec![template; MAX_PACKAGE_EXCLUSIONS + 1];
+        assert!(matches!(
+            exclusions.validate(),
+            Err(ManifestValidationError::TooManyItems { .. })
+        ));
+
+        let mut rejections = device_free_package_manifest();
+        let template = rejections
+            .code_inventory
+            .as_ref()
+            .expect("code inventory")
+            .rejected_candidates[0]
+            .clone();
+        rejections
+            .code_inventory
+            .as_mut()
+            .expect("code inventory")
+            .rejected_candidates = vec![template; MAX_REJECTED_CODE_CANDIDATES + 1];
+        assert!(matches!(
+            rejections.validate(),
+            Err(ManifestValidationError::TooManyItems { .. })
+        ));
+
+        let mut slices = device_free_package_manifest();
+        let template = slices.binaries[0].slices[0].clone();
+        slices.binaries[0].slices = vec![template; MAX_BINARY_SLICES + 1];
+        assert!(matches!(
+            slices.validate(),
+            Err(ManifestValidationError::TooManyItems { .. })
+        ));
     }
 
     #[test]

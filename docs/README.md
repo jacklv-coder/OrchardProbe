@@ -37,6 +37,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Declared standard-bundle IPA code inventory](development/ipa-code-inventory.md)
 - [Private bounded IPA worktree](development/ipa-private-worktree.md)
 - [Deterministic unsigned analysis IPA packaging](development/ipa-deterministic-package.md)
+- [Device-free IPA package evidence manifest](development/ipa-package-manifest.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)

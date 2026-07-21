@@ -10,7 +10,13 @@
   },
   "backend": "device_free_demo",
   "capability_ids": [],
-  "source_artifact": null,
+  "source_artifact": {
+    "byte_len": 1000,
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "app_root": "Payload/DemoLab.app",
+    "entry_count": 2,
+    "inventory_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
   "output_package": null,
   "code_inventory": null,
   "binaries": [
@@ -39,12 +45,8 @@
         "evidence.structure_only",
         "evidence.oracle_not_evaluated"
       ],
-      "notes": [
-        "device-free first-party fixture description only; no plaintext oracle was evaluated"
-      ]
+      "notes": []
     }
   ],
-  "warnings": [
-    "demo evidence is structural and must not be interpreted as verified plaintext"
-  ]
+  "warnings": []
 }

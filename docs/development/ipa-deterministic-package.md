@@ -107,8 +107,9 @@ visible in the returned output inventory.
 - deterministic policy v1; and
 - the explicit `unsigned_analysis_only` state.
 
-Input/output hash binding belongs to `HOST-010`; this stage does not invent
-manifest evidence early.
+The separate `HOST-010`
+[package-evidence builder](ipa-package-manifest.md) consumes this result and
+binds input/output hashes without changing this packager's ownership boundary.
 
 ## Failure cleanup and tests
 
