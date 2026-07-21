@@ -36,12 +36,13 @@ implementation behind it. Start with the document that matches what you need:
 - [Bounded IPA main-executable inspection](development/ipa-main-executable.md)
 - [Declared standard-bundle IPA code inventory](development/ipa-code-inventory.md)
 - [Private bounded IPA worktree](development/ipa-private-worktree.md)
+- [Deterministic unsigned analysis IPA packaging](development/ipa-deterministic-package.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)
 
 > [!IMPORTANT]
 > OrchardProbe is pre-alpha. The repository does not yet implement the planned
-> `oprobe decrypt` command, a device backend, or IPA reconstruction. Documents
+> `oprobe decrypt` command, a device backend, or Mach-O reconstruction. Documents
 > describing that flow are product and technical contracts, not a claim that
 > the current checkout can decrypt an IPA.

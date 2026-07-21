@@ -251,6 +251,7 @@ mod tests {
         let oversized = IpaEntry {
             path: EXECUTABLE_PATH.to_owned(),
             kind: IpaEntryKind::File,
+            executable: true,
             compressed_size: 1,
             uncompressed_size: MAX_IPA_MAIN_EXECUTABLE_BYTES + 1,
             crc32: 0,

@@ -15,10 +15,12 @@ command simple and the security-sensitive internals auditable.
 > reads, bounded root app identity parsing from XML/binary plist events,
 > structural Mach-O inspection of the declared root executable, and a bounded
 > declared-standard-bundle inventory for exact framework/extension declarations
-> plus in-scope lowercase dylibs, with explicit unsupported coverage. It also
+> plus in-scope lowercase dylibs, with explicit unsupported coverage. A private
+> bounded worktree and deterministic unsigned analysis-IPA packager now preserve
+> unchanged fixture bytes behind library-only interfaces. The repository also
 > has versioned schemas, synthetic DemoLab fixtures, and a bounded protocol
-> specification. It has no device transport, helper, decryption
-> backend, reconstructor, or IPA packager today.
+> specification. It has no device transport, helper, decryption backend,
+> Mach-O reconstructor, output publisher, or `oprobe decrypt` command today.
 
 Read the [user guide](user-guide.md) first for the intended command and output.
 Read the [scope and threat model](architecture/RFC-0001-scope-and-threat-model.md)
@@ -132,6 +134,16 @@ operations. Files are `0600`; archive ownership, times, attributes, and
 executable bits are not copied. The tree is removed on drop or any error and
 remains library-only. See the
 [private bounded IPA worktree contract](development/ipa-private-worktree.md).
+
+The Unix-only
+[`crates/orchardprobe-core/src/ipa_package.rs`](../crates/orchardprobe-core/src/ipa_package.rs)
+packager accepts only that owned worktree, not an arbitrary host directory or
+caller path. It reopens the closed plan through retained descriptors and
+identities, writes normalized entries in canonical order to a private `0600`
+temporary archive, enforces a 16 GiB output bound, and applies the same bounded
+IPA preflight before returning read-only access. The bytes and evidence are
+labelled `unsigned_analysis_only`; no decryption is claimed. See the
+[deterministic IPA packaging contract](development/ipa-deterministic-package.md).
 
 The separate
 [`crates/orchardprobe-core/src/ipa_app.rs`](../crates/orchardprobe-core/src/ipa_app.rs)
@@ -273,15 +285,18 @@ Current Rust validation and schemas live in:
 
 ### 9. Packaging and finalization
 
-The packager walks the validated work tree through retained directory handles
-or equivalent race-resistant references. It includes ordinary bundle files
-under deterministic path and metadata rules, rejects special entries, and does
-not reproduce device ownership, special bits, unrelated extended attributes,
-receipts, or app data.
+The current library packager walks the validated work tree through retained
+directory descriptors and recorded identities. It includes the closed ordinary
+bundle-file plan under deterministic path, timestamp, compression, comment, and
+mode rules; rejects changed or special nodes; and does not reproduce ownership,
+special bits, unrelated extended attributes, receipts, or app data. The result
+is a private automatically cleaned temporary IPA, and final bounded preflight
+must exactly match the intended paths, kinds, sizes, and executable classes.
 
-The output is written to a temporary file on the destination filesystem. The
-host then validates archive structure, binary coverage, hashes, manifest
-consistency, and size before atomically renaming it to `*.decrypted.ipa`.
+Caller-selected destination handling, input/output hash and manifest binding,
+binary-coverage evidence, and atomic publication as `*.decrypted.ipa` remain
+future stages. Packaging unchanged fixture bytes is not evidence that Mach-O
+reconstruction or decryption occurred.
 
 OrchardProbe never re-signs the result. An embedded signature can be retained as
 evidence while being invalid for installation. Signature `presence`, `kind`,
@@ -319,6 +334,7 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `crates/orchardprobe-core/src/ipa_code.rs` | Complete-inventory-bound root executable streaming and bounded Mach-O metadata inspection through an anonymous temporary file. |
 | `crates/orchardprobe-core/src/ipa_catalog.rs` | Deterministic declared-standard-bundle selection, bounded Mach-O confirmation, precedence rules, and visible rejection reasons. |
 | `crates/orchardprobe-core/src/ipa_materialize.rs` | Private bounded IPA app-tree planning and descriptor-relative materialization with deterministic exclusions and RAII cleanup. |
+| `crates/orchardprobe-core/src/ipa_package.rs` | Deterministic unsigned analysis-IPA packaging from the retained private worktree, bounded output, final preflight, and RAII cleanup. |
 | `crates/orchardprobe-core/src/macho.rs` | Bounded thin/FAT Mach-O metadata parser. |
 | `crates/orchardprobe-core/src/lib.rs` | Manifest model, invariants, device-free demo, and local doctor report. |
 | `crates/orchardprobe-core/src/wire.rs` | Versioned capability and structured-error wire contracts. |
@@ -327,9 +343,10 @@ moving general parsing, paths, process selection, or packaging into the helper.
 | `docs/architecture/` | Security and protocol design gates. |
 | `docs/compatibility/` | Evidence vocabulary and support-record workflow. |
 
-Future transport, backend, reconstruction, archive packaging, and report modules
-must be added only after their corresponding design and evidence gates. Their
-names in diagrams are responsibilities, not existing crates.
+Future transport, backend, Mach-O reconstruction, evidence/report binding, and
+atomic publication modules must be added only after their corresponding design
+and evidence gates. Their names in diagrams are responsibilities, not existing
+crates.
 
 ## Implementation status
 
@@ -351,7 +368,8 @@ names in diagrams are responsibilities, not existing crates.
 | Protected first-party oracle | Research blocked pending real evidence |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
-| Mach-O reconstruction and IPA packaging | Not implemented |
+| Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
+| Mach-O reconstruction | Not implemented |
 | `oprobe decrypt` | Not implemented |
 | Verified compatibility matrix | Empty until real-device evidence exists |
 
@@ -382,17 +400,21 @@ For a first code-reading pass:
 8. Read the [private worktree contract](development/ipa-private-worktree.md),
    then follow `build_worktree_plan`, `open_verified_directory`,
    `materialize_ipa_private_worktree`, and their cleanup/adversarial tests.
-9. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
+9. Read the
+   [deterministic IPA packaging contract](development/ipa-deterministic-package.md),
+   then follow `package_records`, `validate_exact_tree`,
+   `package_ipa_analysis_worktree`, and their determinism/adversarial tests.
+10. Read `crates/orchardprobe-cli/src/main.rs` from `main` through `inspect` and
    `open_regular_file` to see CLI error and host file-safety conventions.
-10. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
+11. Read `crates/orchardprobe-core/src/macho.rs`: start at `parse_macho`, follow
    `parse_fat`, then `parse_slice`, range helpers, and adversarial tests.
-11. Read `crates/orchardprobe-core/src/lib.rs` beside
+12. Read `crates/orchardprobe-core/src/lib.rs` beside
    `schemas/v0/export-manifest-v2.schema.json` to compare Rust invariants with
    the wire contract.
-12. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
-13. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
+13. Read `wire.rs`, the schema guide, and the golden/invalid fixtures.
+14. Build DemoLab through `fixtures/DemoLab/README.md` and inspect only its
    project-generated binaries.
-14. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
+15. Read RFC-0001 before RFC-0002; then read the compatibility policy and test
    record to understand why implementation remains blocked on evidence.
 
 When adding a module, preserve the invariant that untrusted values are evidence

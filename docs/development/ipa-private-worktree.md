@@ -125,7 +125,9 @@ Run them with:
 cargo test -p orchardprobe-core ipa_materialize::tests --locked
 ```
 
-`HOST-009` may consume this owned tree to construct a deterministic unsigned
-analysis IPA, but it must be activated and reviewed separately. This module
-does not modify Mach-O, decrypt, prove plaintext, package or publish an IPA,
-access a device, sign, install, or redistribute anything.
+The separately reviewed
+[deterministic unsigned analysis IPA packager](ipa-deterministic-package.md)
+consumes this owned tree through its retained root descriptor and node
+identities. This materialization module itself does not modify Mach-O, decrypt,
+prove plaintext, package or publish an IPA, access a device, sign, install, or
+redistribute anything.
