@@ -69,10 +69,12 @@ decryption support.
 
 ## Current gate
 
-`HOST-010` is complete through implementation PR #45. No planning step is
-active. `LAB-001` is the next planned step, but it and every later step remain
-untouched until a separate documentation-only activation PR passes the normal
-review and merge gates.
+`LAB-001` is the only active planning step. Issue #9 fixes its first-party
+DemoLab provenance, independent initial-protection/plaintext-oracle evidence,
+redaction, explicit Go/No-Go, documentation, and claim-narrowing criteria.
+Research implementation must not start until this documentation-only
+activation PR is reviewed and merged; `DEVICE-001` and every later step remain
+untouched.
 
 ## Execution ledger
 
@@ -92,7 +94,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 9 | `HOST-008` | `done` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | [#38](https://github.com/jacklv-coder/OrchardProbe/pull/38) | [#39](https://github.com/jacklv-coder/OrchardProbe/pull/39) |
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
-| 12 | `LAB-001` | `planned` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | To record during activation | — |
+| 12 | `LAB-001` | `active` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | — |
 | 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 14 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 15 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
