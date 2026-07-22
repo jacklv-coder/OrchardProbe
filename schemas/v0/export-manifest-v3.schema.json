@@ -494,6 +494,7 @@
           ]
         },
         "slices": {
+          "description": "Complete parsed slice evidence. Rust semantic validation additionally requires a non-empty array for device_free_package manifests and enforces canonical non-overlapping offset order.",
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,

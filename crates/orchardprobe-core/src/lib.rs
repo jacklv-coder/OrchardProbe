@@ -778,7 +778,8 @@ fn validate_slices(
             .file_offset
             .checked_add(slice.file_size)
             .filter(|end| *end <= MAX_SAFE_JSON_INTEGER);
-        if slice.file_size == 0
+        if slice.file_offset > MAX_SAFE_JSON_INTEGER
+            || slice.file_size == 0
             || end.is_none()
             || binary
                 .input_size
@@ -1612,6 +1613,60 @@ mod tests {
             .path = "Payload/Test.app/Test".to_owned();
         assert!(matches!(
             conflict.validate(),
+            Err(ManifestValidationError::InvalidPackagePath { .. })
+        ));
+
+        let mut outside_root = device_free_package_manifest();
+        outside_root
+            .output_package
+            .as_mut()
+            .expect("package")
+            .exclusions[0]
+            .path = "Payload/Other.app/SC_Info/data.sinf".to_owned();
+        assert!(matches!(
+            outside_root.validate(),
+            Err(ManifestValidationError::InvalidPackagePath { .. })
+        ));
+
+        let mut unsorted_exclusions = device_free_package_manifest();
+        unsorted_exclusions
+            .output_package
+            .as_mut()
+            .expect("package")
+            .exclusions = vec![
+            ManifestExcludedEntry {
+                path: "Payload/Test.app/_MASReceipt/receipt".to_owned(),
+                reason: ManifestExclusionReason::MasReceipt,
+            },
+            ManifestExcludedEntry {
+                path: "Payload/Test.app/SC_Info/data.sinf".to_owned(),
+                reason: ManifestExclusionReason::ScInfo,
+            },
+        ];
+        assert!(matches!(
+            unsorted_exclusions.validate(),
+            Err(ManifestValidationError::InvalidPackagePath { .. })
+        ));
+
+        let mut unsorted_rejections = device_free_package_manifest();
+        unsorted_rejections
+            .code_inventory
+            .as_mut()
+            .expect("code inventory")
+            .rejected_candidates = vec![
+            ManifestRejectedCodeCandidate {
+                path: "Payload/Test.app/Assets/z.dylib".to_owned(),
+                role: BinaryRole::DynamicLibrary,
+                reason: ManifestCodeRejectionReason::NotMacho,
+            },
+            ManifestRejectedCodeCandidate {
+                path: "Payload/Test.app/Assets/a.dylib".to_owned(),
+                role: BinaryRole::DynamicLibrary,
+                reason: ManifestCodeRejectionReason::InvalidMacho,
+            },
+        ];
+        assert!(matches!(
+            unsorted_rejections.validate(),
             Err(ManifestValidationError::InvalidPackagePath { .. })
         ));
     }

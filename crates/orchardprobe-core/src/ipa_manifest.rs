@@ -143,6 +143,9 @@ pub enum IpaManifestError {
     #[error("code entry `{path}` differs between source and deterministic package")]
     CodeHashMismatch { path: String },
 
+    #[error("code entry `{path}` has different source and output sizes")]
+    CodeSizeMismatch { path: String },
+
     #[error("manifest evidence has {actual} encoded bytes; maximum is {maximum}")]
     ManifestTooLarge { actual: usize, maximum: u64 },
 
@@ -306,7 +309,7 @@ fn bind_code_evidence<R: Read + Seek>(
         })?;
     let output_entry = find_output_code_entry(output_inventory, &code.path)?;
     if output_entry.uncompressed_size != source_entry.uncompressed_size {
-        return Err(IpaManifestError::CodeHashMismatch {
+        return Err(IpaManifestError::CodeSizeMismatch {
             path: code.path.clone(),
         });
     }
@@ -542,7 +545,7 @@ fn hash_exact_archive<R: Read + Seek>(
     while actual < expected {
         let remaining = expected - actual;
         let capacity = usize::try_from(remaining.min(HASH_BUFFER_BYTES as u64))
-            .expect("bounded hash buffer length fits usize");
+            .expect("64 KiB hash buffer must fit target usize");
         let count =
             reader
                 .read(&mut buffer[..capacity])
@@ -883,6 +886,8 @@ mod tests {
         assert!(first.binaries.iter().all(|binary| {
             binary.outcome == Outcome::Inconclusive
                 && binary.evidence_level == EvidenceLevel::Structure
+                && binary.input_size.is_some()
+                && binary.input_size == binary.output_size
                 && binary.input_sha256 == binary.output_sha256
                 && !binary.known_plaintext_evaluated
         }));
@@ -1009,7 +1014,17 @@ mod tests {
         let original = inspect_ipa(Cursor::new(&source), source.len() as u64).expect("inventory");
         let mut changed = original.clone();
         changed.entries[0].crc32 ^= 1;
+        assert!(
+            original
+                .entries
+                .windows(2)
+                .all(|entries| entries[0].path < entries[1].path)
+        );
         assert_eq!(inventory_digest(&original), inventory_digest(&original));
         assert_ne!(inventory_digest(&original), inventory_digest(&changed));
+
+        let mut reordered = original.clone();
+        reordered.entries.swap(0, 1);
+        assert_ne!(inventory_digest(&original), inventory_digest(&reordered));
     }
 }
