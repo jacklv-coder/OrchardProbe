@@ -18,15 +18,17 @@ address, process identifier, or third-party app data.
 | --- | --- | ---: | --- |
 | Capability report | [`capability-v1.schema.json`](../../schemas/v0/capability-v1.schema.json) | `schema_version: 1` | Bounded negotiation facts and explicit handling of disabled optional capabilities |
 | Error envelope | [`error-v1.schema.json`](../../schemas/v0/error-v1.schema.json) | `schema_version: 1` | Stable category/code plus typed, sanitized context |
-| Export manifest | [`export-manifest-v2.schema.json`](../../schemas/v0/export-manifest-v2.schema.json) | `schema_version: 2` | Per-binary evidence, exact collected ranges, outcomes, and orthogonal signature observations |
+| Export manifest | [`export-manifest-v3.schema.json`](../../schemas/v0/export-manifest-v3.schema.json) | `schema_version: 3` | Per-binary/slice evidence plus optional device-free source/package, inventory, exclusion, and policy binding |
 
 The directory name `v0` is a lifecycle marker: none of these contracts is a
 stable v1 API. Each schema accepts exactly its listed integer wire version.
-The manifest moved to version 2 while still under `v0` because adding the
-required evidence fields was intentionally breaking. A future incompatible
-change increments that contract's integer and requires explicit parser support;
-consumers must reject an unrecognized value. No compatibility promise extends
-across pre-v1 breaking revisions.
+The manifest moved to version 2 for its original required evidence fields and
+to version 3 for package/inventory binding, complete slice evidence, and an
+optional display name. Both changes are intentionally breaking while still
+under `v0`. Version 2 remains checked in as historical documentation; current
+Rust and CLI verification accept exactly version 3. A future incompatible
+change increments that contract integer and requires explicit parser support.
+No compatibility promise extends across pre-v1 breaking revisions.
 
 Wire schema filenames and `$id` values are revision-bound and immutable. A future
 wire revision adds a new versioned file and `$id`; it never replaces the
@@ -171,7 +173,7 @@ stack trace, shell output, absolute path, PID, memory address, or extensible
 key/value object.
 
 Schema versions in `version` context are contract-specific: capability and
-error schemas support version 1, while the export manifest supports version 2.
+error schemas support version 1, while the export manifest supports version 3.
 Protocol major/minor mismatches use the separate `protocol_version` context.
 
 ## Export evidence manifest
@@ -207,6 +209,22 @@ declared relationships only. Its output remains `evidence_evaluated: false` and
 `plaintext_proven: false`; it does not reopen referenced artifacts or compare
 real bytes. Likewise, the error envelope is a checked-in future wire contract,
 not the format of today's CLI standard error.
+
+Version 3 can bind the device-free package pipeline through three fields that
+are null/absent together or present together: `source_artifact`,
+`output_package`, and `code_inventory`. Artifact evidence contains exact length
+and SHA-256 plus a domain-separated digest of the complete validated archive
+inventory. Output evidence adds the closed `unsigned_analysis_only` state,
+deterministic policy v1, and sorted Receipt/`SC_Info` exclusions. Code evidence
+records `declared_standard_bundles` coverage and visible rejected candidates.
+
+`BinaryEvidence.slices` preserves every parsed thin/universal slice. A
+`device_free_package` manifest has no device capabilities; every confirmed
+binary must have equal input/output hashes and sizes, structural evidence,
+unknown/not-checked signature state, and an `inconclusive` outcome. These
+relationships are validated by Rust in addition to the closed JSON shape. See
+the [package-evidence builder contract](ipa-package-manifest.md) for collection,
+canonical digest, bounds, and rewind behavior.
 
 ## Golden and negative fixtures
 

@@ -1,0 +1,103 @@
+{
+  "schema_version": 3,
+  "tool_version": "0.1.0-alpha.1",
+  "tool_revision": null,
+  "target": {
+    "bundle_id": "com.example.orchardprobe.demolab",
+    "display_name": null,
+    "version": "42",
+    "short_version": "1.2.3"
+  },
+  "backend": "device_free_package",
+  "capability_ids": [],
+  "source_artifact": {
+    "byte_len": 1000,
+    "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "app_root": "Payload/DemoLab.app",
+    "entry_count": 5,
+    "inventory_sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+  },
+  "output_package": {
+    "artifact": {
+      "byte_len": 900,
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+      "app_root": "Payload/DemoLab.app",
+      "entry_count": 4,
+      "inventory_sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+    },
+    "state": "unsigned_analysis_only",
+    "policy": {
+      "version": 1,
+      "compression": "deflate",
+      "compression_level": 6,
+      "timestamp": "1980-01-01T00:00:00",
+      "directory_mode": 493,
+      "executable_file_mode": 493,
+      "regular_file_mode": 420
+    },
+    "exclusions": [
+      {
+        "path": "Payload/DemoLab.app/_MASReceipt/receipt",
+        "reason": "mas_receipt"
+      }
+    ]
+  },
+  "code_inventory": {
+    "coverage": "declared_standard_bundles",
+    "rejected_candidates": [
+      {
+        "path": "Payload/DemoLab.app/Assets/rejected.dylib",
+        "role": "dynamic_library",
+        "reason": "not_macho"
+      }
+    ]
+  },
+  "binaries": [
+    {
+      "path": "Payload/DemoLab.app/DemoLab",
+      "role": "main_executable",
+      "architecture": "arm64",
+      "slice": {
+        "cpu_type": 16777228,
+        "cpu_subtype": 0,
+        "file_offset": 0,
+        "file_size": 32,
+        "architecture": "arm64"
+      },
+      "slices": [
+        {
+          "cpu_type": 16777228,
+          "cpu_subtype": 0,
+          "file_offset": 0,
+          "file_size": 32,
+          "architecture": "arm64"
+        }
+      ],
+      "input_size": 32,
+      "output_size": 32,
+      "outcome": "inconclusive",
+      "evidence_level": "structure",
+      "input_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "output_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+      "known_plaintext_sha256": null,
+      "known_plaintext_evaluated": false,
+      "signature": {
+        "presence": "unknown",
+        "kind": "unknown",
+        "validation": "not_checked"
+      },
+      "ranges": [],
+      "reason_codes": [
+        "backend.not_implemented",
+        "evidence.structure_only",
+        "evidence.oracle_not_evaluated",
+        "signature.not_checked"
+      ],
+      "notes": []
+    }
+  ],
+  "warnings": [
+    "device-free package hashes prove unchanged bytes, not decryption or plaintext",
+    "the output is unsigned, analysis-only, and is not claimed to be installable"
+  ]
+}
