@@ -35,6 +35,7 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
 - [无设备 IPA 打包证据 Manifest（英文）](../development/ipa-package-manifest.md)
 - [版本化 Schema 指南（英文）](../development/schemas.md)
 - [DemoLab 开发指南（英文）](../development/demolab.md)
+- [DemoLab 受控 TestFlight 实验状态](demolab-testflight.md)
 - [兼容性测试记录模板（英文）](../compatibility/test-record-template.md)
 
 > [!IMPORTANT]

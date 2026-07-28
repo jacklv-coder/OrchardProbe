@@ -1,0 +1,4522 @@
+require "digest"
+require "fiddle/import"
+require "fcntl"
+require "fileutils"
+require "find"
+require "json"
+require "open3"
+require "pathname"
+require "rbconfig"
+require "securerandom"
+require "shellwords"
+require "stringio"
+require "tempfile"
+require "tmpdir"
+require "time"
+require "zip"
+
+DEMO_LAB_EVIDENCE_PROFILE = "orchardprobe.demolab.testflight-preupload.v1"
+DEMO_LAB_EVIDENCE_PURPOSE = "LAB-001 controlled first-party TestFlight preparation"
+DEMO_LAB_EVIDENCE_DECISION = "pending_controlled_device_observation"
+DEMO_LAB_MAX_IPA_BYTES = 250 * 1024 * 1024
+DEMO_LAB_MAX_ZIP_ENTRIES = 4096
+DEMO_LAB_MAX_PLIST_BYTES = 1024 * 1024
+DEMO_LAB_MAX_BINARY_BYTES = 100 * 1024 * 1024
+DEMO_LAB_MAX_API_KEY_BYTES = 64 * 1024
+DEMO_LAB_MAX_ALTOOL_OUTPUT_BYTES = 2 * 1024 * 1024
+DEMO_LAB_MAX_ALTOOL_LOG_ENTRIES = 128
+DEMO_LAB_MAX_ALTOOL_LOG_FILES = 64
+DEMO_LAB_MAX_ALTOOL_LOG_BYTES = 2 * 1024 * 1024
+DEMO_LAB_MAX_ALTOOL_LOG_TOTAL_BYTES = 8 * 1024 * 1024
+DEMO_LAB_MAX_UPLOAD_RESULT_BYTES = 64 * 1024
+DEMO_LAB_ALTOOL_TIMEOUT_SECONDS = 30 * 60
+DEMO_LAB_PROCESS_TERMINATION_GRACE_SECONDS = 5
+DEMO_LAB_PINNED_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+DEMO_LAB_XCODE_OVERRIDE_KEYS = %w[
+  DEVELOPER_DIR
+  SDKROOT
+  TOOLCHAINS
+  XCODE_XCCONFIG_FILE
+].freeze
+DEMO_LAB_DYNAMIC_LOADER_ENVIRONMENT_PATTERNS = [
+  /\ADYLD_/,
+  /\ALD_AUDIT\z/,
+  /\ALD_LIBRARY_PATH\z/,
+  /\ALD_PRELOAD\z/,
+].freeze
+DEMO_LAB_TRUSTED_XCODEGEN_BINARIES = {
+  "arm64" => {
+    "3b483413a801394b00adb2fabf3c06ff8f800c73c8698e1f9a9d8a95d73939ef" =>
+      "2.45.4",
+    "5b5d393779d405bbe78a2de8130f0bfaa4f90f7295cd3c8436d620b04aaee49a" =>
+      "2.46.0",
+  }.freeze,
+}.freeze
+DEMO_LAB_LOCAL_RUN_CONFIRMATION = "I_AM_RUNNING_LOCALLY_OUTSIDE_CI"
+DEMO_LAB_RETRY_CONFIRMATION =
+  "I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT"
+DEMO_LAB_UPLOAD_IPA_FD = 3
+DEMO_LAB_UPLOAD_KEY_FD = 4
+DEMO_LAB_LINEAGE_NOTE =
+  "Pre-upload bytes are candidates, not proof of installed plaintext."
+DEMO_LAB_UPLOAD_INDETERMINATE_NOTE =
+  "Reconcile this build in App Store Connect before retrying; " \
+  "the upload may succeed even if Apple altool later exits with an error."
+DEMO_LAB_RECONCILED_ABSENT_NOTE =
+  "The operator explicitly confirmed that this exact version and build were " \
+  "absent in App Store Connect before permitting a new upload attempt."
+DEMO_LAB_BINARY_SPECS = [
+  {
+    "role" => "main_executable",
+    "relative_path" => "DemoLab.app/DemoLab",
+  },
+  {
+    "role" => "dynamic_framework",
+    "relative_path" =>
+      "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+  },
+  {
+    "role" => "app_extension",
+    "relative_path" =>
+      "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+  },
+].freeze
+
+module DemoLabDarwin
+  extend Fiddle::Importer
+  dlload Fiddle.dlopen(nil)
+  extern "int renamex_np(const char *, const char *, unsigned int)"
+
+  RENAME_EXCL = 0x00000004
+  RENAME_NOFOLLOW_ANY = 0x00000010
+end
+
+DEMO_LAB_CI_ENVIRONMENT_KEYS = %w[
+  CI
+  CONTINUOUS_INTEGRATION
+  GITHUB_ACTIONS
+  GITLAB_CI
+  CIRCLECI
+  TRAVIS
+  BUILDKITE
+  JENKINS_URL
+  JENKINS_HOME
+  TEAMCITY_VERSION
+  TF_BUILD
+  BITRISE_IO
+  XCODE_CLOUD
+  CI_WORKFLOW
+].freeze
+
+def repository_root
+  File.expand_path("..", __dir__)
+end
+
+def command_output(*command, chdir: repository_root)
+  stdout, stderr, status = Open3.capture3(
+    sanitized_dynamic_loader_environment,
+    *command,
+    chdir: chdir
+  )
+  return stdout.strip if status.success?
+
+  UI.user_error!(
+    "Command failed (#{command.shelljoin}):\n#{stderr.strip}"
+  )
+end
+
+def command_output_with_environment(environment, *command, chdir: repository_root)
+  stdout, stderr, status = Open3.capture3(
+    sanitized_dynamic_loader_environment(environment),
+    *command,
+    chdir: chdir
+  )
+  return stdout.strip if status.success?
+
+  UI.user_error!(
+    "Command failed (#{command.shelljoin}):\n#{stderr.strip}"
+  )
+end
+
+def sanitized_dynamic_loader_environment(additional = {})
+  sanitized = additional.dup
+  (ENV.keys | additional.keys).each do |key|
+    if DEMO_LAB_DYNAMIC_LOADER_ENVIRONMENT_PATTERNS.any? { |pattern| pattern.match?(key) }
+      sanitized[key] = nil
+    end
+  end
+  sanitized
+end
+
+def command_output_without_loader_overrides(*command, chdir: repository_root)
+  command_output_with_environment(
+    sanitized_dynamic_loader_environment,
+    *command,
+    chdir: chdir
+  )
+end
+
+def git_command_output(*arguments)
+  command_output_with_environment(
+    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] },
+    "/usr/bin/git",
+    *arguments
+  )
+end
+
+def pinned_executable(path, label, required_root: nil)
+  unless Pathname.new(path).absolute?
+    UI.user_error!("#{label} path must be absolute.")
+  end
+  resolved = File.realpath(path)
+  if required_root
+    root = File.realpath(required_root)
+    unless resolved.start_with?("#{root}#{File::SEPARATOR}")
+      UI.user_error!("#{label} escaped the selected Xcode.")
+    end
+  end
+  stat = File.stat(resolved)
+  unless stat.file? &&
+         File.executable?(resolved) &&
+         stat.uid.zero? &&
+         (stat.mode & 0o022).zero?
+    UI.user_error!("#{label} must be a root-owned, non-writable executable.")
+  end
+  {
+    "path" => resolved,
+    "identity" => [
+      stat.dev,
+      stat.ino,
+      stat.size,
+      stat.mtime.to_i,
+      Digest::SHA256.file(resolved).hexdigest,
+    ],
+  }
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to resolve #{label} safely.")
+end
+
+def selected_xcode_toolchain
+  developer_dir_output = command_output_with_environment(
+    { "DEVELOPER_DIR" => nil },
+    "/usr/bin/xcode-select",
+    "--print-path"
+  )
+  unless Pathname.new(developer_dir_output).absolute?
+    UI.user_error!("The selected Xcode developer directory must be absolute.")
+  end
+  developer_dir = File.realpath(developer_dir_output)
+  contents_dir = File.dirname(developer_dir)
+  xcode_bundle_root = File.realpath(File.dirname(contents_dir))
+  unless File.basename(developer_dir) == "Developer" &&
+         File.basename(contents_dir) == "Contents" &&
+         File.basename(xcode_bundle_root).end_with?(".app")
+    UI.user_error!("The selected developer directory is not inside an Xcode app.")
+  end
+  developer_stat = File.stat(developer_dir)
+  bundle_stat = File.stat(xcode_bundle_root)
+  unless developer_stat.directory? &&
+         developer_stat.uid.zero? &&
+         (developer_stat.mode & 0o022).zero? &&
+         bundle_stat.directory? &&
+         bundle_stat.uid.zero? &&
+         (bundle_stat.mode & 0o022).zero?
+    UI.user_error!(
+      "The selected Xcode app and developer directory must be root-owned and non-writable."
+    )
+  end
+
+  xcodebuild = pinned_executable(
+    File.join(developer_dir, "usr", "bin", "xcodebuild"),
+    "Selected Xcode xcodebuild",
+    required_root: developer_dir
+  )
+  xcrun = pinned_executable("/usr/bin/xcrun", "System xcrun")
+  plutil = pinned_executable("/usr/bin/plutil", "System plutil")
+  environment = sanitized_dynamic_loader_environment(
+    "DEVELOPER_DIR" => developer_dir,
+    "PATH" =>
+      "#{File.dirname(xcodebuild.fetch('path'))}:#{DEMO_LAB_PINNED_SYSTEM_PATH}",
+    "SDKROOT" => nil,
+    "TOOLCHAINS" => nil,
+    "XCODE_XCCONFIG_FILE" => nil
+  )
+  dwarfdump_path = command_output_with_environment(
+    environment,
+    xcrun.fetch("path"),
+    "--find",
+    "dwarfdump"
+  )
+  lipo_path = command_output_with_environment(
+    environment,
+    xcrun.fetch("path"),
+    "--find",
+    "lipo"
+  )
+  dwarfdump = pinned_executable(
+    dwarfdump_path,
+    "Selected Xcode dwarfdump",
+    required_root: developer_dir
+  )
+  lipo = pinned_executable(
+    lipo_path,
+    "Selected Xcode lipo",
+    required_root: developer_dir
+  )
+  toolchain_binary_directories = [
+    File.dirname(dwarfdump.fetch("path")),
+    File.dirname(lipo.fetch("path")),
+  ].uniq
+  toolchain_binary_directories.each do |directory|
+    resolved_directory = File.realpath(directory)
+    directory_stat = File.stat(resolved_directory)
+    unless resolved_directory.start_with?(
+      "#{developer_dir}#{File::SEPARATOR}"
+    ) &&
+           directory_stat.directory? &&
+           directory_stat.uid.zero? &&
+           (directory_stat.mode & 0o022).zero?
+      UI.user_error!(
+        "Selected Xcode toolchain binary directories must be root-owned and non-writable."
+      )
+    end
+  end
+  environment["PATH"] = [
+    *toolchain_binary_directories,
+    File.dirname(xcodebuild.fetch("path")),
+    DEMO_LAB_PINNED_SYSTEM_PATH,
+  ].uniq.join(File::PATH_SEPARATOR)
+  xcode_version = command_output_with_environment(
+    environment,
+    xcodebuild.fetch("path"),
+    "-version"
+  ).lines
+  unless xcode_version.length == 2 &&
+         xcode_version.all? { |line| !line.strip.empty? && line.bytesize <= 256 }
+    UI.user_error!("The selected Xcode returned an unexpected version.")
+  end
+
+  {
+    "xcode_bundle_root" => xcode_bundle_root,
+    "xcode_bundle_identity" => [
+      bundle_stat.dev,
+      bundle_stat.ino,
+      bundle_stat.mtime.to_i,
+    ],
+    "developer_dir" => developer_dir,
+    "developer_dir_identity" => [
+      developer_stat.dev,
+      developer_stat.ino,
+      developer_stat.mtime.to_i,
+    ],
+    "environment" => environment,
+    "xcodebuild" => xcodebuild,
+    "xcrun" => xcrun,
+    "plutil" => plutil,
+    "dwarfdump" => dwarfdump,
+    "lipo" => lipo,
+    "xcode_version" => xcode_version,
+    "iphoneos_sdk_version" => command_output_with_environment(
+      environment,
+      xcrun.fetch("path"),
+      "--sdk",
+      "iphoneos",
+      "--show-sdk-version"
+    ),
+    "iphoneos_sdk_build" => command_output_with_environment(
+      environment,
+      xcrun.fetch("path"),
+      "--sdk",
+      "iphoneos",
+      "--show-sdk-build-version"
+    ),
+  }
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to resolve the selected Xcode safely.")
+end
+
+def verify_selected_xcode_toolchain!(toolchain)
+  bundle_stat = File.stat(toolchain.fetch("xcode_bundle_root"))
+  observed_bundle_identity = [
+    bundle_stat.dev,
+    bundle_stat.ino,
+    bundle_stat.mtime.to_i,
+  ]
+  unless observed_bundle_identity == toolchain.fetch("xcode_bundle_identity")
+    UI.user_error!("The selected Xcode app changed during use.")
+  end
+
+  developer_stat = File.stat(toolchain.fetch("developer_dir"))
+  observed_developer_identity = [
+    developer_stat.dev,
+    developer_stat.ino,
+    developer_stat.mtime.to_i,
+  ]
+  unless observed_developer_identity == toolchain.fetch(
+    "developer_dir_identity"
+  )
+    UI.user_error!("The selected Xcode developer directory changed during use.")
+  end
+
+  %w[xcodebuild xcrun plutil dwarfdump lipo].each do |name|
+    executable = toolchain.fetch(name)
+    observed = pinned_executable(
+      executable.fetch("path"),
+      "Pinned #{name}",
+      required_root: %w[xcodebuild dwarfdump lipo].include?(name) ?
+        toolchain.fetch("developer_dir") : nil
+    )
+    unless observed == executable
+      UI.user_error!("The pinned #{name} executable changed during use.")
+    end
+  end
+
+  environment = toolchain.fetch("environment")
+  observed_xcode_version = command_output_with_environment(
+    environment,
+    toolchain.dig("xcodebuild", "path"),
+    "-version"
+  ).lines
+  observed_sdk_version = command_output_with_environment(
+    environment,
+    toolchain.dig("xcrun", "path"),
+    "--sdk",
+    "iphoneos",
+    "--show-sdk-version"
+  )
+  observed_sdk_build = command_output_with_environment(
+    environment,
+    toolchain.dig("xcrun", "path"),
+    "--sdk",
+    "iphoneos",
+    "--show-sdk-build-version"
+  )
+  unless observed_xcode_version == toolchain.fetch("xcode_version") &&
+         observed_sdk_version == toolchain.fetch("iphoneos_sdk_version") &&
+         observed_sdk_build == toolchain.fetch("iphoneos_sdk_build")
+    UI.user_error!("The selected Xcode metadata changed during use.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to revalidate the selected Xcode safely.")
+end
+
+def with_pinned_xcode_environment(toolchain)
+  environment = toolchain.fetch("environment")
+  previous = {}
+  environment.each_key do |key|
+    previous[key] = ENV.key?(key) ? [true, ENV[key]] : [false, nil]
+  end
+  environment.each do |key, value|
+    value.nil? ? ENV.delete(key) : ENV[key] = value
+  end
+  yield
+ensure
+  previous&.each do |key, (existed, value)|
+    existed ? ENV[key] = value : ENV.delete(key)
+  end
+end
+
+def required_environment(name, pattern: nil)
+  value = ENV[name]&.strip
+  UI.user_error!("Set #{name} before running this lane.") if value.nil? || value.empty?
+  if pattern && !pattern.match?(value)
+    UI.user_error!("#{name} has an invalid format.")
+  end
+  value
+end
+
+def valid_utc_timestamp?(value)
+  return false unless value.is_a?(String) && value.end_with?("Z")
+
+  !Time.iso8601(value).nil?
+rescue ArgumentError
+  false
+end
+
+def ensure_tool(name)
+  command_output("/usr/bin/which", name)
+end
+
+def selected_xcodegen
+  discovered = ensure_tool("xcodegen")
+  unless Pathname.new(discovered).absolute?
+    UI.user_error!("The selected XcodeGen path must be absolute.")
+  end
+  resolved = File.realpath(discovered)
+  before = File.stat(resolved)
+  unless before.file? &&
+         File.executable?(resolved) &&
+         (before.mode & 0o222).zero?
+    UI.user_error!("The selected XcodeGen must be a non-writable executable.")
+  end
+  architecture = command_output("/usr/bin/uname", "-m")
+  trusted_binaries = DEMO_LAB_TRUSTED_XCODEGEN_BINARIES[architecture]
+  UI.user_error!("This architecture has no trusted XcodeGen binary.") unless trusted_binaries
+  observed_sha256 = Digest::SHA256.file(resolved).hexdigest
+  expected_version = trusted_binaries[observed_sha256]
+  unless expected_version
+    UI.user_error!(
+      "The selected XcodeGen binary is not in the reviewed content allowlist."
+    )
+  end
+
+  after_path = File.realpath(discovered)
+  after = File.stat(resolved)
+  after_sha256 = Digest::SHA256.file(resolved).hexdigest
+  unless after_path == resolved &&
+         after.file? &&
+         File.executable?(resolved) &&
+         (after.mode & 0o222).zero? &&
+         [after.dev, after.ino, after.size, after.mtime.to_i, after_sha256] ==
+           [
+             before.dev,
+             before.ino,
+             before.size,
+             before.mtime.to_i,
+             observed_sha256,
+           ]
+    UI.user_error!("The selected XcodeGen changed while it was being verified.")
+  end
+  [
+    resolved,
+    expected_version,
+    [
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtime.to_i,
+      observed_sha256,
+    ],
+  ]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to resolve the selected XcodeGen safely.")
+end
+
+def verify_locked_xcodegen_snapshot!(
+  snapshot,
+  snapshot_path,
+  expected_identity,
+  workspace_identity
+)
+  current_workspace_identity = private_directory_identity!(
+    File.dirname(snapshot_path),
+    "XcodeGen snapshot workspace"
+  )
+  opened = snapshot.stat
+  path_stat = File.lstat(snapshot_path)
+  access_mode = snapshot.fcntl(Fcntl::F_GETFL) & Fcntl::O_ACCMODE
+  observed_identity = [
+    opened.dev,
+    opened.ino,
+    opened.size,
+    opened.mtime.to_i,
+    digest_open_file(snapshot),
+  ]
+  unless current_workspace_identity == workspace_identity &&
+         opened.file? &&
+         opened.uid == Process.uid &&
+         (opened.mode & 0o777) == 0o500 &&
+         access_mode == Fcntl::O_RDONLY &&
+         !path_stat.symlink? &&
+         path_stat.dev == opened.dev &&
+         path_stat.ino == opened.ino &&
+         observed_identity == expected_identity
+    UI.user_error!("The locked XcodeGen snapshot changed during generation.")
+  end
+  true
+rescue Errno::EACCES, Errno::EBADF, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to verify the locked XcodeGen snapshot safely.")
+end
+
+def stage_locked_xcodegen_snapshot!(
+  source_path,
+  source_identity,
+  expected_version,
+  workspace
+)
+  workspace_identity = private_directory_identity!(
+    workspace,
+    "XcodeGen snapshot workspace"
+  )
+  snapshot_path = File.join(
+    workspace_identity.first,
+    ".xcodegen-#{SecureRandom.hex(12)}"
+  )
+  source = nil
+  writable_snapshot = nil
+  locked_snapshot = nil
+
+  begin
+    source_flags = File::RDONLY | File::NONBLOCK
+    source_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    source = File.open(source_path, source_flags)
+    source_before = source.stat
+    source_path_stat = File.lstat(source_path)
+    source_hash = digest_open_file(source)
+    observed_source_identity = [
+      source_before.dev,
+      source_before.ino,
+      source_before.size,
+      source_before.mtime.to_i,
+      source_hash,
+    ]
+    unless source_before.file? &&
+           (source_before.mode & 0o111).positive? &&
+           (source_before.mode & 0o222).zero? &&
+           !source_path_stat.symlink? &&
+           source_path_stat.dev == source_before.dev &&
+           source_path_stat.ino == source_before.ino &&
+           observed_source_identity == source_identity
+      UI.user_error!("The selected XcodeGen changed before private staging.")
+    end
+
+    destination_flags = File::WRONLY | File::CREAT | File::EXCL
+    destination_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    writable_snapshot = File.open(snapshot_path, destination_flags, 0o600)
+    copied = IO.copy_stream(source, writable_snapshot, source_before.size + 1)
+    source_after = source.stat
+    unless copied == source_before.size &&
+           [
+             source_after.dev,
+             source_after.ino,
+             source_after.size,
+             source_after.mtime.to_i,
+             digest_open_file(source),
+           ] == source_identity
+      UI.user_error!("The selected XcodeGen changed while being privately staged.")
+    end
+    writable_snapshot.flush
+    writable_snapshot.fsync
+    writable_snapshot.chmod(0o500)
+    writable_snapshot.close
+    writable_snapshot = nil
+
+    snapshot_flags = File::RDONLY | File::NONBLOCK
+    snapshot_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    locked_snapshot = File.open(snapshot_path, snapshot_flags)
+    unless locked_snapshot.flock(File::LOCK_EX | File::LOCK_NB)
+      UI.user_error!("Unable to lock the private XcodeGen snapshot.")
+    end
+    snapshot_stat = locked_snapshot.stat
+    snapshot_identity = [
+      snapshot_stat.dev,
+      snapshot_stat.ino,
+      snapshot_stat.size,
+      snapshot_stat.mtime.to_i,
+      digest_open_file(locked_snapshot),
+    ]
+    unless snapshot_stat.size == source_before.size &&
+           snapshot_identity.last == source_hash
+      UI.user_error!("The private XcodeGen snapshot does not match its source.")
+    end
+    verify_locked_xcodegen_snapshot!(
+      locked_snapshot,
+      snapshot_path,
+      snapshot_identity,
+      workspace_identity
+    )
+
+    output = command_output_without_loader_overrides(snapshot_path, "--version")
+    match = output.match(/\AVersion: ([0-9]+\.[0-9]+\.[0-9]+)\z/)
+    unless match && match[1] == expected_version
+      UI.user_error!("The private XcodeGen snapshot returned an unexpected version.")
+    end
+    verify_locked_xcodegen_snapshot!(
+      locked_snapshot,
+      snapshot_path,
+      snapshot_identity,
+      workspace_identity
+    )
+    [locked_snapshot, snapshot_path, snapshot_identity, workspace_identity]
+  rescue
+    if locked_snapshot
+      locked_snapshot.flock(File::LOCK_UN) rescue nil
+      locked_snapshot.close rescue nil
+    end
+    FileUtils.rm_f(snapshot_path)
+    raise
+  ensure
+    source.close if source && !source.closed?
+    if writable_snapshot && !writable_snapshot.closed?
+      writable_snapshot.close
+    end
+  end
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to stage the selected XcodeGen safely.")
+end
+
+def ensure_clean_source!
+  root = git_command_output("rev-parse", "--show-toplevel")
+  unless File.realpath(root) == File.realpath(repository_root)
+    UI.user_error!("Run Fastlane from this OrchardProbe checkout.")
+  end
+
+  status = git_command_output(
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all"
+  )
+  UI.user_error!("Commit or remove every local change before creating evidence.") unless status.empty?
+end
+
+def ensure_manual_lane!
+  detected_ci_keys = DEMO_LAB_CI_ENVIRONMENT_KEYS.select { |key| ENV.key?(key) }
+  unless detected_ci_keys.empty?
+    UI.user_error!(
+      "Controlled signing and upload lanes must never run in CI " \
+      "(detected #{detected_ci_keys.join(', ')})."
+    )
+  end
+
+  confirmation = required_environment("DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN")
+  unless confirmation == DEMO_LAB_LOCAL_RUN_CONFIRMATION
+    UI.user_error!("Explicit local manual-run confirmation is missing.")
+  end
+end
+
+def reject_pilot_environment_overrides!
+  overrides = ENV.keys.select do |key|
+    key.start_with?("PILOT_") || key == "DEMO_ACCOUNT_REQUIRED"
+  end.sort
+  return if overrides.empty?
+
+  UI.user_error!(
+    "Unset every Pilot-affecting variable before the controlled upload " \
+    "(detected #{overrides.join(', ')})."
+  )
+end
+
+def reject_gym_environment_overrides!
+  overrides = ENV.keys.grep(/\AGYM_/).sort
+  return if overrides.empty?
+
+  UI.user_error!(
+    "Unset every GYM_* variable before the controlled archive " \
+    "(detected #{overrides.join(', ')})."
+  )
+end
+
+def reject_repository_path!(path, label)
+  root = File.realpath(repository_root)
+  if path == root || path.start_with?("#{root}#{File::SEPARATOR}")
+    UI.user_error!("#{label} must stay outside the Git checkout.")
+  end
+end
+
+def ensure_outside_repository!(path, label)
+  resolved = File.realpath(path)
+  reject_repository_path!(resolved, label)
+  resolved
+end
+
+def validate_regular_file_beneath_root!(path, root, label)
+  expanded_root = File.expand_path(root)
+  root_lstat = File.lstat(expanded_root)
+  unless root_lstat.directory? && !root_lstat.symlink?
+    UI.user_error!("#{label} root must be a non-symlink directory.")
+  end
+  resolved_root = File.realpath(expanded_root)
+  expanded_path = File.expand_path(path)
+  unless expanded_path.start_with?("#{expanded_root}#{File::SEPARATOR}")
+    UI.user_error!("#{label} escaped its expected root.")
+  end
+  relative = Pathname.new(expanded_path).relative_path_from(
+    Pathname.new(expanded_root)
+  )
+  components = relative.each_filename.to_a
+  if components.empty? ||
+     components.any? { |component| component.empty? || %w[. ..].include?(component) }
+    UI.user_error!("#{label} has an unsafe relative path.")
+  end
+
+  current = resolved_root
+  components.each_with_index do |component, index|
+    current = File.join(current, component)
+    stat = File.lstat(current)
+    UI.user_error!("#{label} contains a symbolic-link component.") if stat.symlink?
+    if index == components.length - 1
+      UI.user_error!("#{label} must be a regular file.") unless stat.file?
+    else
+      UI.user_error!("#{label} ancestor must be a directory.") unless stat.directory?
+    end
+  end
+  resolved_path = File.realpath(current)
+  unless resolved_path.start_with?("#{resolved_root}#{File::SEPARATOR}")
+    UI.user_error!("#{label} resolved outside its expected root.")
+  end
+  resolved_path
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to validate #{label} beneath its expected root.")
+end
+
+def validate_creatable_external_directory!(path, label)
+  expanded = File.expand_path(path)
+  reject_repository_path!(expanded, label)
+
+  existing_ancestor = expanded
+  until File.exist?(existing_ancestor) || File.symlink?(existing_ancestor)
+    parent = File.dirname(existing_ancestor)
+    UI.user_error!("Unable to resolve #{label}.") if parent == existing_ancestor
+    existing_ancestor = parent
+  end
+  resolved_ancestor = File.realpath(existing_ancestor)
+  suffix = Pathname.new(expanded).relative_path_from(
+    Pathname.new(existing_ancestor)
+  )
+  resolved_candidate = File.expand_path(suffix.to_s, resolved_ancestor)
+  reject_repository_path!(resolved_candidate, label)
+  expanded
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to resolve #{label} safely.")
+end
+
+def private_directory_identity!(path, label)
+  stat = File.lstat(path)
+  UI.user_error!("#{label} must not be a symbolic link.") if stat.symlink?
+  UI.user_error!("#{label} must name a directory.") unless stat.directory?
+  unless stat.uid == Process.uid
+    UI.user_error!("#{label} must be owned by the current user.")
+  end
+  unless (stat.mode & 0o777) == 0o700
+    UI.user_error!("#{label} must already have mode 0700.")
+  end
+  resolved = ensure_outside_repository!(path, label)
+  [resolved, stat.dev, stat.ino]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to validate #{label} safely.")
+end
+
+def verify_private_directory!(path, label)
+  private_directory_identity!(path, label).first
+end
+
+def validate_fastlane_path_characters!(path, label)
+  unsafe_bytes = path.each_byte.any? { |byte| byte < 0x20 || byte == 0x7f }
+  if path.include?("'") || unsafe_bytes
+    UI.user_error!("#{label} contains characters unsafe for Fastlane shell paths.")
+  end
+  path
+end
+
+def create_exclusive_private_directory!(
+  path,
+  label,
+  private_parent_identity: nil
+)
+  validated_path = validate_creatable_external_directory!(path, label)
+  parent = File.dirname(validated_path)
+  unless File.directory?(parent) && !File.symlink?(parent)
+    UI.user_error!("#{label} parent must be an existing non-symlink directory.")
+  end
+  parent_identity = if private_parent_identity
+                      observed_identity = private_directory_identity!(
+                        parent,
+                        "#{label} parent"
+                      )
+                      unless observed_identity == private_parent_identity
+                        UI.user_error!("#{label} parent changed before reservation.")
+                      end
+                      observed_identity
+                    end
+
+  begin
+    Dir.mkdir(validated_path, 0o700)
+  rescue Errno::EEXIST, Errno::ELOOP
+    UI.user_error!("Refusing to reuse an existing #{label}.")
+  rescue Errno::EACCES, Errno::ENOENT, Errno::ENOTDIR
+    UI.user_error!("Unable to create #{label} safely.")
+  end
+
+  if parent_identity
+    current_parent_identity = private_directory_identity!(
+      parent,
+      "#{label} parent"
+    )
+    unless current_parent_identity == parent_identity
+      UI.user_error!(
+        "#{label} parent changed while the directory was being reserved."
+      )
+    end
+  end
+  private_directory_identity!(validated_path, label)
+end
+
+def private_output_directory
+  raw_path = required_environment("DEMO_LAB_OUTPUT_DIR")
+  unless Pathname.new(raw_path).absolute?
+    UI.user_error!("DEMO_LAB_OUTPUT_DIR must be an absolute path.")
+  end
+
+  expanded = File.expand_path(raw_path)
+  validate_fastlane_path_characters!(expanded, "DEMO_LAB_OUTPUT_DIR")
+  reject_repository_path!(expanded, "DEMO_LAB_OUTPUT_DIR")
+  unless File.exist?(expanded) || File.symlink?(expanded)
+    UI.user_error!(
+      "DEMO_LAB_OUTPUT_DIR must be created as a private directory before the lane runs."
+    )
+  end
+  identity = private_directory_identity!(expanded, "DEMO_LAB_OUTPUT_DIR")
+  validate_fastlane_path_characters!(identity.first, "Resolved DEMO_LAB_OUTPUT_DIR")
+  identity
+end
+
+def with_locked_private_directory(path, expected_identity, label)
+  flags = File::RDONLY
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  handle = File.open(path, flags)
+  observed = handle.stat
+  unless observed.directory? &&
+         observed.uid == Process.uid &&
+         (observed.mode & 0o777) == 0o700 &&
+         [File.realpath(path), observed.dev, observed.ino] == expected_identity
+    UI.user_error!("#{label} changed before it could be locked.")
+  end
+  unless handle.flock(File::LOCK_EX | File::LOCK_NB)
+    UI.user_error!("#{label} is already in use by another controlled lane.")
+  end
+
+  begin
+    yield handle
+  ensure
+    handle.flock(File::LOCK_UN)
+    handle.close
+  end
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to lock #{label} safely.")
+end
+
+def verify_locked_directory!(
+  handle,
+  path,
+  expected_identity,
+  label
+)
+  held = handle.stat
+  current = private_directory_identity!(path, label)
+  unless held.directory? &&
+         held.uid == Process.uid &&
+         (held.mode & 0o777) == 0o700 &&
+         [current[0], held.dev, held.ino] == expected_identity &&
+         current == expected_identity
+    UI.user_error!("#{label} changed during the controlled operation.")
+  end
+  current
+end
+
+def rename_exclusive_no_follow!(source, destination, label)
+  flags = DemoLabDarwin::RENAME_EXCL | DemoLabDarwin::RENAME_NOFOLLOW_ANY
+  return if DemoLabDarwin.renamex_np(source, destination, flags).zero?
+
+  error = SystemCallError.new("renamex_np", Fiddle.last_error)
+  if error.is_a?(Errno::EEXIST)
+    UI.user_error!("Refusing to overwrite an existing #{label}.")
+  end
+  UI.user_error!("Unable to publish #{label} safely.")
+end
+
+def external_temporary_base
+  configured_tmpdir = ENV["TMPDIR"]
+  expanded = File.expand_path(
+    if configured_tmpdir.nil? || configured_tmpdir.empty?
+      Dir.tmpdir
+    else
+      configured_tmpdir
+    end
+  )
+  validate_fastlane_path_characters!(expanded, "DemoLab temporary directory")
+  resolved = ensure_outside_repository!(expanded, "DemoLab temporary directory")
+  validate_fastlane_path_characters!(
+    resolved,
+    "Resolved DemoLab temporary directory"
+  )
+  stat = File.stat(resolved)
+  UI.user_error!("DemoLab temporary directory must be a directory.") unless stat.directory?
+  private_parent = stat.uid == Process.uid && (stat.mode & 0o077).zero?
+  sticky_parent = (stat.mode & 0o1000) == 0o1000
+  unless private_parent || sticky_parent
+    UI.user_error!(
+      "DemoLab temporary directory must be private or protected by the sticky bit."
+    )
+  end
+  UI.user_error!("DemoLab temporary directory is not writable.") unless File.writable?(resolved)
+  resolved
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to validate the DemoLab temporary directory safely.")
+end
+
+def external_temporary_directory(prefix)
+  workspace = nil
+  begin
+    workspace = Dir.mktmpdir(prefix, external_temporary_base)
+    private_directory_identity!(
+      workspace,
+      "DemoLab temporary workspace"
+    ).first
+  rescue
+    FileUtils.rm_rf(workspace) if workspace
+    raise
+  end
+end
+
+def with_external_temporary_file(basename)
+  workspace = external_temporary_directory("orchardprobe-demolab-file-")
+  begin
+    Tempfile.create(basename, workspace) do |file|
+      stat = file.stat
+      unless stat.file? &&
+             stat.uid == Process.uid &&
+             (stat.mode & 0o077).zero?
+        UI.user_error!("DemoLab temporary file is not private.")
+      end
+      ensure_outside_repository!(file.path, "DemoLab temporary file")
+      yield file
+    end
+  ensure
+    FileUtils.rm_rf(workspace)
+  end
+end
+
+def existing_external_file(name, private: false)
+  raw_path = required_environment(name)
+  unless Pathname.new(raw_path).absolute?
+    UI.user_error!("#{name} must be an absolute path.")
+  end
+  UI.user_error!("#{name} must name a regular file.") unless File.file?(raw_path)
+  UI.user_error!("#{name} must not be a symbolic link.") if File.symlink?(raw_path)
+
+  resolved = ensure_outside_repository!(raw_path, name)
+  stat = File.stat(resolved)
+  if private && stat.uid != Process.uid
+    UI.user_error!("#{name} must be owned by the current user.")
+  end
+  if private && (stat.mode & 0o077) != 0
+    UI.user_error!(
+      "#{name} must not be readable or writable by group or other users."
+    )
+  end
+  resolved
+end
+
+def demolab_bundle_identifiers
+  app_identifier = required_environment(
+    "DEMO_LAB_APP_BUNDLE_ID",
+    pattern: /\A[A-Za-z0-9][A-Za-z0-9.-]*\z/
+  )
+  if app_identifier.start_with?("com.example.")
+    UI.user_error!("Use the registered first-party DemoLab bundle identifier.")
+  end
+  share_identifier = required_environment(
+    "DEMO_LAB_SHARE_BUNDLE_ID",
+    pattern: /\A[A-Za-z0-9][A-Za-z0-9.-]*\z/
+  )
+  unless share_identifier.start_with?("#{app_identifier}.")
+    UI.user_error!("The share-extension identifier must be nested below the app identifier.")
+  end
+
+  [app_identifier, share_identifier]
+end
+
+def copy_tracked_demolab_fixture(workspace)
+  prefix = "fixtures/DemoLab/"
+  listing, stderr, status = Open3.capture3(
+    sanitized_dynamic_loader_environment(
+      DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }
+    ),
+    "/usr/bin/git",
+    "ls-files",
+    "--cached",
+    "-z",
+    "--",
+    "fixtures/DemoLab",
+    chdir: repository_root
+  )
+  unless status.success?
+    UI.user_error!("Unable to enumerate tracked DemoLab sources:\n#{stderr.strip}")
+  end
+
+  relative_paths = listing.split("\0")
+  UI.user_error!("The tracked DemoLab fixture is empty.") if relative_paths.empty?
+  fixture = File.join(workspace, "DemoLab")
+  FileUtils.mkdir_p(fixture, mode: 0o700)
+  source_root = File.realpath(File.join(repository_root, "fixtures", "DemoLab"))
+
+  relative_paths.each do |relative_path|
+    unless relative_path.start_with?(prefix)
+      UI.user_error!("Tracked DemoLab source escaped its fixture prefix.")
+    end
+    fixture_relative_path = relative_path.delete_prefix(prefix)
+    components = fixture_relative_path.split("/")
+    if fixture_relative_path.empty? ||
+       components.any? { |component| component.empty? || %w[. ..].include?(component) }
+      UI.user_error!("Tracked DemoLab source has an unsafe relative path.")
+    end
+
+    source_path = File.join(repository_root, relative_path)
+    source_stat = File.lstat(source_path)
+    unless source_stat.file? && !source_stat.symlink?
+      UI.user_error!("Tracked DemoLab sources must be regular files.")
+    end
+    resolved_source = File.realpath(source_path)
+    unless resolved_source.start_with?("#{source_root}#{File::SEPARATOR}")
+      UI.user_error!("Tracked DemoLab source escaped its fixture directory.")
+    end
+
+    destination_path = File.join(fixture, fixture_relative_path)
+    FileUtils.mkdir_p(File.dirname(destination_path), mode: 0o700)
+    FileUtils.copy_file(source_path, destination_path, true)
+  end
+  fixture
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to snapshot tracked DemoLab sources safely.")
+end
+
+def prepare_demolab_project(source_commit: nil)
+  xcodegen_path, xcodegen_version, xcodegen_identity = selected_xcodegen
+  workspace = external_temporary_directory("orchardprobe-demolab-")
+  xcodegen_snapshot = nil
+  xcodegen_snapshot_path = nil
+  begin
+    xcodegen_snapshot,
+      xcodegen_snapshot_path,
+      snapshot_identity,
+      workspace_identity = stage_locked_xcodegen_snapshot!(
+        xcodegen_path,
+        xcodegen_identity,
+        xcodegen_version,
+        workspace
+      )
+    if source_commit
+      unless /\A[0-9a-f]{40,64}\z/.match?(source_commit)
+        UI.user_error!("DemoLab source commit has an invalid format.")
+      end
+      archive = File.join(workspace, "demolab-source.tar")
+      git_command_output(
+        "archive",
+        "--format=tar",
+        "--output=#{archive}",
+        source_commit,
+        "--",
+        "fixtures/DemoLab"
+      )
+      command_output("/usr/bin/tar", "-xf", archive, "-C", workspace)
+      FileUtils.rm_f(archive)
+      fixture = File.join(workspace, "fixtures", "DemoLab")
+    else
+      fixture = copy_tracked_demolab_fixture(workspace)
+    end
+
+    UI.user_error!("DemoLab fixture snapshot is missing.") unless File.directory?(fixture)
+    Find.find(fixture) do |path|
+      UI.user_error!("DemoLab fixture must not contain symbolic links.") if File.symlink?(path)
+    end
+    verify_locked_xcodegen_snapshot!(
+      xcodegen_snapshot,
+      xcodegen_snapshot_path,
+      snapshot_identity,
+      workspace_identity
+    )
+    command_output_without_loader_overrides(
+      xcodegen_snapshot_path,
+      "generate",
+      "--spec",
+      File.join(fixture, "project.yml"),
+      "--project",
+      fixture
+    )
+    verify_locked_xcodegen_snapshot!(
+      xcodegen_snapshot,
+      xcodegen_snapshot_path,
+      snapshot_identity,
+      workspace_identity
+    )
+    verified_path, verified_version, verified_identity = selected_xcodegen
+    unless verified_path == xcodegen_path &&
+           verified_version == xcodegen_version &&
+           verified_identity == xcodegen_identity
+      UI.user_error!("The selected XcodeGen changed during project generation.")
+    end
+    xcodegen_snapshot.flock(File::LOCK_UN)
+    xcodegen_snapshot.close
+    xcodegen_snapshot = nil
+    FileUtils.rm_f(xcodegen_snapshot_path)
+    [
+      workspace,
+      fixture,
+      File.join(fixture, "DemoLab.xcodeproj"),
+      xcodegen_version,
+    ]
+  rescue
+    if xcodegen_snapshot
+      xcodegen_snapshot.flock(File::LOCK_UN) rescue nil
+      xcodegen_snapshot.close rescue nil
+    end
+    FileUtils.rm_rf(workspace)
+    raise
+  end
+end
+
+def sha256(path)
+  Digest::SHA256.file(path).hexdigest
+end
+
+def read_regular_file_snapshot(path, maximum_size, label)
+  flags = File::RDONLY
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(path, flags) do |source|
+    before = source.stat
+    UI.user_error!("#{label} must be a regular file.") unless before.file?
+    if before.size <= 0 || before.size > maximum_size
+      UI.user_error!("#{label} has an invalid size.")
+    end
+
+    content = source.read(maximum_size + 1)
+    after = source.stat
+    unless content.bytesize == before.size &&
+           content.bytesize <= maximum_size &&
+           before.dev == after.dev &&
+           before.ino == after.ino &&
+           before.size == after.size
+      UI.user_error!("#{label} changed while it was being read.")
+    end
+    content
+  end
+rescue Errno::ELOOP
+  UI.user_error!("#{label} must not be a symbolic link.")
+end
+
+def private_external_file_snapshot_with_path(name, maximum_size, label)
+  raw_path = required_environment(name)
+  unless Pathname.new(raw_path).absolute?
+    UI.user_error!("#{name} must be an absolute path.")
+  end
+
+  expanded = File.expand_path(raw_path)
+  reject_repository_path!(expanded, label)
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(expanded, flags) do |source|
+    opened = source.stat
+    UI.user_error!("#{label} must be a regular file.") unless opened.file?
+    UI.user_error!("#{label} must be owned by the current user.") unless opened.uid == Process.uid
+    if (opened.mode & 0o077) != 0
+      UI.user_error!("#{label} must not be accessible by group or other users.")
+    end
+    if opened.size <= 0 || opened.size > maximum_size
+      UI.user_error!("#{label} has an invalid size.")
+    end
+
+    resolved = ensure_outside_repository!(expanded, label)
+    resolved_stat = File.stat(resolved)
+    path_stat = File.lstat(expanded)
+    stable_path = !path_stat.symlink? &&
+                  resolved_stat.dev == opened.dev &&
+                  resolved_stat.ino == opened.ino &&
+                  path_stat.dev == opened.dev &&
+                  path_stat.ino == opened.ino
+    UI.user_error!("#{label} path changed during validation.") unless stable_path
+
+    content = source.read(maximum_size + 1)
+    after = source.stat
+    unless content.bytesize == opened.size &&
+           content.bytesize <= maximum_size &&
+           opened.dev == after.dev &&
+           opened.ino == after.ino &&
+           opened.size == after.size
+      UI.user_error!("#{label} changed while it was being read.")
+    end
+    [resolved, content]
+  end
+rescue Errno::EACCES,
+       Errno::EAGAIN,
+       Errno::ELOOP,
+       Errno::ENODEV,
+       Errno::ENOENT,
+       Errno::ENXIO
+  UI.user_error!("Unable to snapshot #{label} safely.")
+end
+
+def private_external_file_snapshot(name, maximum_size, label)
+  _, content = private_external_file_snapshot_with_path(
+    name,
+    maximum_size,
+    label
+  )
+  content
+end
+
+def binary_evidence(path, relative_path, role, xcode_toolchain:)
+  content = read_regular_file_snapshot(
+    path,
+    DEMO_LAB_MAX_BINARY_BYTES,
+    "Archived DemoLab binary"
+  )
+  with_external_temporary_file(
+    ["orchardprobe-demolab-binary-", ".macho"]
+  ) do |file|
+    file.binmode
+    file.write(content)
+    file.flush
+
+    uuid_lines = command_output(
+      xcode_toolchain.dig("dwarfdump", "path"),
+      "--uuid",
+      file.path
+    ).lines
+    uuids = uuid_lines.filter_map do |line|
+      match = line.match(/UUID: ([0-9A-Fa-f-]+) \(([^)]+)\)/)
+      next unless match
+
+      {
+        "architecture" => match[2],
+        "uuid" => match[1].downcase,
+      }
+    end
+
+    {
+      "role" => role,
+      "relative_path" => relative_path,
+      "size" => content.bytesize,
+      "sha256" => Digest::SHA256.hexdigest(content),
+      "architectures" => command_output(
+        xcode_toolchain.dig("lipo", "path"),
+        "-archs",
+        file.path
+      ).split,
+      "slices" => uuids,
+      "initial_protection_status" => "not_observed",
+      "expected_plaintext_status" => "candidate_pre_upload_archive_only",
+    }
+  end
+end
+
+def read_zip_entry(entry, maximum_size)
+  if entry.directory? || entry.symlink? || entry.encrypted?
+    UI.user_error!("DemoLab IPA contains an unsupported required entry.")
+  end
+  if entry.size.negative? || entry.size > maximum_size
+    UI.user_error!("DemoLab IPA contains an oversized required entry.")
+  end
+
+  content = entry.get_input_stream.read(maximum_size + 1)
+  if content.bytesize != entry.size || content.bytesize > maximum_size
+    UI.user_error!("DemoLab IPA entry size does not match its metadata.")
+  end
+  content
+end
+
+def plist_value_from_zip_entry(entry, key, xcode_toolchain:)
+  content = read_zip_entry(entry, DEMO_LAB_MAX_PLIST_BYTES)
+  with_external_temporary_file(["orchardprobe-demolab-", ".plist"]) do |file|
+    file.binmode
+    file.write(content)
+    file.flush
+    command_output(
+      xcode_toolchain.dig("plutil", "path"),
+      "-extract",
+      key,
+      "raw",
+      file.path
+    )
+  end
+end
+
+def zip_binary_evidence(entry, relative_path, role)
+  content = read_zip_entry(entry, DEMO_LAB_MAX_BINARY_BYTES)
+  {
+    "role" => role,
+    "relative_path" => relative_path,
+    "size" => content.bytesize,
+    "sha256" => Digest::SHA256.hexdigest(content),
+    "initial_protection_status" => "not_observed",
+    "expected_plaintext_status" => "candidate_pre_upload_archive_only",
+  }
+end
+
+def inspect_demolab_ipa!(
+  ipa_path,
+  app_identifier:,
+  share_identifier:,
+  marketing_version:,
+  build_number:,
+  xcode_toolchain:
+)
+  ipa_content = read_regular_file_snapshot(
+    ipa_path,
+    DEMO_LAB_MAX_IPA_BYTES,
+    "Evidence-bound IPA"
+  )
+  ipa_measurement = {
+    "size" => ipa_content.bytesize,
+    "sha256" => Digest::SHA256.hexdigest(ipa_content),
+  }
+
+  inspection = nil
+  Zip::File.open_buffer(StringIO.new(ipa_content)) do |archive|
+    entries = archive.entries
+    if entries.empty? || entries.length > DEMO_LAB_MAX_ZIP_ENTRIES
+      UI.user_error!("DemoLab IPA has an invalid entry count.")
+    end
+
+    seen_names = {}
+    entries.each do |entry|
+      name = entry.name
+      unless entry.name_safe? && !name.include?("\\") && !name.include?("\0")
+        UI.user_error!("DemoLab IPA contains an unsafe entry name.")
+      end
+      UI.user_error!("DemoLab IPA contains duplicate entries.") if seen_names[name]
+      UI.user_error!("DemoLab IPA must not contain symbolic links.") if entry.symlink?
+      seen_names[name] = true
+    end
+
+    app_root = "Payload/DemoLab.app"
+    app_plist = archive.find_entry("#{app_root}/Info.plist")
+    share_plist = archive.find_entry(
+      "#{app_root}/PlugIns/DemoShareExtension.appex/Info.plist"
+    )
+    framework_plist = archive.find_entry(
+      "#{app_root}/Frameworks/DemoFramework.framework/Info.plist"
+    )
+    unless app_plist && share_plist && framework_plist
+      UI.user_error!("IPA is not the expected DemoLab app/framework/extension package.")
+    end
+
+    root_app_plists = entries.select do |entry|
+      entry.name.match?(%r{\APayload/[^/]+\.app/Info\.plist\z})
+    end
+    unless root_app_plists.map(&:name) == ["#{app_root}/Info.plist"]
+      UI.user_error!("IPA must contain exactly one DemoLab application.")
+    end
+
+    expected_plist_values = [
+      [app_plist, "CFBundleIdentifier", app_identifier],
+      [app_plist, "CFBundleExecutable", "DemoLab"],
+      [app_plist, "CFBundleShortVersionString", marketing_version],
+      [app_plist, "CFBundleVersion", build_number],
+      [app_plist, "ITSAppUsesNonExemptEncryption", "false"],
+      [share_plist, "CFBundleIdentifier", share_identifier],
+      [share_plist, "CFBundleExecutable", "DemoShareExtension"],
+      [share_plist, "CFBundleShortVersionString", marketing_version],
+      [share_plist, "CFBundleVersion", build_number],
+      [framework_plist, "CFBundleIdentifier", "#{app_identifier}.framework"],
+      [framework_plist, "CFBundleExecutable", "DemoFramework"],
+      [framework_plist, "CFBundleShortVersionString", marketing_version],
+      [framework_plist, "CFBundleVersion", build_number],
+    ]
+    expected_plist_values.each do |entry, key, expected|
+      unless plist_value_from_zip_entry(
+        entry,
+        key,
+        xcode_toolchain: xcode_toolchain
+      ) == expected
+        UI.user_error!("IPA identity does not match the authorized DemoLab package.")
+      end
+    end
+
+    binary_specs = [
+      [
+        "#{app_root}/DemoLab",
+        "DemoLab.app/DemoLab",
+        "main_executable",
+      ],
+      [
+        "#{app_root}/Frameworks/DemoFramework.framework/DemoFramework",
+        "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+        "dynamic_framework",
+      ],
+      [
+        "#{app_root}/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+        "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+        "app_extension",
+      ],
+    ]
+    binaries = binary_specs.map do |entry_name, relative_path, role|
+      entry = archive.find_entry(entry_name)
+      UI.user_error!("DemoLab IPA is missing a required packaged binary.") unless entry
+      zip_binary_evidence(entry, relative_path, role)
+    end
+
+    inspection = {
+      "application" => "DemoLab.app",
+      "identity_validated" => true,
+      "export_compliance_validated" => true,
+      "archive" => ipa_measurement,
+      "binaries" => binaries,
+    }
+  end
+  inspection
+rescue Zip::Error => error
+  UI.user_error!("Unable to validate DemoLab IPA: #{error.class}.")
+end
+
+def demolab_archive_binary_inputs(archive_path)
+  DEMO_LAB_BINARY_SPECS.map do |specification|
+    [
+      File.join(
+        archive_path,
+        "Products",
+        "Applications",
+        specification["relative_path"]
+      ),
+      specification["relative_path"],
+      specification["role"],
+    ]
+  end
+end
+
+def write_pre_upload_evidence(
+  run_directory:,
+  archive_path:,
+  ipa_path:,
+  source_commit:,
+  xcodegen_version:,
+  marketing_version:,
+  build_number:,
+  app_identifier:,
+  share_identifier:,
+  xcode_toolchain:
+)
+  binaries = demolab_archive_binary_inputs(archive_path).map do |path, relative_path, role|
+    [
+      validate_regular_file_beneath_root!(
+        path,
+        archive_path,
+        "Archived DemoLab binary"
+      ),
+      relative_path,
+      role,
+    ]
+  end
+  packaged = inspect_demolab_ipa!(
+    ipa_path,
+    app_identifier: app_identifier,
+    share_identifier: share_identifier,
+    marketing_version: marketing_version,
+    build_number: build_number,
+    xcode_toolchain: xcode_toolchain
+  )
+
+  evidence = {
+    "schema_version" => 1,
+    "profile" => DEMO_LAB_EVIDENCE_PROFILE,
+    "purpose" => DEMO_LAB_EVIDENCE_PURPOSE,
+    "decision" => DEMO_LAB_EVIDENCE_DECISION,
+    "created_at" => Time.now.utc.iso8601,
+    "source" => {
+      "commit" => source_commit,
+      "tree_clean" => true,
+      "fixture" => "fixtures/DemoLab",
+    },
+    "toolchain" => {
+      "fastlane_version" => Fastlane::VERSION,
+      "xcodegen_version" => xcodegen_version,
+      "xcode" => xcode_toolchain.fetch("xcode_version"),
+      "iphoneos_sdk_version" =>
+        xcode_toolchain.fetch("iphoneos_sdk_version"),
+      "iphoneos_sdk_build" =>
+        xcode_toolchain.fetch("iphoneos_sdk_build"),
+    },
+    "build" => {
+      "configuration" => "Release",
+      "marketing_version" => marketing_version,
+      "build_number" => build_number,
+      "distribution" => "app-store",
+      "bundle_identifiers" => "operator-provided first-party identifiers; redacted",
+    },
+    "artifacts" => {
+      "ipa" => {
+        "filename" => File.basename(ipa_path),
+        "size" => packaged.dig("archive", "size"),
+        "sha256" => packaged.dig("archive", "sha256"),
+      },
+      "archive_binaries" => binaries.map do |path, relative_path, role|
+        binary_evidence(
+          path,
+          relative_path,
+          role,
+          xcode_toolchain: xcode_toolchain
+        )
+      end,
+      "package" => packaged.reject do |key, _|
+        ["archive", "binaries"].include?(key)
+      end,
+      "ipa_binaries" => packaged["binaries"],
+    },
+    "lineage" => {
+      "uploaded_ipa_bound" => false,
+      "installed_artifact_bound" => false,
+      "note" => DEMO_LAB_LINEAGE_NOTE,
+    },
+  }
+
+  validate_upload_evidence_structure!(evidence)
+  evidence_path = File.join(run_directory, "demolab-pre-upload-evidence.json")
+  evidence_file = open_exclusive_private_file(evidence_path)
+  begin
+    persist_json_record!(evidence_file, evidence)
+  ensure
+    evidence_file.close
+  end
+  evidence_path
+end
+
+def require_exact_hash_keys!(value, expected_keys, label)
+  unless value.is_a?(Hash) && value.keys.sort == expected_keys.sort
+    UI.user_error!("#{label} has an incomplete or unexpected structure.")
+  end
+end
+
+def validate_binary_measurement!(measurement, specification, archive:)
+  keys = %w[
+    role
+    relative_path
+    size
+    sha256
+    initial_protection_status
+    expected_plaintext_status
+  ]
+  keys += %w[architectures slices] if archive
+  require_exact_hash_keys!(measurement, keys, "DemoLab binary evidence")
+
+  unless measurement["role"] == specification["role"] &&
+         measurement["relative_path"] == specification["relative_path"] &&
+         measurement["size"].is_a?(Integer) &&
+         measurement["size"].positive? &&
+         measurement["size"] <= DEMO_LAB_MAX_BINARY_BYTES &&
+         measurement["sha256"].is_a?(String) &&
+         /\A[0-9a-f]{64}\z/.match?(measurement["sha256"]) &&
+         measurement["initial_protection_status"] == "not_observed" &&
+         measurement["expected_plaintext_status"] ==
+           "candidate_pre_upload_archive_only"
+    UI.user_error!("DemoLab binary evidence is incomplete.")
+  end
+  return unless archive
+
+  architectures = measurement["architectures"]
+  slices = measurement["slices"]
+  architectures_valid =
+    architectures.is_a?(Array) &&
+    architectures.length.between?(1, 8) &&
+    architectures.uniq.length == architectures.length &&
+    architectures.all? { |architecture|
+      architecture.is_a?(String) &&
+        /\A[A-Za-z0-9_]+\z/.match?(architecture)
+    }
+  slices_valid =
+    slices.is_a?(Array) &&
+    architectures.is_a?(Array) &&
+    slices.length == architectures.length
+  unless architectures_valid && slices_valid
+    UI.user_error!("DemoLab archive architecture evidence is incomplete.")
+  end
+
+  slice_architectures = slices.map do |slice|
+    require_exact_hash_keys!(
+      slice,
+      %w[architecture uuid],
+      "DemoLab archive slice evidence"
+    )
+    architecture = slice["architecture"]
+    uuid = slice["uuid"]
+    unless architecture.is_a?(String) &&
+           uuid.is_a?(String) &&
+           /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/.match?(
+             uuid
+           )
+      UI.user_error!("DemoLab archive slice evidence is incomplete.")
+    end
+    architecture
+  end
+  unless slice_architectures.uniq.length == slice_architectures.length &&
+         slice_architectures.sort == architectures.sort
+    UI.user_error!("DemoLab archive slice evidence does not match its architectures.")
+  end
+end
+
+def validate_upload_evidence_structure!(evidence)
+  require_exact_hash_keys!(
+    evidence,
+    %w[
+      schema_version
+      profile
+      purpose
+      decision
+      created_at
+      source
+      toolchain
+      build
+      artifacts
+      lineage
+    ],
+    "DemoLab evidence"
+  )
+
+  created_at = evidence["created_at"]
+  unless valid_utc_timestamp?(created_at)
+    UI.user_error!("DemoLab evidence creation time is invalid.")
+  end
+
+  source = evidence["source"]
+  require_exact_hash_keys!(
+    source,
+    %w[commit tree_clean fixture],
+    "DemoLab source evidence"
+  )
+  unless source["commit"].is_a?(String) &&
+         /\A[0-9a-f]{40,64}\z/.match?(source["commit"]) &&
+         source["tree_clean"] == true &&
+         source["fixture"] == "fixtures/DemoLab"
+    UI.user_error!("DemoLab source evidence is incomplete.")
+  end
+
+  toolchain = evidence["toolchain"]
+  require_exact_hash_keys!(
+    toolchain,
+    %w[
+      fastlane_version
+      xcodegen_version
+      xcode
+      iphoneos_sdk_version
+      iphoneos_sdk_build
+    ],
+    "DemoLab toolchain evidence"
+  )
+  xcode_lines = toolchain["xcode"]
+  xcode_lines_valid =
+    xcode_lines.is_a?(Array) &&
+    xcode_lines.length == 2 &&
+    xcode_lines.all? { |line|
+      line.is_a?(String) && !line.empty? && line.bytesize <= 256
+    }
+  toolchain_valid =
+    toolchain["fastlane_version"] == Fastlane::VERSION &&
+    toolchain["xcodegen_version"].is_a?(String) &&
+    /\A[0-9]+\.[0-9]+\.[0-9]+\z/.match?(
+      toolchain["xcodegen_version"]
+    ) &&
+    xcode_lines_valid &&
+    toolchain["iphoneos_sdk_version"].is_a?(String) &&
+    /\A[0-9]+(?:\.[0-9]+){0,2}\z/.match?(
+      toolchain["iphoneos_sdk_version"]
+    ) &&
+    toolchain["iphoneos_sdk_build"].is_a?(String) &&
+    /\A[A-Za-z0-9.]+\z/.match?(toolchain["iphoneos_sdk_build"])
+  unless toolchain_valid
+    UI.user_error!("DemoLab toolchain evidence is incomplete.")
+  end
+
+  build = evidence["build"]
+  require_exact_hash_keys!(
+    build,
+    %w[
+      configuration
+      marketing_version
+      build_number
+      distribution
+      bundle_identifiers
+    ],
+    "DemoLab build evidence"
+  )
+  unless build["configuration"] == "Release" &&
+         build["marketing_version"].is_a?(String) &&
+         /\A[0-9]+(?:\.[0-9]+){0,2}\z/.match?(
+           build["marketing_version"]
+         ) &&
+         build["build_number"].is_a?(String) &&
+         /\A[1-9][0-9]{0,17}\z/.match?(build["build_number"]) &&
+         build["distribution"] == "app-store" &&
+         build["bundle_identifiers"] ==
+           "operator-provided first-party identifiers; redacted"
+    UI.user_error!("DemoLab build evidence is incomplete.")
+  end
+
+  artifacts = evidence["artifacts"]
+  require_exact_hash_keys!(
+    artifacts,
+    %w[ipa archive_binaries package ipa_binaries],
+    "DemoLab artifact evidence"
+  )
+  ipa = artifacts["ipa"]
+  require_exact_hash_keys!(ipa, %w[filename size sha256], "DemoLab IPA evidence")
+  unless ipa["filename"].is_a?(String) &&
+         ipa["filename"] == "DemoLab-#{build['build_number']}.ipa" &&
+         ipa["size"].is_a?(Integer) &&
+         ipa["size"].positive? &&
+         ipa["size"] <= DEMO_LAB_MAX_IPA_BYTES &&
+         ipa["sha256"].is_a?(String) &&
+         /\A[0-9a-f]{64}\z/.match?(ipa["sha256"])
+    UI.user_error!("DemoLab IPA evidence is incomplete.")
+  end
+
+  package = artifacts["package"]
+  require_exact_hash_keys!(
+    package,
+    %w[application identity_validated export_compliance_validated],
+    "DemoLab package evidence"
+  )
+  unless package == {
+    "application" => "DemoLab.app",
+    "identity_validated" => true,
+    "export_compliance_validated" => true,
+  }
+    UI.user_error!("DemoLab package evidence is incomplete.")
+  end
+
+  archive_binaries = artifacts["archive_binaries"]
+  ipa_binaries = artifacts["ipa_binaries"]
+  unless archive_binaries.is_a?(Array) &&
+         ipa_binaries.is_a?(Array) &&
+         archive_binaries.length == DEMO_LAB_BINARY_SPECS.length &&
+         ipa_binaries.length == DEMO_LAB_BINARY_SPECS.length
+    UI.user_error!("DemoLab evidence must contain all required binaries.")
+  end
+  DEMO_LAB_BINARY_SPECS.each_with_index do |specification, index|
+    validate_binary_measurement!(
+      archive_binaries[index],
+      specification,
+      archive: true
+    )
+    validate_binary_measurement!(
+      ipa_binaries[index],
+      specification,
+      archive: false
+    )
+  end
+
+  lineage = evidence["lineage"]
+  require_exact_hash_keys!(
+    lineage,
+    %w[uploaded_ipa_bound installed_artifact_bound note],
+    "DemoLab lineage evidence"
+  )
+  unless lineage == {
+    "uploaded_ipa_bound" => false,
+    "installed_artifact_bound" => false,
+    "note" => DEMO_LAB_LINEAGE_NOTE,
+  }
+    UI.user_error!("DemoLab lineage evidence is incomplete.")
+  end
+end
+
+def load_demolab_evidence
+  evidence_path, evidence_content = private_external_file_snapshot_with_path(
+    "DEMO_LAB_EVIDENCE_PATH",
+    DEMO_LAB_MAX_PLIST_BYTES,
+    "DemoLab evidence"
+  )
+  begin
+    evidence = JSON.parse(evidence_content)
+  rescue JSON::ParserError
+    UI.user_error!("DemoLab evidence is not valid JSON.")
+  end
+  unless evidence.is_a?(Hash)
+    UI.user_error!("DemoLab evidence root must be a JSON object.")
+  end
+
+  expected_profile = {
+    "schema_version" => 1,
+    "profile" => DEMO_LAB_EVIDENCE_PROFILE,
+    "purpose" => DEMO_LAB_EVIDENCE_PURPOSE,
+    "decision" => DEMO_LAB_EVIDENCE_DECISION,
+  }
+  expected_profile.each do |key, expected|
+    UI.user_error!("Evidence is not a DemoLab pre-upload record.") unless evidence[key] == expected
+  end
+  validate_upload_evidence_structure!(evidence)
+  unless evidence.dig("source", "tree_clean") == true &&
+         evidence.dig("source", "fixture") == "fixtures/DemoLab" &&
+         evidence.dig("build", "distribution") == "app-store" &&
+         evidence.dig("artifacts", "package", "application") == "DemoLab.app" &&
+         evidence.dig("artifacts", "package", "identity_validated") == true &&
+         evidence.dig(
+           "artifacts",
+           "package",
+           "export_compliance_validated"
+         ) == true
+    UI.user_error!("Evidence does not describe an authorized DemoLab App Store candidate.")
+  end
+
+  source_commit = evidence.dig("source", "commit")
+  current_commit = git_command_output("rev-parse", "HEAD")
+  unless source_commit == current_commit
+    UI.user_error!("Evidence source commit does not match the current checkout.")
+  end
+
+  [evidence_path, evidence]
+end
+
+def verify_evidence_bound_archive!(
+  archive_path,
+  evidence,
+  xcode_toolchain:
+)
+  unless File.directory?(archive_path) && !File.symlink?(archive_path)
+    UI.user_error!("Evidence-bound DemoLab archive is missing or unsafe.")
+  end
+  ensure_outside_repository!(archive_path, "Evidence-bound DemoLab archive")
+  archive_binaries =
+    demolab_archive_binary_inputs(archive_path).map do |path, relative_path, role|
+      resolved_path = validate_regular_file_beneath_root!(
+        path,
+        archive_path,
+        "Evidence-bound archive binary"
+      )
+      ensure_outside_repository!(resolved_path, "Evidence-bound archive binary")
+      [resolved_path, relative_path, role]
+    end
+  observed_archive_binaries = archive_binaries.map do |path, relative_path, role|
+    binary_evidence(
+      path,
+      relative_path,
+      role,
+      xcode_toolchain: xcode_toolchain
+    )
+  end
+  unless observed_archive_binaries == evidence.dig(
+    "artifacts",
+    "archive_binaries"
+  )
+    UI.user_error!("Archived DemoLab binaries do not match the evidence.")
+  end
+  true
+end
+
+def load_upload_evidence(
+  app_identifier:,
+  share_identifier:,
+  xcode_toolchain:
+)
+  evidence_path, evidence = load_demolab_evidence
+  archive_path = File.join(File.dirname(evidence_path), "DemoLab.xcarchive")
+  verify_evidence_bound_archive!(
+    archive_path,
+    evidence,
+    xcode_toolchain: xcode_toolchain
+  )
+
+  filename = evidence.dig("artifacts", "ipa", "filename")
+  expected_size = evidence.dig("artifacts", "ipa", "size")
+  expected_sha256 = evidence.dig("artifacts", "ipa", "sha256")
+  unless filename.is_a?(String) && File.basename(filename) == filename
+    UI.user_error!("Evidence contains an unsafe IPA filename.")
+  end
+  marketing_version = evidence.dig("build", "marketing_version")
+  build_number = evidence.dig("build", "build_number")
+  unless marketing_version.is_a?(String) &&
+         /\A[0-9]+(?:\.[0-9]+){0,2}\z/.match?(marketing_version)
+    UI.user_error!("Evidence contains an invalid DemoLab marketing version.")
+  end
+  unless build_number.is_a?(String) &&
+         /\A[1-9][0-9]{0,17}\z/.match?(build_number) &&
+         filename == "DemoLab-#{build_number}.ipa"
+    UI.user_error!("Evidence IPA filename does not match the DemoLab build.")
+  end
+  unless expected_size.is_a?(Integer) &&
+         expected_size.positive? &&
+         expected_size <= DEMO_LAB_MAX_IPA_BYTES
+    UI.user_error!("Evidence contains an invalid IPA size.")
+  end
+  unless expected_sha256.is_a?(String) && /\A[0-9a-f]{64}\z/.match?(expected_sha256)
+    UI.user_error!("Evidence contains an invalid IPA SHA-256.")
+  end
+
+  ipa_path = File.join(File.dirname(evidence_path), filename)
+  UI.user_error!("Evidence-bound IPA is missing.") unless File.file?(ipa_path)
+  ensure_outside_repository!(ipa_path, "Evidence-bound IPA")
+  UI.user_error!("IPA size does not match the evidence.") unless File.size(ipa_path) == expected_size
+  UI.user_error!("IPA SHA-256 does not match the evidence.") unless sha256(ipa_path) == expected_sha256
+  observed_package = inspect_demolab_ipa!(
+    ipa_path,
+    app_identifier: app_identifier,
+    share_identifier: share_identifier,
+    marketing_version: marketing_version,
+    build_number: build_number,
+    xcode_toolchain: xcode_toolchain
+  )
+  unless observed_package["archive"] == {
+    "size" => expected_size,
+    "sha256" => expected_sha256,
+  }
+    UI.user_error!("Inspected DemoLab IPA bytes do not match the evidence.")
+  end
+  observed_package_summary = observed_package.reject do |key, _|
+    ["archive", "binaries"].include?(key)
+  end
+  unless observed_package_summary == evidence.dig("artifacts", "package")
+    UI.user_error!("Packaged DemoLab metadata does not match the archive evidence.")
+  end
+  unless observed_package["binaries"] == evidence.dig("artifacts", "ipa_binaries")
+    UI.user_error!("Packaged DemoLab binaries do not match the archive evidence.")
+  end
+
+  [evidence_path, evidence, ipa_path, archive_path]
+end
+
+def digest_open_file(file)
+  digest = Digest::SHA256.new
+  file.rewind
+  while (chunk = file.read(1024 * 1024))
+    digest.update(chunk)
+  end
+  file.rewind
+  digest.hexdigest
+end
+
+def reopen_snapshot_read_only!(
+  writable_snapshot,
+  expected_size:,
+  expected_sha256:,
+  label:
+)
+  writable_snapshot.flush
+  writable_snapshot.fsync
+  writable_snapshot.chmod(0o400)
+  snapshot_path = writable_snapshot.path
+  written = writable_snapshot.stat
+  writable_snapshot.close
+
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  read_only_snapshot = File.open(snapshot_path, flags)
+  opened = read_only_snapshot.stat
+  linked = File.lstat(snapshot_path)
+  access_mode =
+    read_only_snapshot.fcntl(Fcntl::F_GETFL) & Fcntl::O_ACCMODE
+  unless written.file? &&
+         opened.file? &&
+         !linked.symlink? &&
+         written.dev == opened.dev &&
+         written.ino == opened.ino &&
+         linked.dev == opened.dev &&
+         linked.ino == opened.ino &&
+         opened.size == expected_size &&
+         (opened.mode & 0o777) == 0o400 &&
+         access_mode == Fcntl::O_RDONLY &&
+         digest_open_file(read_only_snapshot) == expected_sha256
+    UI.user_error!("Read-only #{label} snapshot identity check failed.")
+  end
+
+  File.unlink(snapshot_path)
+  read_only_snapshot.rewind
+  read_only_snapshot
+rescue Errno::EACCES,
+       Errno::EBADF,
+       Errno::ELOOP,
+       Errno::ENOENT,
+       Errno::ENOTDIR
+  read_only_snapshot&.close
+  UI.user_error!("Unable to reopen the #{label} snapshot read-only.")
+rescue
+  read_only_snapshot&.close
+  raise
+end
+
+def open_unlinked_snapshot_from_path(
+  source_path,
+  expected_size:,
+  expected_sha256:,
+  label:,
+  suffix: ""
+)
+  workspace = external_temporary_directory("orchardprobe-demolab-fd-")
+  writable_snapshot = nil
+  read_only_snapshot = nil
+  begin
+    writable_snapshot = Tempfile.new(["snapshot-", suffix], workspace)
+    writable_snapshot.binmode
+    writable_snapshot.chmod(0o600)
+
+    flags = File::RDONLY | File::NONBLOCK
+    flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    File.open(source_path, flags) do |source|
+      before = source.stat
+      UI.user_error!("#{label} must be a regular file.") unless before.file?
+      unless before.size == expected_size &&
+             expected_size.positive? &&
+             expected_size <= DEMO_LAB_MAX_IPA_BYTES
+        UI.user_error!("#{label} has an invalid size.")
+      end
+
+      copied = 0
+      digest = Digest::SHA256.new
+      while (chunk = source.read([1024 * 1024, expected_size - copied + 1].min))
+        copied += chunk.bytesize
+        UI.user_error!("#{label} exceeded its evidence-bound size.") if copied > expected_size
+        digest.update(chunk)
+        writable_snapshot.write(chunk)
+      end
+      after = source.stat
+      unless copied == expected_size &&
+             digest.hexdigest == expected_sha256 &&
+             before.dev == after.dev &&
+             before.ino == after.ino &&
+             before.size == after.size
+        UI.user_error!("#{label} changed or did not match its evidence.")
+      end
+    end
+
+    read_only_snapshot = reopen_snapshot_read_only!(
+      writable_snapshot,
+      expected_size: expected_size,
+      expected_sha256: expected_sha256,
+      label: label
+    )
+    FileUtils.rmdir(workspace)
+    workspace = nil
+    read_only_snapshot
+  rescue
+    read_only_snapshot&.close
+    writable_snapshot&.close!
+    FileUtils.rm_rf(workspace) if workspace
+    raise
+  end
+end
+
+def open_unlinked_snapshot_from_content(content, label:, suffix: "")
+  UI.user_error!("#{label} is empty.") if content.nil? || content.empty?
+  expected_size = content.bytesize
+  expected_sha256 = Digest::SHA256.hexdigest(content)
+  workspace = external_temporary_directory("orchardprobe-demolab-fd-")
+  writable_snapshot = nil
+  read_only_snapshot = nil
+  begin
+    writable_snapshot = Tempfile.new(["snapshot-", suffix], workspace)
+    writable_snapshot.binmode
+    writable_snapshot.chmod(0o600)
+    writable_snapshot.write(content)
+    read_only_snapshot = reopen_snapshot_read_only!(
+      writable_snapshot,
+      expected_size: expected_size,
+      expected_sha256: expected_sha256,
+      label: label
+    )
+    FileUtils.rmdir(workspace)
+    workspace = nil
+    read_only_snapshot
+  rescue
+    read_only_snapshot&.close
+    writable_snapshot&.close!
+    FileUtils.rm_rf(workspace) if workspace
+    raise
+  end
+end
+
+def stage_evidence_bound_ipa(ipa_path, evidence)
+  expected_size = evidence.dig("artifacts", "ipa", "size")
+  expected_sha256 = evidence.dig("artifacts", "ipa", "sha256")
+  open_unlinked_snapshot_from_path(
+    ipa_path,
+    expected_size: expected_size,
+    expected_sha256: expected_sha256,
+    label: "Evidence-bound IPA",
+    suffix: ".ipa"
+  )
+end
+
+def read_bounded_altool_output!(file, label)
+  file.flush
+  size = file.stat.size
+  if size > DEMO_LAB_MAX_ALTOOL_OUTPUT_BYTES
+    UI.user_error!("#{label} exceeded the bounded output limit.")
+  end
+  file.rewind
+  content = file.read(DEMO_LAB_MAX_ALTOOL_OUTPUT_BYTES + 1)
+  if content.bytesize != size || content.bytesize > DEMO_LAB_MAX_ALTOOL_OUTPUT_BYTES
+    UI.user_error!("#{label} changed while it was being read.")
+  end
+  content
+end
+
+def validate_altool_upload_result!(output, process_success:)
+  result = JSON.parse(output)
+  unless result.is_a?(Hash)
+    UI.user_error!("Apple altool returned an unexpected JSON result.")
+  end
+
+  product_errors = result["product-errors"]
+  unless product_errors.nil? || product_errors.is_a?(Array)
+    UI.user_error!("Apple altool returned malformed product-errors.")
+  end
+  unless product_errors.nil? || product_errors.empty?
+    UI.user_error!(
+      "Apple altool reported product-errors; the upload is not accepted."
+    )
+  end
+  unless process_success
+    UI.user_error!(
+      "Apple altool did not report a successful DemoLab upload process."
+    )
+  end
+
+  success_message = result["success-message"]
+  unless success_message.is_a?(String) && !success_message.strip.empty?
+    UI.user_error!(
+      "Apple altool did not return an explicit upload success message."
+    )
+  end
+  result
+rescue JSON::ParserError
+  UI.user_error!("Apple altool returned invalid JSON; upload state is unknown.")
+end
+
+def selected_altool(xcode_toolchain)
+  discovered = command_output_with_environment(
+    xcode_toolchain.fetch("environment"),
+    xcode_toolchain.dig("xcrun", "path"),
+    "--find",
+    "altool"
+  )
+  unless Pathname.new(discovered).absolute?
+    UI.user_error!("The selected Xcode returned a non-absolute altool path.")
+  end
+  selected = File.realpath(discovered)
+  candidate =
+    case File.basename(selected)
+    when "altool"
+      selected
+    when "altoolShim"
+      File.join(File.dirname(selected), "altool")
+    else
+      UI.user_error!("The selected Xcode returned an unexpected altool target.")
+    end
+  resolved_candidate = File.realpath(candidate)
+  unless File.dirname(resolved_candidate) == File.dirname(selected) &&
+         File.basename(resolved_candidate) == "altool"
+    UI.user_error!("The selected Xcode real altool escaped its resource directory.")
+  end
+  pinned_executable(
+    resolved_candidate,
+    "Selected Xcode real altool",
+    required_root: xcode_toolchain.fetch("xcode_bundle_root")
+  )
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to resolve the selected Xcode real altool safely.")
+end
+
+def verify_selected_altool!(xcode_toolchain, altool)
+  observed = selected_altool(xcode_toolchain)
+  unless observed == altool
+    UI.user_error!("The selected Xcode real altool changed during use.")
+  end
+  true
+end
+
+def terminate_process_group_and_reap(pid)
+  begin
+    Process.kill("TERM", -pid)
+  rescue Errno::ESRCH
+    nil
+  end
+
+  deadline =
+    Process.clock_gettime(Process::CLOCK_MONOTONIC) +
+    DEMO_LAB_PROCESS_TERMINATION_GRACE_SECONDS
+  loop do
+    waited_pid, status = Process.waitpid2(pid, Process::WNOHANG)
+    if waited_pid
+      begin
+        Process.kill("KILL", -pid)
+      rescue Errno::ESRCH
+        nil
+      end
+      return status
+    end
+    break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+    sleep(0.1)
+  end
+
+  begin
+    Process.kill("KILL", -pid)
+  rescue Errno::ESRCH
+    nil
+  end
+  _, status = Process.waitpid2(pid)
+  status
+rescue Errno::ECHILD
+  UI.user_error!("Unable to reconcile the bounded Apple upload process.")
+end
+
+def wait_for_bounded_process(pid, timeout_seconds:)
+  deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout_seconds
+  loop do
+    waited_pid, status = Process.waitpid2(pid, Process::WNOHANG)
+    return [status, false] if waited_pid
+    break if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+    sleep(0.1)
+  end
+  [terminate_process_group_and_reap(pid), true]
+rescue Errno::ECHILD
+  UI.user_error!("Unable to reconcile the bounded Apple upload process.")
+end
+
+def validate_private_altool_logs!(log_directory)
+  workspace = File.dirname(log_directory)
+  workspace_identity = private_directory_identity!(
+    workspace,
+    "Apple altool private workspace"
+  )
+  log_root = File.lstat(log_directory)
+  unless log_root.directory? &&
+         !log_root.symlink? &&
+         log_root.uid == Process.uid &&
+         (log_root.mode & 0o022).zero?
+    UI.user_error!("Apple altool log root is not safely contained.")
+  end
+
+  entry_count = 0
+  file_count = 0
+  total_bytes = 0
+  Find.find(log_directory) do |path|
+    next if path == log_directory
+
+    entry_count += 1
+    if entry_count > DEMO_LAB_MAX_ALTOOL_LOG_ENTRIES
+      UI.user_error!("Apple altool log output exceeded its entry limit.")
+    end
+    stat = File.lstat(path)
+    if stat.symlink?
+      Find.prune if File.directory?(path)
+      UI.user_error!("Apple altool log output contains a symbolic link.")
+    end
+    unless stat.directory? || stat.file?
+      UI.user_error!("Apple altool log output contains a special file.")
+    end
+    unless stat.uid == Process.uid && (stat.mode & 0o022).zero?
+      UI.user_error!("Apple altool log output is writable by another user.")
+    end
+    next if stat.directory?
+
+    file_count += 1
+    total_bytes += stat.size
+    if file_count > DEMO_LAB_MAX_ALTOOL_LOG_FILES ||
+       stat.size > DEMO_LAB_MAX_ALTOOL_LOG_BYTES ||
+       total_bytes > DEMO_LAB_MAX_ALTOOL_LOG_TOTAL_BYTES
+      UI.user_error!("Apple altool log output exceeded its safety bounds.")
+    end
+  end
+  unless private_directory_identity!(
+    workspace,
+    "Apple altool private workspace"
+  ) == workspace_identity
+    UI.user_error!("Apple altool private workspace changed during validation.")
+  end
+end
+
+def altool_api_key_arguments(key_type:, key_id:, team_issuer_id:)
+  case key_type
+  when "team"
+    unless team_issuer_id
+      UI.user_error!("A team API key requires its App Store Connect issuer ID.")
+    end
+    [
+      "--api-key",
+      key_id,
+      "--api-issuer",
+      team_issuer_id,
+    ]
+  when "individual"
+    unless team_issuer_id.nil?
+      UI.user_error!("An individual API key does not use an issuer ID.")
+    end
+    [
+      "--api-key",
+      key_id,
+      # Xcode 26 altool still requires --api-issuer at argument-parsing time
+      # for individual keys. The key ID is its compatibility placeholder;
+      # --api-key-subject selects Apple's individual-key authentication path.
+      "--api-issuer",
+      key_id,
+      "--api-key-subject",
+      "user",
+    ]
+  else
+    UI.user_error!("App Store Connect API key type is invalid.")
+  end
+end
+
+def upload_demolab_with_altool!(
+  ipa_snapshot:,
+  key_snapshot:,
+  archive_path:,
+  evidence:,
+  altool:,
+  xcode_toolchain:,
+  key_id:,
+  key_type:,
+  team_issuer_id:,
+  apple_id:,
+  app_identifier:,
+  marketing_version:,
+  build_number:
+)
+  ipa_snapshot.rewind
+  key_snapshot.rewind
+  stdout_capture = nil
+  stderr_capture = nil
+  tool_workspace = external_temporary_directory(
+    "orchardprobe-demolab-altool-"
+  )
+  log_directory = File.join(tool_workspace, "logs")
+  Dir.mkdir(log_directory, 0o700)
+  stdout_capture = Tempfile.new("stdout-", tool_workspace)
+  stderr_capture = Tempfile.new("stderr-", tool_workspace)
+  stdout_capture.chmod(0o600)
+  stderr_capture.chmod(0o600)
+  environment = {
+    # selected_altool resolves Xcode's altoolShim to the real sibling
+    # executable before this function is called. The shim is intentionally
+    # never launched here because it requires a downloaded Defaults.properties
+    # file in Home; the real ContentDelivery executable supports an empty
+    # private Home and is verified that way by demolab_check.
+    "CFFIXED_USER_HOME" => tool_workspace,
+    "HOME" => tool_workspace,
+    "LANG" => ENV.fetch("LANG", "en_US.UTF-8"),
+    "LC_ALL" => ENV.fetch("LC_ALL", "en_US.UTF-8"),
+    "PATH" => "/usr/bin:/bin",
+    "TMPDIR" => tool_workspace,
+  }
+  command = [
+    altool.fetch("path"),
+    "--upload-package",
+    "/dev/fd/#{DEMO_LAB_UPLOAD_IPA_FD}",
+    "--platform",
+    "ios",
+    "--apple-id",
+    apple_id,
+    "--bundle-version",
+    build_number,
+    "--bundle-short-version-string",
+    marketing_version,
+    "--bundle-id",
+    app_identifier,
+    "--p8-file-path",
+    "/dev/fd/#{DEMO_LAB_UPLOAD_KEY_FD}",
+    "--log-dir",
+    log_directory,
+  ]
+  command.concat(
+    altool_api_key_arguments(
+      key_type: key_type,
+      key_id: key_id,
+      team_issuer_id: team_issuer_id
+    )
+  )
+  command.concat(
+    [
+      "--wait",
+      "--output-format",
+      "json",
+    ]
+  )
+
+  prior_umask = File.umask(0o077)
+  begin
+    verify_evidence_bound_archive!(
+      archive_path,
+      evidence,
+      xcode_toolchain: xcode_toolchain
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_selected_altool!(xcode_toolchain, altool)
+    pid = Process.spawn(
+      environment,
+      *command,
+      DEMO_LAB_UPLOAD_IPA_FD => ipa_snapshot,
+      DEMO_LAB_UPLOAD_KEY_FD => key_snapshot,
+      out: stdout_capture,
+      err: stderr_capture,
+      pgroup: true,
+      rlimit_fsize: DEMO_LAB_MAX_ALTOOL_LOG_BYTES,
+      unsetenv_others: true
+    )
+    process_status, timed_out = wait_for_bounded_process(
+      pid,
+      timeout_seconds: DEMO_LAB_ALTOOL_TIMEOUT_SECONDS
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_selected_altool!(xcode_toolchain, altool)
+  ensure
+    File.umask(prior_umask)
+  end
+  validate_private_altool_logs!(log_directory)
+  stdout = read_bounded_altool_output!(stdout_capture, "Apple altool stdout")
+  read_bounded_altool_output!(stderr_capture, "Apple altool stderr")
+  if timed_out
+    UI.user_error!(
+      "Apple altool exceeded the 30-minute upload deadline; state is unknown."
+    )
+  end
+  validate_altool_upload_result!(
+    stdout,
+    process_success: process_status.success?
+  )
+ensure
+  ipa_snapshot&.rewind
+  key_snapshot&.rewind
+  stdout_capture&.close!
+  stderr_capture&.close!
+  FileUtils.rm_rf(tool_workspace) if tool_workspace
+end
+
+def open_exclusive_private_file(path)
+  flags = File::WRONLY | File::CREAT | File::EXCL
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  file = File.open(path, flags, 0o600)
+  unless file.flock(File::LOCK_EX | File::LOCK_NB)
+    file.close
+    UI.user_error!("Unable to lock the newly created private record.")
+  end
+  file
+end
+
+def persist_json_record!(file, record)
+  serialized = "#{JSON.pretty_generate(record)}\n"
+  if serialized.bytesize > DEMO_LAB_MAX_UPLOAD_RESULT_BYTES
+    UI.user_error!("DemoLab JSON record exceeded its bounded size.")
+  end
+  file.rewind
+  file.write(serialized)
+  file.truncate(file.pos)
+  file.flush
+  file.fsync
+end
+
+def private_json_temporary_path(path)
+  File.join(
+    File.dirname(path),
+    ".#{File.basename(path)}.tmp-#{SecureRandom.hex(12)}"
+  )
+end
+
+def verify_private_record_path_identity!(path, file, label)
+  current = File.lstat(path)
+  held = file.stat
+  unless current.file? &&
+         !current.symlink? &&
+         current.uid == Process.uid &&
+         (current.mode & 0o077).zero? &&
+         current.dev == held.dev &&
+         current.ino == held.ino
+    UI.user_error!("#{label} path changed during atomic publication.")
+  end
+end
+
+def prepare_private_json_temporary_record(path, record)
+  temporary_path = private_json_temporary_path(path)
+  temporary_file = open_exclusive_private_file(temporary_path)
+  persist_json_record!(temporary_file, record)
+  [temporary_path, temporary_file]
+rescue
+  temporary_file&.flock(File::LOCK_UN)
+  temporary_file&.close
+  FileUtils.rm_f(temporary_path) if temporary_path
+  raise
+end
+
+def publish_new_private_json_record!(path, record, label)
+  expanded = File.expand_path(path)
+  reject_repository_path!(expanded, label)
+  private_directory_identity!(File.dirname(expanded), "#{label} parent")
+  temporary_path = nil
+  temporary_file = nil
+  published = false
+  begin
+    temporary_path, temporary_file =
+      prepare_private_json_temporary_record(expanded, record)
+    rename_exclusive_no_follow!(temporary_path, expanded, label)
+    published = true
+    verify_private_record_path_identity!(expanded, temporary_file, label)
+    fsync_parent_directory!(expanded)
+    temporary_file
+  rescue
+    temporary_file&.flock(File::LOCK_UN)
+    temporary_file&.close
+    raise
+  ensure
+    FileUtils.rm_f(temporary_path) if temporary_path && !published
+  end
+end
+
+def rename_replace_no_follow!(source, destination, label)
+  flags = DemoLabDarwin::RENAME_NOFOLLOW_ANY
+  return if DemoLabDarwin.renamex_np(source, destination, flags).zero?
+
+  UI.user_error!("Unable to atomically replace #{label} safely.")
+end
+
+def replace_locked_private_json_record!(path, current_file, record, label)
+  expanded = File.expand_path(path)
+  reject_repository_path!(expanded, label)
+  private_directory_identity!(File.dirname(expanded), "#{label} parent")
+  verify_private_record_path_identity!(expanded, current_file, label)
+  temporary_path = nil
+  temporary_file = nil
+  published = false
+  begin
+    temporary_path, temporary_file =
+      prepare_private_json_temporary_record(expanded, record)
+    verify_private_record_path_identity!(expanded, current_file, label)
+    rename_replace_no_follow!(temporary_path, expanded, label)
+    published = true
+    verify_private_record_path_identity!(expanded, temporary_file, label)
+    fsync_parent_directory!(expanded)
+    temporary_file
+  rescue
+    temporary_file&.flock(File::LOCK_UN)
+    temporary_file&.close
+    raise
+  ensure
+    FileUtils.rm_f(temporary_path) if temporary_path && !published
+  end
+end
+
+def fsync_parent_directory!(path)
+  parent = File.dirname(path)
+  flags = File::RDONLY
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(parent, flags) do |directory|
+    stat = directory.stat
+    UI.user_error!("DemoLab record parent is not a directory.") unless stat.directory?
+    directory.fsync
+  end
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to make the DemoLab record directory entry durable.")
+end
+
+def with_locked_private_record(path, maximum_size, label)
+  expanded = File.expand_path(path)
+  reject_repository_path!(expanded, label)
+  flags = File::RDWR | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(expanded, flags) do |file|
+    unless file.flock(File::LOCK_EX | File::LOCK_NB)
+      UI.user_error!("#{label} is still in use by another upload process.")
+    end
+    opened = file.stat
+    unless opened.file? &&
+           opened.uid == Process.uid &&
+           (opened.mode & 0o077).zero? &&
+           opened.size.positive? &&
+           opened.size <= maximum_size
+      UI.user_error!("#{label} is not a bounded private regular file.")
+    end
+
+    resolved = ensure_outside_repository!(expanded, label)
+    resolved_stat = File.stat(resolved)
+    path_stat = File.lstat(expanded)
+    unless !path_stat.symlink? &&
+           resolved_stat.dev == opened.dev &&
+           resolved_stat.ino == opened.ino &&
+           path_stat.dev == opened.dev &&
+           path_stat.ino == opened.ino
+      UI.user_error!("#{label} path changed during validation.")
+    end
+
+    content = file.read(maximum_size + 1)
+    after = file.stat
+    unless content.bytesize == opened.size &&
+           content.bytesize <= maximum_size &&
+           opened.dev == after.dev &&
+           opened.ino == after.ino &&
+           opened.size == after.size
+      UI.user_error!("#{label} changed while it was being read.")
+    end
+    file.rewind
+    yield file, content
+  ensure
+    file.flock(File::LOCK_UN)
+  end
+rescue Errno::EACCES,
+       Errno::EAGAIN,
+       Errno::ELOOP,
+       Errno::ENODEV,
+       Errno::ENOENT,
+       Errno::ENXIO
+  UI.user_error!("Unable to lock and snapshot #{label} safely.")
+end
+
+def validate_reconcilable_upload_result!(record, evidence)
+  unless record.is_a?(Hash)
+    UI.user_error!("Indeterminate upload result must be a JSON object.")
+  end
+  common_keys = %w[
+    schema_version
+    source_commit
+    ipa_sha256
+    attempt_started_at
+    destination
+    external_distribution
+    status
+    note
+  ]
+  expected_keys =
+    if record["status"] == "reconciled_absent"
+      common_keys + %w[reconciled_at reconciliation]
+    else
+      common_keys
+    end
+  require_exact_hash_keys!(
+    record,
+    expected_keys,
+    "Indeterminate upload result"
+  )
+
+  unless record["schema_version"] == 1 &&
+         record["source_commit"] == evidence.dig("source", "commit") &&
+         record["ipa_sha256"] == evidence.dig(
+           "artifacts",
+           "ipa",
+           "sha256"
+         ) &&
+         valid_utc_timestamp?(record["attempt_started_at"]) &&
+         record["destination"] == "TestFlight internal preparation" &&
+         record["external_distribution"] == false
+    UI.user_error!("Indeterminate upload result does not match this evidence.")
+  end
+
+  case record["status"]
+  when "indeterminate"
+    unless record["note"] == DEMO_LAB_UPLOAD_INDETERMINATE_NOTE
+      UI.user_error!("Indeterminate upload result has an unexpected note.")
+    end
+  when "reconciled_absent"
+    unless valid_utc_timestamp?(record["reconciled_at"]) &&
+           record["reconciliation"] ==
+             "operator_confirmed_absent_in_app_store_connect" &&
+           record["note"] == DEMO_LAB_RECONCILED_ABSENT_NOTE
+      UI.user_error!("Reconciled upload result is incomplete.")
+    end
+  else
+    UI.user_error!("Only an indeterminate upload result can be reconciled.")
+  end
+  record
+end
+
+def reconcile_indeterminate_upload_result!(
+  result_path,
+  evidence,
+  expected_attempt_started_at:
+)
+  archive_path = File.join(
+    File.dirname(result_path),
+    "demolab-upload-result-reconciled-#{SecureRandom.hex(12)}.json"
+  )
+  reconciled_record = nil
+  replacement_file = nil
+  with_locked_private_record(
+    result_path,
+    DEMO_LAB_MAX_UPLOAD_RESULT_BYTES,
+    "Indeterminate DemoLab upload result"
+  ) do |file, content|
+    begin
+      record = JSON.parse(content)
+    rescue JSON::ParserError
+      UI.user_error!("Indeterminate upload result is not valid JSON.")
+    end
+    validate_reconcilable_upload_result!(record, evidence)
+    unless record["attempt_started_at"] == expected_attempt_started_at
+      UI.user_error!(
+        "The reconciled attempt timestamp does not match the current result."
+      )
+    end
+
+    if record["status"] == "indeterminate"
+      record = record.merge(
+        "status" => "reconciled_absent",
+        "reconciled_at" => Time.now.utc.iso8601,
+        "reconciliation" =>
+          "operator_confirmed_absent_in_app_store_connect",
+        "note" => DEMO_LAB_RECONCILED_ABSENT_NOTE
+      )
+      replacement_file = replace_locked_private_json_record!(
+        result_path,
+        file,
+        record,
+        "reconciled upload result"
+      )
+    end
+    reconciled_record = validate_reconcilable_upload_result!(record, evidence)
+
+    current = File.lstat(result_path)
+    held = (replacement_file || file).stat
+    unless !current.symlink? &&
+           current.dev == held.dev &&
+           current.ino == held.ino
+      UI.user_error!("Upload result path changed before reconciliation.")
+    end
+    rename_exclusive_no_follow!(
+      result_path,
+      archive_path,
+      "reconciled upload result"
+    )
+    archived = File.lstat(archive_path)
+    unless archived.file? &&
+           !archived.symlink? &&
+           archived.dev == held.dev &&
+           archived.ino == held.ino
+      UI.user_error!("Reconciled upload result publication changed identity.")
+    end
+    fsync_parent_directory!(archive_path)
+  end
+  [archive_path, reconciled_record]
+ensure
+  replacement_file&.flock(File::LOCK_UN)
+  replacement_file&.close
+end
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
+  lane :demolab_check do
+    xcode_toolchain = selected_xcode_toolchain
+    loader_key = "DYLD_INSERT_LIBRARIES"
+    loader_key_was_set = ENV.key?(loader_key)
+    previous_loader_value = ENV[loader_key]
+    ENV[loader_key] = "/private/tmp/orchardprobe-untrusted-loader.dylib"
+    begin
+      sanitized_loader_environment = sanitized_dynamic_loader_environment
+      observed_loader_value = command_output_with_environment(
+        sanitized_loader_environment,
+        RbConfig.ruby,
+        "-e",
+        "print ENV.fetch('DYLD_INSERT_LIBRARIES', 'cleared')"
+      )
+      observed_default_command_loader_value = command_output(
+        RbConfig.ruby,
+        "-e",
+        "print ENV.fetch('DYLD_INSERT_LIBRARIES', 'cleared')"
+      )
+      unless sanitized_loader_environment[loader_key].nil? &&
+             observed_loader_value == "cleared" &&
+             observed_default_command_loader_value == "cleared"
+        UI.user_error!("A dynamic-loader override reached a controlled subprocess.")
+      end
+    ensure
+      if loader_key_was_set
+        ENV[loader_key] = previous_loader_value
+      else
+        ENV.delete(loader_key)
+      end
+    end
+
+    previous_tmpdir = ENV["TMPDIR"]
+    ENV["TMPDIR"] = repository_root
+    repository_tmpdir_rejected = false
+    begin
+      external_temporary_base
+    rescue FastlaneCore::Interface::FastlaneError
+      repository_tmpdir_rejected = true
+    ensure
+      if previous_tmpdir
+        ENV["TMPDIR"] = previous_tmpdir
+      else
+        ENV.delete("TMPDIR")
+      end
+    end
+    unless repository_tmpdir_rejected
+      UI.user_error!("A DemoLab temporary directory inside Git was accepted.")
+    end
+
+    ["'", "\n"].each do |unsafe_character|
+      unsafe_tmpdir = File.join(
+        "/private/tmp",
+        "orchardprobe-demolab-unsafe-#{Process.pid}-#{unsafe_character}"
+      )
+      previous_tmpdir = ENV["TMPDIR"]
+      ENV["TMPDIR"] = unsafe_tmpdir
+      unsafe_tmpdir_rejected = false
+      begin
+        external_temporary_base
+      rescue FastlaneCore::Interface::FastlaneError
+        unsafe_tmpdir_rejected = true
+      ensure
+        if previous_tmpdir
+          ENV["TMPDIR"] = previous_tmpdir
+        else
+          ENV.delete("TMPDIR")
+        end
+      end
+      unless unsafe_tmpdir_rejected && !File.exist?(unsafe_tmpdir)
+        UI.user_error!("A shell-unsafe DemoLab temporary directory was accepted.")
+      end
+    end
+
+    rejected_output = File.join(
+      repository_root,
+      ".demolab-rejected-output-#{Process.pid}"
+    )
+    previous_output = ENV["DEMO_LAB_OUTPUT_DIR"]
+    ENV["DEMO_LAB_OUTPUT_DIR"] = rejected_output
+    output_rejected = false
+    begin
+      private_output_directory
+    rescue FastlaneCore::Interface::FastlaneError
+      output_rejected = true
+    ensure
+      if previous_output
+        ENV["DEMO_LAB_OUTPUT_DIR"] = previous_output
+      else
+        ENV.delete("DEMO_LAB_OUTPUT_DIR")
+      end
+    end
+    unless output_rejected && !File.exist?(rejected_output)
+      UI.user_error!("Rejected DemoLab output path left repository side effects.")
+    end
+
+    workspace, _, project = prepare_demolab_project
+    begin
+      shadow_tools = File.join(workspace, "shadow-developer-tools")
+      Dir.mkdir(shadow_tools, 0o700)
+      %w[xcodebuild xcrun plutil dwarfdump lipo xcodegen].each do |name|
+        shadow_path = File.join(shadow_tools, name)
+        File.write(shadow_path, "#!/bin/sh\nprintf 'shadow-tool\\n'\n")
+        File.chmod(0o500, shadow_path)
+      end
+      previous_path = ENV["PATH"]
+      ENV["PATH"] = "#{shadow_tools}:#{previous_path}"
+      begin
+        shadow_xcodegen_rejected = false
+        begin
+          selected_xcodegen
+        rescue FastlaneCore::Interface::FastlaneError
+          shadow_xcodegen_rejected = true
+        end
+        unless shadow_xcodegen_rejected
+          UI.user_error!("A PATH-shadowed XcodeGen binary was selected.")
+        end
+
+        shadow_selection = selected_xcode_toolchain
+        unless %w[xcodebuild xcrun plutil dwarfdump lipo].all? { |name|
+          shadow_selection.fetch(name) == xcode_toolchain.fetch(name) &&
+            !shadow_selection.dig(name, "path").start_with?(
+              "#{shadow_tools}#{File::SEPARATOR}"
+            )
+        }
+          UI.user_error!("A PATH-shadowed developer tool was selected.")
+        end
+        previous_xcconfig = ENV["XCODE_XCCONFIG_FILE"]
+        ENV["XCODE_XCCONFIG_FILE"] = File.join(workspace, "untrusted.xcconfig")
+        begin
+          with_pinned_xcode_environment(xcode_toolchain) do
+            unless %w[xcodebuild xcrun plutil dwarfdump lipo].all? { |name|
+              resolved_from_path = pinned_executable(
+                command_output("/usr/bin/which", name),
+                "PATH-selected #{name}",
+                required_root: %w[xcodebuild dwarfdump lipo].include?(name) ?
+                  xcode_toolchain.fetch("developer_dir") : nil
+              )
+              resolved_from_path == xcode_toolchain.fetch(name)
+            }
+              UI.user_error!("Pinned Xcode PATH retained a shadow developer tool.")
+            end
+            if ENV.key?("XCODE_XCCONFIG_FILE")
+              UI.user_error!("Pinned Xcode environment retained an xcconfig override.")
+            end
+          end
+          unless ENV["XCODE_XCCONFIG_FILE"] ==
+                 File.join(workspace, "untrusted.xcconfig")
+            UI.user_error!("Pinned Xcode environment did not restore its caller.")
+          end
+        ensure
+          if previous_xcconfig
+            ENV["XCODE_XCCONFIG_FILE"] = previous_xcconfig
+          else
+            ENV.delete("XCODE_XCCONFIG_FILE")
+          end
+        end
+      ensure
+        previous_path ? ENV["PATH"] = previous_path : ENV.delete("PATH")
+      end
+      verify_selected_xcode_toolchain!(xcode_toolchain)
+
+      shared_output = File.join(workspace, "shared-output")
+      Dir.mkdir(shared_output, 0o755)
+      File.chmod(0o755, shared_output)
+      shared_output_mode = File.stat(shared_output).mode & 0o777
+      previous_output = ENV["DEMO_LAB_OUTPUT_DIR"]
+      ENV["DEMO_LAB_OUTPUT_DIR"] = shared_output
+      shared_output_rejected = false
+      begin
+        private_output_directory
+      rescue FastlaneCore::Interface::FastlaneError
+        shared_output_rejected = true
+      ensure
+        if previous_output
+          ENV["DEMO_LAB_OUTPUT_DIR"] = previous_output
+        else
+          ENV.delete("DEMO_LAB_OUTPUT_DIR")
+        end
+      end
+      unless shared_output_rejected &&
+             (File.stat(shared_output).mode & 0o777) == shared_output_mode
+        UI.user_error!("Unsafe DemoLab output permissions were mutated.")
+      end
+
+      missing_output = File.join(workspace, "missing-output")
+      previous_output = ENV["DEMO_LAB_OUTPUT_DIR"]
+      ENV["DEMO_LAB_OUTPUT_DIR"] = missing_output
+      missing_output_rejected = false
+      begin
+        private_output_directory
+      rescue FastlaneCore::Interface::FastlaneError
+        missing_output_rejected = true
+      ensure
+        if previous_output
+          ENV["DEMO_LAB_OUTPUT_DIR"] = previous_output
+        else
+          ENV.delete("DEMO_LAB_OUTPUT_DIR")
+        end
+      end
+      unless missing_output_rejected && !File.exist?(missing_output)
+        UI.user_error!("Missing DemoLab output root was created by the lane.")
+      end
+
+      unsafe_output = File.join(workspace, "unsafe'output")
+      Dir.mkdir(unsafe_output, 0o700)
+      previous_output = ENV["DEMO_LAB_OUTPUT_DIR"]
+      ENV["DEMO_LAB_OUTPUT_DIR"] = unsafe_output
+      unsafe_output_rejected = false
+      begin
+        private_output_directory
+      rescue FastlaneCore::Interface::FastlaneError
+        unsafe_output_rejected = true
+      ensure
+        if previous_output
+          ENV["DEMO_LAB_OUTPUT_DIR"] = previous_output
+        else
+          ENV.delete("DEMO_LAB_OUTPUT_DIR")
+        end
+      end
+      unless unsafe_output_rejected
+        UI.user_error!("Shell-unsafe DemoLab output path was accepted.")
+      end
+
+      reserved_run = File.join(workspace, "reserved-run")
+      workspace_identity = private_directory_identity!(
+        workspace,
+        "DemoLab output root"
+      )
+      create_exclusive_private_directory!(
+        reserved_run,
+        "DemoLab run directory",
+        private_parent_identity: workspace_identity
+      )
+      reservation_rejected = false
+      begin
+        create_exclusive_private_directory!(
+          reserved_run,
+          "DemoLab run directory",
+          private_parent_identity: workspace_identity
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        reservation_rejected = true
+      end
+      unless reservation_rejected &&
+             (File.stat(reserved_run).mode & 0o777) == 0o700
+        UI.user_error!("DemoLab run directory reservation is not exclusive.")
+      end
+
+      replaced_output = File.join(workspace, "replaced-output")
+      displaced_output = File.join(workspace, "displaced-output")
+      Dir.mkdir(replaced_output, 0o700)
+      original_output_identity = private_directory_identity!(
+        replaced_output,
+        "DemoLab output root"
+      )
+      File.rename(replaced_output, displaced_output)
+      Dir.mkdir(replaced_output, 0o700)
+      replaced_run = File.join(replaced_output, "run")
+      replaced_output_rejected = false
+      begin
+        create_exclusive_private_directory!(
+          replaced_run,
+          "DemoLab run directory",
+          private_parent_identity: original_output_identity
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        replaced_output_rejected = true
+      end
+      unless replaced_output_rejected && !File.exist?(replaced_run)
+        UI.user_error!("Replaced DemoLab output root was accepted.")
+      end
+
+      locked_output = File.join(workspace, "locked-output")
+      Dir.mkdir(locked_output, 0o700)
+      locked_output_identity = private_directory_identity!(
+        locked_output,
+        "DemoLab output root"
+      )
+      with_locked_private_directory(
+        locked_output,
+        locked_output_identity,
+        "DemoLab output root"
+      ) do |locked_handle|
+        verify_locked_directory!(
+          locked_handle,
+          locked_output,
+          locked_output_identity,
+          "DemoLab output root"
+        )
+      end
+
+      publish_source = File.join(workspace, "publish-source")
+      publish_destination = File.join(workspace, "publish-destination")
+      Dir.mkdir(publish_source, 0o700)
+      Dir.mkdir(publish_destination, 0o700)
+      publish_collision_rejected = false
+      begin
+        rename_exclusive_no_follow!(
+          publish_source,
+          publish_destination,
+          "DemoLab test directory"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        publish_collision_rejected = true
+      end
+      unless publish_collision_rejected &&
+             File.directory?(publish_source) &&
+             File.directory?(publish_destination)
+        UI.user_error!("Exclusive DemoLab publication overwrote a destination.")
+      end
+      publish_destination = File.join(workspace, "published-directory")
+      rename_exclusive_no_follow!(
+        publish_source,
+        publish_destination,
+        "DemoLab test directory"
+      )
+      unless !File.exist?(publish_source) &&
+             File.directory?(publish_destination)
+        UI.user_error!("Exclusive DemoLab publication did not complete.")
+      end
+
+      symlink_archive = File.join(workspace, "symlink-ancestor.xcarchive")
+      symlink_app = File.join(
+        symlink_archive,
+        "Products",
+        "Applications",
+        "DemoLab.app"
+      )
+      outside_frameworks = File.join(workspace, "outside-frameworks")
+      outside_binary = File.join(
+        outside_frameworks,
+        "DemoFramework.framework",
+        "DemoFramework"
+      )
+      FileUtils.mkdir_p(File.dirname(outside_binary))
+      File.write(outside_binary, "external-binary")
+      FileUtils.mkdir_p(symlink_app)
+      File.symlink(outside_frameworks, File.join(symlink_app, "Frameworks"))
+      symlink_ancestor_rejected = false
+      begin
+        validate_regular_file_beneath_root!(
+          File.join(
+            symlink_app,
+            "Frameworks",
+            "DemoFramework.framework",
+            "DemoFramework"
+          ),
+          symlink_archive,
+          "DemoLab check archive binary"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        symlink_ancestor_rejected = true
+      end
+      unless symlink_ancestor_rejected
+        UI.user_error!("A symlinked archive-binary ancestor was accepted.")
+      end
+
+      private_key = File.join(workspace, "AuthKey_TEST.p8")
+      File.write(private_key, "private-key-snapshot")
+      File.chmod(0o600, private_key)
+      previous_key = ENV["APP_STORE_CONNECT_KEY_PATH"]
+      ENV["APP_STORE_CONNECT_KEY_PATH"] = private_key
+      key_snapshot = private_external_file_snapshot(
+        "APP_STORE_CONNECT_KEY_PATH",
+        DEMO_LAB_MAX_API_KEY_BYTES,
+        "App Store Connect API key"
+      )
+      File.write(private_key, "replacement")
+      unless key_snapshot == "private-key-snapshot"
+        UI.user_error!("App Store Connect API key snapshot was mutable.")
+      end
+      key_snapshot.clear
+      key_link = File.join(workspace, "AuthKey_LINK.p8")
+      File.symlink(private_key, key_link)
+      ENV["APP_STORE_CONNECT_KEY_PATH"] = key_link
+      key_link_rejected = false
+      begin
+        private_external_file_snapshot(
+          "APP_STORE_CONNECT_KEY_PATH",
+          DEMO_LAB_MAX_API_KEY_BYTES,
+          "App Store Connect API key"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        key_link_rejected = true
+      ensure
+        if previous_key
+          ENV["APP_STORE_CONNECT_KEY_PATH"] = previous_key
+        else
+          ENV.delete("APP_STORE_CONNECT_KEY_PATH")
+        end
+      end
+      UI.user_error!("Symbolic-link API key was accepted.") unless key_link_rejected
+
+      key_fifo = File.join(workspace, "AuthKey_FIFO.p8")
+      File.mkfifo(key_fifo, 0o600)
+      ENV["APP_STORE_CONNECT_KEY_PATH"] = key_fifo
+      key_fifo_rejected = false
+      begin
+        private_external_file_snapshot(
+          "APP_STORE_CONNECT_KEY_PATH",
+          DEMO_LAB_MAX_API_KEY_BYTES,
+          "App Store Connect API key"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        key_fifo_rejected = true
+      ensure
+        if previous_key
+          ENV["APP_STORE_CONNECT_KEY_PATH"] = previous_key
+        else
+          ENV.delete("APP_STORE_CONNECT_KEY_PATH")
+        end
+      end
+      UI.user_error!("FIFO API key was accepted.") unless key_fifo_rejected
+
+      previous_pilot_changelog = ENV["PILOT_CHANGELOG"]
+      ENV["PILOT_CHANGELOG"] = "unexpected metadata override"
+      pilot_override_rejected = false
+      begin
+        reject_pilot_environment_overrides!
+      rescue FastlaneCore::Interface::FastlaneError
+        pilot_override_rejected = true
+      ensure
+        if previous_pilot_changelog
+          ENV["PILOT_CHANGELOG"] = previous_pilot_changelog
+        else
+          ENV.delete("PILOT_CHANGELOG")
+        end
+      end
+      unless pilot_override_rejected
+        UI.user_error!("Fastlane Pilot environment override was accepted.")
+      end
+
+      previous_demo_account_required = ENV["DEMO_ACCOUNT_REQUIRED"]
+      ENV["DEMO_ACCOUNT_REQUIRED"] = "true"
+      demo_account_override_rejected = false
+      begin
+        reject_pilot_environment_overrides!
+      rescue FastlaneCore::Interface::FastlaneError
+        demo_account_override_rejected = true
+      ensure
+        if previous_demo_account_required
+          ENV["DEMO_ACCOUNT_REQUIRED"] = previous_demo_account_required
+        else
+          ENV.delete("DEMO_ACCOUNT_REQUIRED")
+        end
+      end
+      unless demo_account_override_rejected
+        UI.user_error!("Fastlane demo-account environment override was accepted.")
+      end
+
+      previous_gym_result_bundle_path = ENV["GYM_RESULT_BUNDLE_PATH"]
+      ENV["GYM_RESULT_BUNDLE_PATH"] = File.join(
+        repository_root,
+        "unexpected.xcresult"
+      )
+      gym_override_rejected = false
+      begin
+        reject_gym_environment_overrides!
+      rescue FastlaneCore::Interface::FastlaneError
+        gym_override_rejected = true
+      ensure
+        if previous_gym_result_bundle_path
+          ENV["GYM_RESULT_BUNDLE_PATH"] = previous_gym_result_bundle_path
+        else
+          ENV.delete("GYM_RESULT_BUNDLE_PATH")
+        end
+      end
+      unless gym_override_rejected
+        UI.user_error!("Fastlane Gym environment override was accepted.")
+      end
+
+      oversized_evidence = File.join(workspace, "oversized-evidence.json")
+      File.write(oversized_evidence, "x" * (DEMO_LAB_MAX_PLIST_BYTES + 1))
+      File.chmod(0o600, oversized_evidence)
+      previous_evidence = ENV["DEMO_LAB_EVIDENCE_PATH"]
+      ENV["DEMO_LAB_EVIDENCE_PATH"] = oversized_evidence
+      oversized_evidence_rejected = false
+      begin
+        load_upload_evidence(
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          xcode_toolchain: xcode_toolchain
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        oversized_evidence_rejected = true
+      ensure
+        if previous_evidence
+          ENV["DEMO_LAB_EVIDENCE_PATH"] = previous_evidence
+        else
+          ENV.delete("DEMO_LAB_EVIDENCE_PATH")
+        end
+      end
+      unless oversized_evidence_rejected
+        UI.user_error!("Oversized DemoLab evidence was accepted.")
+      end
+
+      non_object_evidence = File.join(workspace, "non-object-evidence.json")
+      File.write(non_object_evidence, "null\n")
+      File.chmod(0o600, non_object_evidence)
+      previous_evidence = ENV["DEMO_LAB_EVIDENCE_PATH"]
+      ENV["DEMO_LAB_EVIDENCE_PATH"] = non_object_evidence
+      non_object_evidence_rejected = false
+      begin
+        load_upload_evidence(
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          xcode_toolchain: xcode_toolchain
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        non_object_evidence_rejected = true
+      ensure
+        if previous_evidence
+          ENV["DEMO_LAB_EVIDENCE_PATH"] = previous_evidence
+        else
+          ENV.delete("DEMO_LAB_EVIDENCE_PATH")
+        end
+      end
+      unless non_object_evidence_rejected
+        UI.user_error!("Non-object DemoLab evidence was accepted.")
+      end
+
+      derived_data = File.join(workspace, "DerivedData")
+      with_pinned_xcode_environment(xcode_toolchain) do
+        verify_selected_xcode_toolchain!(xcode_toolchain)
+        sh(
+          xcode_toolchain.dig("xcodebuild", "path"),
+          "-project",
+          project,
+          "-scheme",
+          "DemoLab",
+          "-configuration",
+          "Debug",
+          "-sdk",
+          "iphonesimulator",
+          "-destination",
+          "generic/platform=iOS Simulator",
+          "-derivedDataPath",
+          derived_data,
+          "CODE_SIGNING_ALLOWED=NO",
+          "CODE_SIGNING_REQUIRED=NO",
+          "build"
+        )
+        verify_selected_xcode_toolchain!(xcode_toolchain)
+      end
+
+      products = File.join(
+        derived_data,
+        "Build",
+        "Products",
+        "Debug-iphonesimulator"
+      )
+      application = File.join(products, "DemoLab.app")
+      expected_binaries = [
+        File.join(application, "DemoLab"),
+        File.join(
+          application,
+          "Frameworks",
+          "DemoFramework.framework",
+          "DemoFramework"
+        ),
+        File.join(
+          application,
+          "PlugIns",
+          "DemoShareExtension.appex",
+          "DemoShareExtension"
+        ),
+      ]
+      expected_binaries.each do |binary|
+        UI.user_error!("DemoLab product is missing: #{binary}") unless File.executable?(binary)
+      end
+
+      expected_identifiers = {
+        File.join(application, "Info.plist") => "com.example.orchardprobe.demolab",
+        File.join(
+          application,
+          "Frameworks",
+          "DemoFramework.framework",
+          "Info.plist"
+        ) => "com.example.orchardprobe.demolab.framework",
+        File.join(
+          application,
+          "PlugIns",
+          "DemoShareExtension.appex",
+          "Info.plist"
+        ) => "com.example.orchardprobe.demolab.share",
+      }
+      expected_identifiers.each do |plist, expected_identifier|
+        observed_identifier = command_output(
+          xcode_toolchain.dig("plutil", "path"),
+          "-extract",
+          "CFBundleIdentifier",
+          "raw",
+          plist
+        )
+        unless observed_identifier == expected_identifier
+          UI.user_error!("Unexpected DemoLab bundle identifier.")
+        end
+      end
+
+      UI.user_error!("DemoLab asset catalog is missing.") unless File.file?(
+        File.join(application, "Assets.car")
+      )
+      unless command_output(
+        xcode_toolchain.dig("plutil", "path"),
+        "-extract",
+        "ITSAppUsesNonExemptEncryption",
+        "raw",
+        File.join(application, "Info.plist")
+      ) == "false"
+        UI.user_error!("DemoLab export-compliance declaration is missing.")
+      end
+
+      package_root = File.join(workspace, "Package")
+      payload = File.join(package_root, "Payload")
+      FileUtils.mkdir_p(payload)
+      FileUtils.cp_r(application, payload)
+      check_ipa = File.join(workspace, "DemoLab-check.ipa")
+      sh(
+        "/usr/bin/ditto",
+        "-c",
+        "-k",
+        "--norsrc",
+        "--keepParent",
+        payload,
+        check_ipa
+      )
+      Zip::File.open(check_ipa) do |archive|
+        info = archive.find_entry("Payload/DemoLab.app/Info.plist")
+        unless info&.incomplete?
+          UI.user_error!("DemoLab check IPA did not exercise ZIP data descriptors.")
+        end
+      end
+      packaged = inspect_demolab_ipa!(
+        check_ipa,
+        app_identifier: "com.example.orchardprobe.demolab",
+        share_identifier: "com.example.orchardprobe.demolab.share",
+        marketing_version: "1.0",
+        build_number: "1",
+        xcode_toolchain: xcode_toolchain
+      )
+      unless packaged["archive"] == {
+        "size" => File.size(check_ipa),
+        "sha256" => sha256(check_ipa),
+      }
+        UI.user_error!("DemoLab IPA inspection did not bind the measured bytes.")
+      end
+      statuses_valid = packaged["binaries"].all? do |binary|
+        binary["initial_protection_status"] == "not_observed" &&
+          binary["expected_plaintext_status"] == "candidate_pre_upload_archive_only"
+      end
+      UI.user_error!("DemoLab package evidence status is incomplete.") unless statuses_valid
+
+      source_commit = git_command_output("rev-parse", "HEAD")
+      complete_evidence = {
+        "schema_version" => 1,
+        "profile" => DEMO_LAB_EVIDENCE_PROFILE,
+        "purpose" => DEMO_LAB_EVIDENCE_PURPOSE,
+        "decision" => DEMO_LAB_EVIDENCE_DECISION,
+        "created_at" => Time.now.utc.iso8601,
+        "source" => {
+          "commit" => source_commit,
+          "tree_clean" => true,
+          "fixture" => "fixtures/DemoLab",
+        },
+        "toolchain" => {
+          "fastlane_version" => Fastlane::VERSION,
+          "xcodegen_version" => selected_xcodegen[1],
+          "xcode" => xcode_toolchain.fetch("xcode_version"),
+          "iphoneos_sdk_version" =>
+            xcode_toolchain.fetch("iphoneos_sdk_version"),
+          "iphoneos_sdk_build" =>
+            xcode_toolchain.fetch("iphoneos_sdk_build"),
+        },
+        "build" => {
+          "configuration" => "Release",
+          "marketing_version" => "1.0",
+          "build_number" => "1",
+          "distribution" => "app-store",
+          "bundle_identifiers" =>
+            "operator-provided first-party identifiers; redacted",
+        },
+        "artifacts" => {
+          "ipa" => {
+            "filename" => "DemoLab-1.ipa",
+            "size" => File.size(check_ipa),
+            "sha256" => sha256(check_ipa),
+          },
+          "archive_binaries" => expected_binaries.each_with_index.map do |path, index|
+            specification = DEMO_LAB_BINARY_SPECS[index]
+            binary_evidence(
+              path,
+              specification["relative_path"],
+              specification["role"],
+              xcode_toolchain: xcode_toolchain
+            )
+          end,
+          "package" => packaged.reject do |key, _|
+            ["archive", "binaries"].include?(key)
+          end,
+          "ipa_binaries" => packaged["binaries"],
+        },
+        "lineage" => {
+          "uploaded_ipa_bound" => false,
+          "installed_artifact_bound" => false,
+          "note" => DEMO_LAB_LINEAGE_NOTE,
+        },
+      }
+      validate_upload_evidence_structure!(complete_evidence)
+      malformed_timestamp_evidence = JSON.parse(
+        JSON.generate(complete_evidence)
+      )
+      malformed_timestamp_evidence["created_at"] = nil
+      malformed_timestamp_rejected = false
+      begin
+        validate_upload_evidence_structure!(malformed_timestamp_evidence)
+      rescue FastlaneCore::Interface::FastlaneError
+        malformed_timestamp_rejected = true
+      end
+      unless malformed_timestamp_rejected
+        UI.user_error!("Non-string DemoLab evidence timestamp was accepted.")
+      end
+      malformed_xcodegen_evidence = JSON.parse(
+        JSON.generate(complete_evidence)
+      )
+      malformed_xcodegen_evidence["toolchain"]["xcodegen_version"] = "latest"
+      malformed_xcodegen_rejected = false
+      begin
+        validate_upload_evidence_structure!(malformed_xcodegen_evidence)
+      rescue FastlaneCore::Interface::FastlaneError
+        malformed_xcodegen_rejected = true
+      end
+      unless malformed_xcodegen_rejected
+        UI.user_error!("Unversioned XcodeGen evidence was accepted.")
+      end
+
+      complete_evidence_directory = File.join(
+        workspace,
+        "CompleteEvidence"
+      )
+      Dir.mkdir(complete_evidence_directory, 0o700)
+      complete_ipa = File.join(
+        complete_evidence_directory,
+        "DemoLab-1.ipa"
+      )
+      FileUtils.cp(check_ipa, complete_ipa)
+      complete_archive_applications = File.join(
+        complete_evidence_directory,
+        "DemoLab.xcarchive",
+        "Products",
+        "Applications"
+      )
+      FileUtils.mkdir_p(complete_archive_applications)
+      FileUtils.cp_r(application, complete_archive_applications)
+      complete_evidence_path = File.join(
+        complete_evidence_directory,
+        "demolab-pre-upload-evidence.json"
+      )
+      File.write(
+        complete_evidence_path,
+        "#{JSON.generate(complete_evidence)}\n"
+      )
+      File.chmod(0o600, complete_evidence_path)
+      previous_evidence = ENV["DEMO_LAB_EVIDENCE_PATH"]
+      ENV["DEMO_LAB_EVIDENCE_PATH"] = complete_evidence_path
+      begin
+        app_identifier_was_set = ENV.key?("DEMO_LAB_APP_BUNDLE_ID")
+        share_identifier_was_set = ENV.key?("DEMO_LAB_SHARE_BUNDLE_ID")
+        previous_app_identifier = ENV.delete("DEMO_LAB_APP_BUNDLE_ID")
+        previous_share_identifier = ENV.delete("DEMO_LAB_SHARE_BUNDLE_ID")
+        begin
+          reconciliation_evidence_path, reconciliation_evidence =
+            load_demolab_evidence
+          unless reconciliation_evidence_path == complete_evidence_path &&
+                 reconciliation_evidence == complete_evidence
+            UI.user_error!(
+              "DemoLab reconciliation evidence did not round-trip."
+            )
+          end
+        ensure
+          if app_identifier_was_set
+            ENV["DEMO_LAB_APP_BUNDLE_ID"] = previous_app_identifier
+          end
+          if share_identifier_was_set
+            ENV["DEMO_LAB_SHARE_BUNDLE_ID"] = previous_share_identifier
+          end
+        end
+
+        loaded_evidence_path, loaded_evidence, loaded_ipa, loaded_archive =
+          load_upload_evidence(
+            app_identifier: "com.example.orchardprobe.demolab",
+            share_identifier: "com.example.orchardprobe.demolab.share",
+            xcode_toolchain: xcode_toolchain
+          )
+        unless loaded_evidence_path == complete_evidence_path &&
+               loaded_evidence == complete_evidence &&
+               loaded_ipa == complete_ipa &&
+               loaded_archive == File.join(
+                 complete_evidence_directory,
+                 "DemoLab.xcarchive"
+               )
+          UI.user_error!("Complete DemoLab upload evidence did not round-trip.")
+        end
+
+        archive_main_binary = demolab_archive_binary_inputs(
+          loaded_archive
+        ).first.first
+        original_archive_main = File.binread(archive_main_binary)
+        archive_revalidation_rejected = false
+        begin
+          File.open(archive_main_binary, "ab") { |file| file.write("changed") }
+          verify_evidence_bound_archive!(
+            loaded_archive,
+            loaded_evidence,
+            xcode_toolchain: xcode_toolchain
+          )
+        rescue FastlaneCore::Interface::FastlaneError
+          archive_revalidation_rejected = true
+        ensure
+          File.binwrite(archive_main_binary, original_archive_main)
+        end
+        unless archive_revalidation_rejected
+          UI.user_error!(
+            "A post-load DemoLab archive change passed upload revalidation."
+          )
+        end
+      ensure
+        if previous_evidence
+          ENV["DEMO_LAB_EVIDENCE_PATH"] = previous_evidence
+        else
+          ENV.delete("DEMO_LAB_EVIDENCE_PATH")
+        end
+      end
+
+      altered_archive = JSON.parse(JSON.generate(complete_evidence))
+      altered_archive["artifacts"]["archive_binaries"][0]["sha256"] =
+        "0" * 64
+      altered_archive_path = File.join(
+        complete_evidence_directory,
+        "altered-archive-evidence.json"
+      )
+      File.write(
+        altered_archive_path,
+        "#{JSON.generate(altered_archive)}\n"
+      )
+      File.chmod(0o600, altered_archive_path)
+      previous_evidence = ENV["DEMO_LAB_EVIDENCE_PATH"]
+      ENV["DEMO_LAB_EVIDENCE_PATH"] = altered_archive_path
+      altered_archive_rejected = false
+      begin
+        load_upload_evidence(
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          xcode_toolchain: xcode_toolchain
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        altered_archive_rejected = true
+      ensure
+        if previous_evidence
+          ENV["DEMO_LAB_EVIDENCE_PATH"] = previous_evidence
+        else
+          ENV.delete("DEMO_LAB_EVIDENCE_PATH")
+        end
+      end
+      unless altered_archive_rejected
+        UI.user_error!("Altered DemoLab archive evidence was accepted.")
+      end
+
+      incomplete_evidence = JSON.parse(JSON.generate(complete_evidence))
+      incomplete_evidence["artifacts"].delete("archive_binaries")
+      incomplete_evidence_path = File.join(
+        workspace,
+        "incomplete-evidence.json"
+      )
+      File.write(
+        incomplete_evidence_path,
+        "#{JSON.generate(incomplete_evidence)}\n"
+      )
+      File.chmod(0o600, incomplete_evidence_path)
+      previous_evidence = ENV["DEMO_LAB_EVIDENCE_PATH"]
+      ENV["DEMO_LAB_EVIDENCE_PATH"] = incomplete_evidence_path
+      incomplete_evidence_rejected = false
+      begin
+        load_upload_evidence(
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          xcode_toolchain: xcode_toolchain
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        incomplete_evidence_rejected = true
+      ensure
+        if previous_evidence
+          ENV["DEMO_LAB_EVIDENCE_PATH"] = previous_evidence
+        else
+          ENV.delete("DEMO_LAB_EVIDENCE_PATH")
+        end
+      end
+      unless incomplete_evidence_rejected
+        UI.user_error!("Incomplete DemoLab upload evidence was accepted.")
+      end
+
+      altered_lineage = JSON.parse(JSON.generate(complete_evidence))
+      altered_lineage["lineage"]["uploaded_ipa_bound"] = true
+      altered_lineage_rejected = false
+      begin
+        validate_upload_evidence_structure!(altered_lineage)
+      rescue FastlaneCore::Interface::FastlaneError
+        altered_lineage_rejected = true
+      end
+      unless altered_lineage_rejected
+        UI.user_error!("Altered DemoLab lineage evidence was accepted.")
+      end
+
+      invalid_package_root = File.join(workspace, "InvalidPackage")
+      invalid_payload = File.join(invalid_package_root, "Payload")
+      FileUtils.mkdir_p(invalid_payload)
+      FileUtils.cp_r(application, invalid_payload)
+      command_output(
+        xcode_toolchain.dig("plutil", "path"),
+        "-remove",
+        "ITSAppUsesNonExemptEncryption",
+        File.join(invalid_payload, "DemoLab.app", "Info.plist")
+      )
+      invalid_ipa = File.join(workspace, "DemoLab-invalid-compliance.ipa")
+      sh(
+        "/usr/bin/ditto",
+        "-c",
+        "-k",
+        "--norsrc",
+        "--keepParent",
+        invalid_payload,
+        invalid_ipa
+      )
+      compliance_rejected = false
+      begin
+        inspect_demolab_ipa!(
+          invalid_ipa,
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          marketing_version: "1.0",
+          build_number: "1",
+          xcode_toolchain: xcode_toolchain
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        compliance_rejected = true
+      end
+      unless compliance_rejected
+        UI.user_error!("DemoLab IPA without export compliance was accepted.")
+      end
+
+      snapshot_evidence = {
+        "artifacts" => {
+          "ipa" => {
+            "size" => File.size(check_ipa),
+            "sha256" => sha256(check_ipa),
+          },
+        },
+      }
+      upload_snapshot = stage_evidence_bound_ipa(
+        check_ipa,
+        snapshot_evidence
+      )
+      begin
+        expected_snapshot_sha256 = sha256(check_ipa)
+        snapshot_path = upload_snapshot.path
+        File.write(check_ipa, "replacement-after-snapshot")
+        descriptor_write_rejected = false
+        begin
+          upload_snapshot.write("mutation")
+        rescue IOError, Errno::EBADF
+          descriptor_write_rejected = true
+        end
+        upload_snapshot.rewind
+        child_output, child_status = Open3.capture2(
+          sanitized_dynamic_loader_environment,
+          "/usr/bin/shasum",
+          "-a",
+          "256",
+          "/dev/fd/#{DEMO_LAB_UPLOAD_IPA_FD}",
+          DEMO_LAB_UPLOAD_IPA_FD => upload_snapshot
+        )
+        unless !File.exist?(snapshot_path) &&
+               upload_snapshot.stat.size == snapshot_evidence.dig(
+                 "artifacts",
+                 "ipa",
+                 "size"
+               ) &&
+               digest_open_file(upload_snapshot) == expected_snapshot_sha256 &&
+               (upload_snapshot.stat.mode & 0o777) == 0o400 &&
+               (upload_snapshot.fcntl(Fcntl::F_GETFL) & Fcntl::O_ACCMODE) ==
+                 Fcntl::O_RDONLY &&
+               descriptor_write_rejected &&
+               child_status.success? &&
+               child_output.split.first == expected_snapshot_sha256
+          UI.user_error!("Anonymous DemoLab upload snapshot check failed.")
+        end
+      ensure
+        upload_snapshot.close
+      end
+
+      altool_success = {
+        "success-message" => "Package uploaded",
+        "tool-version" => "test",
+      }
+      unless validate_altool_upload_result!(
+        JSON.generate(altool_success),
+        process_success: true
+      ) == altool_success
+        UI.user_error!("Valid Apple altool JSON was not accepted.")
+      end
+      altool_product_error_rejected = false
+      begin
+        validate_altool_upload_result!(
+          JSON.generate(
+            {
+              "product-errors" => [
+                {
+                  "code" => -1,
+                  "message" => "simulated upload rejection",
+                },
+              ],
+            }
+          ),
+          process_success: true
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        altool_product_error_rejected = true
+      end
+      unless altool_product_error_rejected
+        UI.user_error!("Apple altool product-errors were accepted.")
+      end
+      team_issuer = "12345678-1234-1234-1234-123456789012"
+      unless altool_api_key_arguments(
+        key_type: "team",
+        key_id: "ABCDEFGHIJ",
+        team_issuer_id: team_issuer
+      ) == [
+        "--api-key",
+        "ABCDEFGHIJ",
+        "--api-issuer",
+        team_issuer,
+      ] &&
+             altool_api_key_arguments(
+               key_type: "individual",
+               key_id: "ABCDEFGHIJ",
+               team_issuer_id: nil
+             ) == [
+               "--api-key",
+               "ABCDEFGHIJ",
+               "--api-issuer",
+               "ABCDEFGHIJ",
+               "--api-key-subject",
+               "user",
+             ]
+        UI.user_error!("Apple altool API-key argument selection failed.")
+      end
+      invalid_api_key_arguments = [
+        {
+          key_type: "team",
+          key_id: "ABCDEFGHIJ",
+          team_issuer_id: nil,
+        },
+        {
+          key_type: "individual",
+          key_id: "ABCDEFGHIJ",
+          team_issuer_id: team_issuer,
+        },
+        {
+          key_type: "unknown",
+          key_id: "ABCDEFGHIJ",
+          team_issuer_id: nil,
+        },
+      ]
+      invalid_api_key_arguments.each do |arguments|
+        rejected = false
+        begin
+          altool_api_key_arguments(**arguments)
+        rescue FastlaneCore::Interface::FastlaneError
+          rejected = true
+        end
+        unless rejected
+          UI.user_error!("Invalid Apple altool API-key arguments were accepted.")
+        end
+      end
+      altool = selected_altool(xcode_toolchain)
+      resolved_altool = altool.fetch("path")
+      discovered_altool = File.realpath(
+        command_output_with_environment(
+          xcode_toolchain.fetch("environment"),
+          xcode_toolchain.dig("xcrun", "path"),
+          "--find",
+          "altool"
+        )
+      )
+      unless Pathname.new(resolved_altool).absolute? &&
+             File.file?(resolved_altool) &&
+             File.executable?(resolved_altool) &&
+             File.realpath(resolved_altool) == resolved_altool &&
+             File.basename(resolved_altool) == "altool"
+        UI.user_error!("Selected Xcode altool path validation failed.")
+      end
+      verify_selected_altool!(xcode_toolchain, altool)
+      changed_altool_rejected = false
+      begin
+        changed_identity = altool.fetch("identity").dup
+        changed_identity[1] += 1
+        verify_selected_altool!(
+          xcode_toolchain,
+          altool.merge("identity" => changed_identity)
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        changed_altool_rejected = true
+      end
+      unless changed_altool_rejected
+        UI.user_error!("A changed Apple altool identity was accepted.")
+      end
+      if File.basename(discovered_altool) == "altoolShim"
+        unless resolved_altool != discovered_altool &&
+               File.dirname(resolved_altool) == File.dirname(discovered_altool)
+          UI.user_error!("Xcode altoolShim was not replaced by its real sibling.")
+        end
+      end
+      altool_home = external_temporary_directory(
+        "orchardprobe-demolab-altool-help-"
+      )
+      begin
+        help_stdout, help_stderr, help_status = Open3.capture3(
+          {
+            "CFFIXED_USER_HOME" => altool_home,
+            "HOME" => altool_home,
+            "LANG" => "en_US.UTF-8",
+            "LC_ALL" => "en_US.UTF-8",
+            "PATH" => "/usr/bin:/bin",
+            "TMPDIR" => altool_home,
+          },
+          resolved_altool,
+          "--help",
+          unsetenv_others: true
+        )
+        help_output = "#{help_stdout}\n#{help_stderr}"
+        unless help_status.success? &&
+               help_output.bytesize <= DEMO_LAB_MAX_ALTOOL_OUTPUT_BYTES &&
+               help_output.include?("--upload-package") &&
+               help_output.include?("--p8-file-path") &&
+               help_output.include?("--api-key-subject")
+          UI.user_error!(
+            "Selected Xcode real altool failed with a private empty home."
+          )
+        end
+      ensure
+        FileUtils.rm_rf(altool_home)
+      end
+      timeout_pid = Process.spawn(
+        sanitized_dynamic_loader_environment,
+        "/bin/sleep",
+        "5",
+        out: File::NULL,
+        err: File::NULL,
+        pgroup: true
+      )
+      timeout_status, timeout_triggered = wait_for_bounded_process(
+        timeout_pid,
+        timeout_seconds: 0.1
+      )
+      unless timeout_triggered && !timeout_status.success?
+        UI.user_error!("Bounded Apple upload process check failed.")
+      end
+
+      result_target = File.join(workspace, "result-target.json")
+      result_link = File.join(workspace, "demolab-upload-result.json")
+      File.write(result_target, "preserve")
+      File.symlink(result_target, result_link)
+      result_link_rejected = false
+      begin
+        open_exclusive_private_file(result_link).close
+      rescue Errno::EEXIST, Errno::ELOOP
+        result_link_rejected = true
+      end
+      unless result_link_rejected && File.read(result_target) == "preserve"
+        UI.user_error!("Exclusive upload-result creation followed a symbolic link.")
+      end
+
+      upload_state_path = File.join(workspace, "upload-state.json")
+      upload_state_file = publish_new_private_json_record!(
+        upload_state_path,
+        {
+          "status" => "indeterminate",
+          "note" => "longer record retained until reconciliation",
+        },
+        "DemoLab check upload result"
+      )
+      unless JSON.parse(File.read(upload_state_path))["status"] == "indeterminate"
+        UI.user_error!("Indeterminate upload state was not persisted.")
+      end
+      original_upload_state_inode = upload_state_file.stat.ino
+      original_upload_state_content = File.read(upload_state_path)
+      oversized_atomic_update_rejected = false
+      begin
+        replace_locked_private_json_record!(
+          upload_state_path,
+          upload_state_file,
+          { "status" => "accepted", "padding" => "x" * 65_536 },
+          "DemoLab check upload result"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        oversized_atomic_update_rejected = true
+      end
+      unless oversized_atomic_update_rejected &&
+             File.stat(upload_state_path).ino == original_upload_state_inode &&
+             File.read(upload_state_path) == original_upload_state_content &&
+             Dir.glob(
+               File.join(workspace, ".upload-state.json.tmp-*")
+             ).empty?
+        UI.user_error!("Failed atomic upload-state update changed the live record.")
+      end
+      replacement_upload_state_file = replace_locked_private_json_record!(
+        upload_state_path,
+        upload_state_file,
+        { "status" => "accepted" },
+        "DemoLab check upload result"
+      )
+      upload_state_file.flock(File::LOCK_UN)
+      upload_state_file.close
+      upload_state_file = replacement_upload_state_file
+      unless JSON.parse(File.read(upload_state_path)) == { "status" => "accepted" }
+        UI.user_error!("Accepted upload state did not replace the prior record.")
+      end
+      unless File.stat(upload_state_path).ino != original_upload_state_inode
+        UI.user_error!("Accepted upload state was not atomically replaced.")
+      end
+      upload_state_file.flock(File::LOCK_UN)
+      upload_state_file.close
+
+      retry_result_path = File.join(
+        workspace,
+        "retry-demolab-upload-result.json"
+      )
+      retry_attempt_started_at = Time.now.utc.iso8601
+      retry_result = {
+        "schema_version" => 1,
+        "source_commit" => complete_evidence.dig("source", "commit"),
+        "ipa_sha256" => complete_evidence.dig(
+          "artifacts",
+          "ipa",
+          "sha256"
+        ),
+        "attempt_started_at" => retry_attempt_started_at,
+        "destination" => "TestFlight internal preparation",
+        "external_distribution" => false,
+        "status" => "indeterminate",
+        "note" => DEMO_LAB_UPLOAD_INDETERMINATE_NOTE,
+      }
+      retry_result_file = publish_new_private_json_record!(
+        retry_result_path,
+        retry_result,
+        "DemoLab check retry result"
+      )
+      begin
+        active_upload_reconciliation_rejected = false
+        begin
+          reconcile_indeterminate_upload_result!(
+            retry_result_path,
+            complete_evidence,
+            expected_attempt_started_at: retry_attempt_started_at
+          )
+        rescue FastlaneCore::Interface::FastlaneError
+          active_upload_reconciliation_rejected = true
+        end
+        unless active_upload_reconciliation_rejected
+          UI.user_error!("An active upload result was reconciled.")
+        end
+      ensure
+        retry_result_file.close
+      end
+      wrong_retry_timestamp_rejected = false
+      begin
+        reconcile_indeterminate_upload_result!(
+          retry_result_path,
+          complete_evidence,
+          expected_attempt_started_at: "2000-01-01T00:00:00Z"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        wrong_retry_timestamp_rejected = true
+      end
+      unless wrong_retry_timestamp_rejected && File.file?(retry_result_path)
+        UI.user_error!("Mismatched upload reconciliation was accepted.")
+      end
+
+      reconciled_path, reconciled_record =
+        reconcile_indeterminate_upload_result!(
+          retry_result_path,
+          complete_evidence,
+          expected_attempt_started_at: retry_attempt_started_at
+        )
+      unless !File.exist?(retry_result_path) &&
+             File.file?(reconciled_path) &&
+             (File.stat(reconciled_path).mode & 0o077).zero? &&
+             reconciled_record["status"] == "reconciled_absent" &&
+             JSON.parse(File.read(reconciled_path)) == reconciled_record
+        UI.user_error!("Indeterminate upload reconciliation did not publish safely.")
+      end
+      retry_reservation = open_exclusive_private_file(retry_result_path)
+      retry_reservation.close
+
+      safe_log_directory = File.join(workspace, "safe-altool-logs")
+      Dir.mkdir(safe_log_directory, 0o700)
+      File.chmod(0o755, safe_log_directory)
+      safe_log = File.join(safe_log_directory, "delivery.log")
+      File.open(safe_log, File::WRONLY | File::CREAT | File::EXCL, 0o600) do |file|
+        file.write("bounded")
+      end
+      File.chmod(0o644, safe_log)
+      validate_private_altool_logs!(safe_log_directory)
+
+      oversized_log_directory = File.join(workspace, "oversized-altool-logs")
+      Dir.mkdir(oversized_log_directory, 0o700)
+      oversized_log = File.join(oversized_log_directory, "delivery.log")
+      File.open(
+        oversized_log,
+        File::WRONLY | File::CREAT | File::EXCL,
+        0o600
+      ) do |file|
+        file.truncate(DEMO_LAB_MAX_ALTOOL_LOG_BYTES + 1)
+      end
+      oversized_log_rejected = false
+      begin
+        validate_private_altool_logs!(oversized_log_directory)
+      rescue FastlaneCore::Interface::FastlaneError
+        oversized_log_rejected = true
+      end
+      unless oversized_log_rejected
+        UI.user_error!("Oversized Apple altool log output was accepted.")
+      end
+
+      snapshot_workspace, snapshot_fixture, = prepare_demolab_project(
+        source_commit: source_commit
+      )
+      begin
+        fixture_plist = "fixtures/DemoLab/App/Info.plist"
+        expected_blob = git_command_output(
+          "rev-parse",
+          "#{source_commit}:#{fixture_plist}"
+        )
+        observed_blob = git_command_output(
+          "hash-object",
+          File.join(snapshot_fixture, "App", "Info.plist")
+        )
+        unless observed_blob == expected_blob
+          UI.user_error!("Immutable DemoLab source snapshot check failed.")
+        end
+      ensure
+        FileUtils.rm_rf(snapshot_workspace)
+      end
+
+      UI.success("Unsigned DemoLab simulator fixture passed.")
+    ensure
+      FileUtils.rm_rf(workspace)
+    end
+  end
+
+  desc "Archive and export one signed first-party DemoLab candidate outside Git"
+  lane :demolab_archive do
+    ensure_manual_lane!
+    ensure_clean_source!
+    reject_gym_environment_overrides!
+    xcode_toolchain = selected_xcode_toolchain
+
+    app_identifier, share_identifier = demolab_bundle_identifiers
+    team_identifier = required_environment(
+      "DEMO_LAB_TEAM_ID",
+      pattern: /\A[A-Z0-9]{10}\z/
+    )
+    marketing_version = ENV.fetch("DEMO_LAB_MARKETING_VERSION", "1.0").strip
+    unless /\A[0-9]+(?:\.[0-9]+){0,2}\z/.match?(marketing_version)
+      UI.user_error!("DEMO_LAB_MARKETING_VERSION has an invalid format.")
+    end
+    build_number = required_environment(
+      "DEMO_LAB_BUILD_NUMBER",
+      pattern: /\A[1-9][0-9]{0,17}\z/
+    )
+
+    output_identity = private_output_directory
+    output_root = output_identity.first
+    source_commit = git_command_output("rev-parse", "HEAD")
+    run_directory = File.join(
+      output_root,
+      "#{marketing_version}-#{build_number}-#{source_commit[0, 12]}"
+    )
+
+    workspace, _, project, project_xcodegen_version =
+      prepare_demolab_project(source_commit: source_commit)
+    staging_directory = nil
+    gym_scratch_root = nil
+    published = false
+    begin
+      with_locked_private_directory(
+        output_root,
+        output_identity,
+        "DEMO_LAB_OUTPUT_DIR"
+      ) do |output_handle|
+        verify_locked_directory!(
+          output_handle,
+          output_root,
+          output_identity,
+          "DEMO_LAB_OUTPUT_DIR"
+        )
+        if File.exist?(run_directory) || File.symlink?(run_directory)
+          UI.user_error!("Refusing to overwrite an existing DemoLab run directory.")
+        end
+
+        staging_directory = Dir.mktmpdir(".demolab-staging-", output_root)
+        File.chmod(0o700, staging_directory)
+        staging_identity = private_directory_identity!(
+          staging_directory,
+          "DemoLab staging directory"
+        )
+        with_locked_private_directory(
+          staging_directory,
+          staging_identity,
+          "DemoLab staging directory"
+        ) do |staging_handle|
+          gym_scratch_root = File.join(
+            staging_directory,
+            ".gym-scratch-#{SecureRandom.hex(12)}"
+          )
+          gym_scratch_identity = create_exclusive_private_directory!(
+            gym_scratch_root,
+            "Gym scratch root",
+            private_parent_identity: staging_identity
+          )
+          archive_path = File.join(staging_directory, "DemoLab.xcarchive")
+          xcargs = [
+            "-allowProvisioningUpdates",
+            "CODE_SIGN_STYLE=Automatic",
+            "CURRENT_PROJECT_VERSION=#{build_number}",
+            "DEVELOPMENT_TEAM=#{team_identifier}",
+            "DEMO_LAB_APP_BUNDLE_ID=#{app_identifier}",
+            "DEMO_LAB_FRAMEWORK_BUNDLE_ID=#{app_identifier}.framework",
+            "DEMO_LAB_SHARE_BUNDLE_ID=#{share_identifier}",
+            "MARKETING_VERSION=#{marketing_version}",
+          ].shelljoin
+
+          ipa_path = nil
+          evidence_path = nil
+          with_pinned_xcode_environment(xcode_toolchain) do
+            verify_selected_xcode_toolchain!(xcode_toolchain)
+            tmpdir_was_set = ENV.key?("TMPDIR")
+            previous_tmpdir = ENV["TMPDIR"]
+            ENV["TMPDIR"] = gym_scratch_root
+            begin
+              ipa_path = build_app(
+                project: project,
+                scheme: "DemoLab",
+                configuration: "Release",
+                clean: true,
+                sdk: "iphoneos",
+                archive_path: archive_path,
+                derived_data_path: File.join(workspace, "DerivedData"),
+                output_directory: staging_directory,
+                output_name: "DemoLab-#{build_number}.ipa",
+                buildlog_path: staging_directory,
+                export_method: "app-store",
+                export_options: {
+                  method: "app-store",
+                  signingStyle: "automatic",
+                  teamID: team_identifier,
+                  manageAppVersionAndBuildNumber: false,
+                },
+                xcargs: xcargs,
+                export_xcargs: "-allowProvisioningUpdates",
+                result_bundle: true,
+                xcodebuild_command: Shellwords.escape(
+                  xcode_toolchain.dig("xcodebuild", "path")
+                ),
+                xcodebuild_formatter: ""
+              )
+            ensure
+              if tmpdir_was_set
+                ENV["TMPDIR"] = previous_tmpdir
+              else
+                ENV.delete("TMPDIR")
+              end
+            end
+            gym_export_path = Gym.cache&.fetch(:temporary_output_path, nil)
+            unless gym_export_path &&
+                   Pathname.new(gym_export_path).absolute?
+              UI.user_error!("Gym did not report its controlled export scratch path.")
+            end
+            gym_export_stat = File.lstat(gym_export_path)
+            resolved_gym_export = File.realpath(gym_export_path)
+            unless gym_export_stat.directory? &&
+                   !gym_export_stat.symlink? &&
+                   File.dirname(resolved_gym_export) == gym_scratch_identity.first
+              UI.user_error!("Gym export scratch escaped the controlled staging root.")
+            end
+            unless private_directory_identity!(
+              gym_scratch_root,
+              "Gym scratch root"
+            ) == gym_scratch_identity
+              UI.user_error!("Gym scratch root changed during export.")
+            end
+            FileUtils.rm_rf(gym_scratch_root)
+            if File.exist?(gym_scratch_root) || File.symlink?(gym_scratch_root)
+              UI.user_error!("Unable to remove Gym export scratch artifacts.")
+            end
+            gym_scratch_root = nil
+            verify_selected_xcode_toolchain!(xcode_toolchain)
+
+            evidence_path = write_pre_upload_evidence(
+              run_directory: staging_directory,
+              archive_path: archive_path,
+              ipa_path: ipa_path,
+              source_commit: source_commit,
+              xcodegen_version: project_xcodegen_version,
+              marketing_version: marketing_version,
+              build_number: build_number,
+              app_identifier: app_identifier,
+              share_identifier: share_identifier,
+              xcode_toolchain: xcode_toolchain
+            )
+            verify_selected_xcode_toolchain!(xcode_toolchain)
+          end
+          verify_locked_directory!(
+            staging_handle,
+            staging_directory,
+            staging_identity,
+            "DemoLab staging directory"
+          )
+          verify_locked_directory!(
+            output_handle,
+            output_root,
+            output_identity,
+            "DEMO_LAB_OUTPUT_DIR"
+          )
+          rename_exclusive_no_follow!(
+            staging_directory,
+            run_directory,
+            "DemoLab run directory"
+          )
+          published = true
+          staging_directory = nil
+
+          published_ipa = File.join(
+            run_directory,
+            File.basename(ipa_path)
+          )
+          published_evidence = File.join(
+            run_directory,
+            File.basename(evidence_path)
+          )
+          UI.success("Created first-party archive candidate: #{published_ipa}")
+          UI.success("Created pre-upload evidence: #{published_evidence}")
+        end
+      end
+    ensure
+      FileUtils.rm_rf(gym_scratch_root) if gym_scratch_root && !published
+      FileUtils.rm_rf(staging_directory) if staging_directory && !published
+      FileUtils.rm_rf(workspace)
+    end
+  end
+
+  desc "Reconcile and archive one indeterminate DemoLab upload result"
+  lane :demolab_reconcile_indeterminate_upload do
+    ensure_manual_lane!
+    ensure_clean_source!
+    reject_pilot_environment_overrides!
+    confirmation = required_environment(
+      "DEMO_LAB_CONFIRM_RETRY_AFTER_RECONCILIATION"
+    )
+    unless confirmation == DEMO_LAB_RETRY_CONFIRMATION
+      UI.user_error!(
+        "Explicit confirmation that the exact build is absent is missing."
+      )
+    end
+    expected_attempt_started_at = required_environment(
+      "DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT"
+    )
+    unless valid_utc_timestamp?(expected_attempt_started_at)
+      UI.user_error!("The reconciled upload-attempt timestamp is invalid.")
+    end
+
+    evidence_path, evidence = load_demolab_evidence
+    result_path = File.join(
+      File.dirname(evidence_path),
+      "demolab-upload-result.json"
+    )
+    archive_path, = reconcile_indeterminate_upload_result!(
+      result_path,
+      evidence,
+      expected_attempt_started_at: expected_attempt_started_at
+    )
+    UI.success(
+      "Archived the reconciled absent upload attempt: #{archive_path}"
+    )
+    UI.important(
+      "A new upload attempt is now permitted. Recheck the exact account, " \
+      "version, build number, and evidence before running the upload lane."
+    )
+  end
+
+  desc "Explicitly upload the evidence-bound first-party IPA to TestFlight"
+  lane :demolab_upload_testflight do
+    ensure_manual_lane!
+    ensure_clean_source!
+    reject_pilot_environment_overrides!
+    xcode_toolchain = selected_xcode_toolchain
+    altool = selected_altool(xcode_toolchain)
+    confirmation = required_environment("DEMO_LAB_CONFIRM_UPLOAD")
+    unless confirmation == "I_OWN_AND_AUTHORIZE_THIS_FIRST_PARTY_FIXTURE"
+      UI.user_error!("Explicit first-party upload confirmation is missing.")
+    end
+
+    app_identifier, share_identifier = demolab_bundle_identifiers
+    evidence_path, evidence, ipa_path, archive_path = load_upload_evidence(
+      app_identifier: app_identifier,
+      share_identifier: share_identifier,
+      xcode_toolchain: xcode_toolchain
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    key_id = required_environment(
+      "APP_STORE_CONNECT_KEY_ID",
+      pattern: /\A[A-Z0-9]{10}\z/
+    )
+    key_type = required_environment(
+      "APP_STORE_CONNECT_KEY_TYPE",
+      pattern: /\A(?:team|individual)\z/
+    )
+    team_issuer_id =
+      if key_type == "team"
+        required_environment(
+          "APP_STORE_CONNECT_ISSUER_ID",
+          pattern: /\A[0-9a-fA-F-]{36}\z/
+        )
+      else
+        if ENV.key?("APP_STORE_CONNECT_ISSUER_ID")
+          UI.user_error!(
+            "APP_STORE_CONNECT_ISSUER_ID must be unset for an individual API key."
+          )
+        end
+        nil
+      end
+    apple_id = required_environment(
+      "DEMO_LAB_APPLE_ID",
+      pattern: /\A[0-9]{5,20}\z/
+    )
+
+    result_path = File.join(
+      File.dirname(evidence_path),
+      "demolab-upload-result.json"
+    )
+    key_content = nil
+    key_snapshot = nil
+    upload_snapshot = nil
+    result_file = nil
+    attempt_recorded = false
+    upload_accepted = false
+    begin
+      key_content = private_external_file_snapshot(
+        "APP_STORE_CONNECT_KEY_PATH",
+        DEMO_LAB_MAX_API_KEY_BYTES,
+        "App Store Connect API key"
+      )
+      key_snapshot = open_unlinked_snapshot_from_content(
+        key_content,
+        label: "App Store Connect API key",
+        suffix: ".p8"
+      )
+      key_content.clear
+      key_content = nil
+      upload_snapshot = stage_evidence_bound_ipa(
+        ipa_path,
+        evidence
+      )
+      attempt = {
+        "schema_version" => 1,
+        "source_commit" => evidence.dig("source", "commit"),
+        "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
+        "attempt_started_at" => Time.now.utc.iso8601,
+        "destination" => "TestFlight internal preparation",
+        "external_distribution" => false,
+        "status" => "indeterminate",
+        "note" => DEMO_LAB_UPLOAD_INDETERMINATE_NOTE,
+      }
+      result_file = publish_new_private_json_record!(
+        result_path,
+        attempt,
+        "upload result"
+      )
+      attempt_recorded = true
+
+      upload_demolab_with_altool!(
+        ipa_snapshot: upload_snapshot,
+        key_snapshot: key_snapshot,
+        archive_path: archive_path,
+        evidence: evidence,
+        altool: altool,
+        xcode_toolchain: xcode_toolchain,
+        key_id: key_id,
+        key_type: key_type,
+        team_issuer_id: team_issuer_id,
+        apple_id: apple_id,
+        app_identifier: app_identifier,
+        marketing_version: evidence.dig("build", "marketing_version"),
+        build_number: evidence.dig("build", "build_number")
+      )
+      unless digest_open_file(upload_snapshot) ==
+             evidence.dig("artifacts", "ipa", "sha256")
+        UI.user_error!("Anonymous IPA snapshot changed during upload.")
+      end
+
+      result = {
+        "schema_version" => 1,
+        "source_commit" => evidence.dig("source", "commit"),
+        "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
+        "attempt_started_at" => attempt["attempt_started_at"],
+        "uploaded_at" => Time.now.utc.iso8601,
+        "destination" => "TestFlight internal preparation",
+        "external_distribution" => false,
+        "status" => "accepted",
+        "note" =>
+          "Apple altool returned explicit success without product-errors for " \
+          "the descriptor-bound upload; confirm TestFlight readiness in " \
+          "App Store Connect. This does not establish installed lineage, " \
+          "protection, or plaintext.",
+      }
+      accepted_result_file = replace_locked_private_json_record!(
+        result_path,
+        result_file,
+        result,
+        "upload result"
+      )
+      result_file.flock(File::LOCK_UN)
+      result_file.close
+      result_file = accepted_result_file
+      upload_accepted = true
+      UI.success("Recorded sanitized upload result: #{result_path}")
+    ensure
+      result_file&.close
+      key_content&.clear
+      key_snapshot&.close
+      upload_snapshot&.close
+      if attempt_recorded && !upload_accepted
+        UI.important(
+          "The upload result remains indeterminate. Reconcile the exact " \
+          "version, build, and IPA SHA-256 in App Store Connect before retrying."
+        )
+      end
+    end
+  end
+end
