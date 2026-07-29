@@ -25,8 +25,9 @@ Issue #9 同时禁止本阶段新增设备 Backend、Helper、Transport、进程
 哈希。完整证据、逐项标准和官方资料见
 [英文研究说明](../research/lab-001-protected-oracle.md)。
 
-LAB-001 以这个有界 No-Go 完成，但不激活 LAB-002 或 DEVICE-001。这不是“永远无法砸壳”的结论，
+LAB-001 以这个有界 No-Go 完成，并阻塞 DEVICE-001。这不是“永远无法砸壳”的结论，
 而是说明当前公开、非越狱 TestFlight 研究组合无法达到项目自己的严格证据标准。
-后续必须先通过独立的计划变更激活 LAB-002，定义只面向首方 DemoLab、非通用、
-可独立验证保护和明文范围的新 Oracle 方案，并以 Go 结果完成；在此之前，项目仍没有
-设备 Backend、受保护 Oracle、Verified 兼容记录或可用的 `oprobe decrypt`。
+后续必须先通过独立的计划变更提出并排序替代 Oracle 步骤，定义只面向首方 DemoLab、
+非通用、可独立验证保护和明文范围的新方案，并以 Go 结果完成；本结果不为未来步骤
+分配 ID 或台账位置。在此之前，项目仍没有设备 Backend、受保护 Oracle、Verified
+兼容记录或可用的 `oprobe decrypt`。

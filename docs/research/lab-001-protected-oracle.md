@@ -170,12 +170,12 @@ crossing the approved LAB-001 boundary.
 
 ## Required plan change
 
-LAB-001 completes with No-Go and does not activate LAB-002 or DEVICE-001.
-Before any device-backend work starts, LAB-002 must be activated through a
-separate reviewed plan change and complete with a Go result for an independent
-protected oracle. A proposal may evaluate a
-purpose-built, first-party-only observation mechanism or a separately approved
-test environment, but it must:
+LAB-001 completes with No-Go and blocks DEVICE-001. Before any device-backend
+work starts, a replacement-oracle step must be proposed and ordered through a
+separate reviewed plan change, then complete with a Go result for an independent
+protected oracle. This result does not assign that future step an ID or ledger
+position. A proposal may evaluate a purpose-built, first-party-only observation
+mechanism or a separately approved test environment, but it must:
 
 - remain limited to project-owned DemoLab;
 - avoid a reusable arbitrary process, filesystem, or memory API;
