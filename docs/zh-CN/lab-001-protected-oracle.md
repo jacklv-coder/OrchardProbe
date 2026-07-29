@@ -29,7 +29,9 @@ OrchardProbe 基线 Commit、一次受控运行的计数、维护者签署、UTC
 
 LAB-001 以这个有界 No-Go 完成，并阻塞 DEVICE-001。这不是“永远无法砸壳”的结论，
 而是说明当前公开、非越狱 TestFlight 研究组合无法达到项目自己的严格证据标准。
-后续必须先通过独立的计划变更提出并排序替代 Oracle 步骤，定义只面向首方 DemoLab、
-非通用、可独立验证保护和明文范围的新方案，并以 Go 结果完成；本结果不为未来步骤
-分配 ID 或台账位置。在此之前，项目仍没有设备 Backend、受保护 Oracle、Verified
-兼容记录或可用的 `oprobe decrypt`。
+本结果被接受时，后续要求是通过独立计划变更提出并排序替代 Oracle 步骤；该历史
+要求现在由权威执行台账中的 `LAB-002` 计划步骤和 Issue #55 承接。LAB-002 尚未
+激活或实现，仍须定义只面向首方 DemoLab、非通用、可独立验证保护和明文范围的新
+方案，并以 Go 结果完成，DEVICE-001 才能解除阻塞。规划 LAB-002 并不建立受保护
+Oracle；项目仍没有设备 Backend、受保护 Oracle、Verified 兼容记录或可用的
+`oprobe decrypt`。
