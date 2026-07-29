@@ -72,8 +72,21 @@ Enrollment Key/Receipt 会把两份签名 Run Export 绑定到同一台物理设
 观察前必须冻结已评审的设计/构建清单。在 LAB-002 取得 Go 结果前，
 `DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
-明确 Go/No-Go、文档和收窄声明标准。激活
-PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
+明确 Go/No-Go、文档和收窄声明标准。
+
+### LAB-002 检查点台账
+
+与主台账相同，只有包含这些状态的 PR 进入 `main` 后才具有权威性。
+
+| 顺序 | 检查点 | 本 PR 进入 `main` 后的状态 | 证据 / 下一门禁 |
+|---:|---|---|---|
+| 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
+| 2 | 无设备实现与合成/Simulator 验证 | `planned` | 仅在 PR #58 合并后开始；必须完整实现封闭设计并通过本地/远端 CR 和 CI |
+| 3 | 精确签名 DemoLab Build 与上传前 Oracle | `blocked` | 需要检查点 2，并另行取得明确写出精确 Version/Build 的授权 |
+| 4 | 安装 Enrollment 与两次干净真机观察 | `blocked` | 需要检查点 3、每次操作的全新授权、所选自有 iPhone 和已评审两轮流程 |
+| 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
+
+激活 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
 构建。已合并的可参数化、由操作员显式控制的 DemoLab Archive/证据/上传流程使用
 带锁的随机构建暂存、排他发布和绑定证据的命名 `.ipa` Apple 上传；Gym 导出
 Scratch 被限制在该暂存目录内并随之清理，同时
