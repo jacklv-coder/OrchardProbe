@@ -200,9 +200,18 @@ LAB-002 是当前 active 研究步骤，用于评估仅限首方 DemoLab 的受�
 每个 Slice 的非空精确区间集合，以及每个区间独立生成的预期明文 Oracle 产物/Hash，
 并全部绑定到同一 Commit/Build。每个已安装清单项/Slice 必须独立绑定到该 Build，
 先证明初始已安装状态受保护，再证明同一预声明映射区间已成为明文并匹配冻结 Oracle；
-观察后不得删减或重新分类。激活只允许 Issue #55 边界内的实现，不建立 Oracle，
-也不授权签名 Build、TestFlight 上传或设备观察。LAB-002 尚未实现或验证，且只有
-取得 Go 结果后才能解除 DEVICE-001 的阻塞。
+观察后不得删减或重新分类。
+[LAB-002 无设备设计](lab-002-oracle-design.md)进一步规定各 Role 专用
+授权 Target 身份绑定和 `__TEXT,__oprobe` 区间、独立上传前生成、组件自己的
+磁盘/映射 Hash、仅供首方组件内部协调的 App Group、由用户显式完成的有界文档
+交换、Stale 拒绝和两次干净运行。每次真机操作前都需要 Host 签名、带策略版本的
+全新授权信封；设备本地 Enrollment Key/Receipt 会把两份签名 Run Export 绑定到
+同一台物理设备、同一 App 安装、硬件型号和 iOS Version/Build，原始稳定设备标识
+永不离开设备。Inbox 操作串行化，且只消费原子隔离、Descriptor 身份匹配的 Record。
+Host/Helper 永远不能访问共享容器。
+Issue #55 边界内的实现不建立 Oracle，也不授权签名 Build、TestFlight 上传或
+设备观察。LAB-002 尚未实现或验证，且只有取得 Go 结果后才能解除 DEVICE-001 的
+阻塞。
 
 ### 6. 有界 Host/Helper Session
 

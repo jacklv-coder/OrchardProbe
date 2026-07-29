@@ -68,16 +68,23 @@ decryption support.
 
 ## Current gate
 
-This documentation-only change activates `LAB-002`, backed by Issue #55, as the
-only `active` ledger step after this activation PR merges. Implementation may
-then proceed only inside Issue #55's first-party DemoLab self-observation
-boundary and its complete, predeclared inventory, source/build, protection,
-transition, and oracle gates. This activation does not establish a protected
-oracle or authorize a signed build, TestFlight upload, device observation, or
-device-backend work. Any exact new signed version/build still requires separate
-explicit authorization, and its reviewed design/build manifest must be frozen
-before observation. `DEVICE-001` remains blocked and inactive unless LAB-002
-completes with a Go result.
+`LAB-002`, backed by Issue #55 and activated by merged PR #57, is the only
+`active` ledger step. Its
+[device-free design](docs/research/lab-002-oracle-design.md) fixes the
+first-party DemoLab self-observation boundary, three-role/all-slice inventory,
+role-specific authorized-target identity, fixed code range, independent
+pre-upload oracle, bounded reports, two-clean-run procedure, and fail-closed
+Go/No-Go rules. It also requires a fresh host-signed, policy-versioned
+authorized-use envelope before installation and each run, then uses a device-
+local enrollment key/receipt to bind both signed run exports to the same
+physical device, app installation, hardware model, and iOS version/build.
+Implementation may proceed only inside that reviewed design. The design does
+not establish a protected oracle or authorize a signed build, TestFlight
+upload, device observation, or device-backend work. Any exact new signed
+version/build still
+requires separate explicit authorization, and its reviewed design/build
+manifest must be frozen before observation. `DEVICE-001` remains blocked and
+inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.

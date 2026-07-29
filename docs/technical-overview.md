@@ -243,10 +243,22 @@ commit/build. Every installed inventory item and slice must be independently
 bound to the recorded build, shown to have an initially protected installed
 state, and then shown to expose the same predeclared mapped ranges as plaintext
 matching the frozen oracle. Post-observation omission or reclassification is
-forbidden. Activation permits only the bounded Issue #55 implementation; it
-does not establish the oracle or authorize a signed build, TestFlight upload,
-or device observation. LAB-002 is not implemented or verified, and DEVICE-001
-remains blocked until LAB-002 completes with a Go result.
+forbidden. The
+[LAB-002 device-free design](research/lab-002-oracle-design.md) specifies
+role-specific authorized-target identity bindings and `__TEXT,__oprobe`
+ranges, independent pre-upload generation, target-local disk/mapped hashing,
+internal first-party App Group coordination with user-mediated bounded document
+exchange, stale rejection, host-signed per-operation policy acknowledgements,
+and a device-local enrollment key/receipt that binds two signed clean-run
+exports to the same physical device, app installation, hardware model, and iOS
+version/build. Raw stable device identifiers never leave the device. Inbox
+operations are serialized and consume only an atomically quarantined,
+descriptor-matched record. The host/helper never accesses the shared
+container. The design permits only the bounded Issue #55
+implementation; it does not establish the oracle or authorize a signed build,
+TestFlight upload, or device observation. LAB-002 remains unimplemented and
+unverified, and DEVICE-001 remains blocked until LAB-002 completes with a Go
+result.
 
 ### 6. Bounded host/helper session
 

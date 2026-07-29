@@ -60,12 +60,17 @@ PR。后续步骤不得复用这个例外。
 
 ## 当前门禁
 
-本次只改文档的变更在激活 PR 合并后，把 Issue #55 对应的 `LAB-002` 设为唯一
-`active` 台账步骤。此后只能在 Issue #55 的首方 DemoLab 自观测边界及其完整、
-预声明的清单、源码/Build、保护、转换和 Oracle 门禁内开始实现。本次激活不建立
-受保护 Oracle，也不授权签名 Build、TestFlight 上传、设备观察或设备 Backend
-工作。任何精确的新签名版本/Build 仍须单独明确授权，且观察前必须冻结已评审的
-设计/构建清单。在 LAB-002 取得 Go 结果前，`DEVICE-001` 保持未激活的 `blocked`。
+Issue #55 对应的 `LAB-002` 已由 PR #57 激活，是唯一 `active` 台账步骤。
+[无设备设计](lab-002-oracle-design.md)已固定首方 DemoLab 自观测边界、三个
+Role/全部 Slice 清单、每个 Role 的授权 Target 身份和固定代码区间、独立上传前
+Oracle、有界报告、两次干净运行和 Fail-Closed Go/No-Go 规则。
+安装前与每轮前还必须重新完成由 Host 签名、带策略版本的授权使用确认；设备本地
+Enrollment Key/Receipt 会把两份签名 Run Export 绑定到同一台物理设备、同一 App
+安装、硬件型号和 iOS Version/Build。后续实现只能在该设计内
+进行。设计不建立受保护 Oracle，也不授权签名 Build、TestFlight 上传、
+设备观察或设备 Backend 工作。任何精确的新签名版本/Build 仍须单独明确授权，且
+观察前必须冻结已评审的设计/构建清单。在 LAB-002 取得 Go 结果前，
+`DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
 明确 Go/No-Go、文档和收窄声明标准。激活
 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
