@@ -170,8 +170,10 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
 - TestFlight 上传成功只证明 Apple 接收了 Build；不能证明初始保护、已安装字节
   Lineage、正确明文或砸壳能力。
 
-下一步是在本分支通过 CR、CI 和合并门禁后，从已合并且干净的 Commit 创建第一个
-签名候选；随后再单独配置低权限 API Key 并执行显式上传。
+第一个签名候选已从干净的合并 Commit
+`01cd447a1205618c22f24a00f059e54f8a284fd1` 创建并完成本地签名与证据校验；
+本次没有上传。下一步只有在获得单独的明确上传授权并配置低权限 App Store Connect
+API Key 后，才能显式上传这个完全相同、已绑定证据的候选。
 
 执行签名或上传 Lane 前还必须设置：
 
