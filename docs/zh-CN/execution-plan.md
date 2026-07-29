@@ -83,21 +83,26 @@ Shell 不安全字符。该阶段也不把签名、分发或安装变成 `oprobe
 无扩展名包路径而使用随机私有工作区内加锁的只读 `.ipa` 快照，并在使用前后复核
 路径、Inode 与哈希；保留的 `altool` 身份同样在执行前后立即复核。
 
-Stage 1 已于 2026-07-29 在干净的合并 Commit
-`01cd447a1205618c22f24a00f059e54f8a284fd1` 上完成：DemoLab `1.0 (1)`
-已导出为绑定证据的 App Store 分发候选，IPA SHA-256 为
-`6589c290dbb9478a4744ee32398d67da87d411cf210745532ed970b4e331fcd0`。
-主 App 与 Share Extension 均通过授权 Team 的 Apple Distribution 签名和
-Provisioning Profile 独立校验；公开记录有意隐藏 Bundle ID。三个二进制仍分别标记为
-`initial_protection_status: not_observed` 和
-`expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
-
 2026-07-29 已获得明确上传授权并在本机配置最小权限 API Key。首次上传在 Apple 接收
 任何 IPA 字节前被拒绝，根因是 Xcode 26 `altool` 无法展开没有扩展名的匿名包路径。
 通过 App Store Connect 页面与 API 对账确认 `1.0 (1)` 不存在 Build 和上传文件；
-本地不确定记录已按“缺席”归档并恢复重试许可。下一串行门禁是合并加锁的命名
-`.ipa` 兼容修复，从该合并 Commit 重新生成绑定证据的 `1.0 (1)` 候选并只上传一次。
-受控自有真机观察与明确 Go/No-Go 决策仍未完成；`DEVICE-001` 及以后步骤保持未启动。
+本地不确定记录已按“缺席”归档并恢复重试许可。
+
+PR #49 已合并命名 `.ipa` 兼容修复。随后从干净的合并 Commit
+`911db950cff8fc408294d56181477f7319442a36` 重新生成 DemoLab `1.0 (1)` 候选，
+IPA SHA-256 为
+`1bb541456d73d644e7c06a148c1e0c780f64f1eb622ae8af35ae482a75f4ec1b`。
+唯一一次许可上传前，源码 Commit、证据、包元数据、版本/Build 和 Apple Distribution
+签名均已独立复核。App Store Connect 先显示上传“正在处理”，随后在 TestFlight
+构建列表中把版本 `1.0` 的 Build `1` 标为“准备提交”，因此 Apple 已接收并处理该
+候选，禁止重试。本地 Lane 因 `altool` 最终 stdout 不是有效 JSON 而保留
+`status: indeterminate`；这记录为工具可观测性缺口，不代表远端上传失败。本次没有
+创建测试组、外部分发、Beta App Review 或 App Store 提交。
+
+三个二进制仍分别标记为 `initial_protection_status: not_observed` 和
+`expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
+下一串行门禁是在自有 iPhone 上受控安装和观察，再作出 LAB-001 明确 Go/No-Go；
+`DEVICE-001` 及以后步骤保持未启动。
 
 ## 执行台账
 

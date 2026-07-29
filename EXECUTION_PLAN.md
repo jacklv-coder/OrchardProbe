@@ -101,28 +101,32 @@ identity is checked immediately before and after execution. The phase does not
 store Apple credentials or turn signing, distribution, or installation into an
 `oprobe` capability.
 
-Stage 1 completed locally on 2026-07-29 from clean merged commit
-`01cd447a1205618c22f24a00f059e54f8a284fd1`: DemoLab version `1.0` build `1`
-was exported as an evidence-bound App Store distribution candidate with IPA
-SHA-256
-`6589c290dbb9478a4744ee32398d67da87d411cf210745532ed970b4e331fcd0`.
-The main App and Share Extension passed independent Apple Distribution
-signature and provisioning-profile validation for the authorized team; the
-public record intentionally redacts their identifiers. All three binaries remain
-`initial_protection_status: not_observed` and
-`expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not
-decryption evidence.
-
 Explicit upload authorization and a local least-privileged API key were
 configured on 2026-07-29. The first upload attempt was rejected before Apple
 accepted any IPA bytes because Xcode 26 `altool` cannot expand an extensionless
 anonymous package path. App Store Connect UI and API reconciliation found no
 build and no uploaded file for `1.0 (1)`; the local indeterminate record was
-archived as absent before retry permission was restored. The current sequential
-gate is to merge the locked named-`.ipa` compatibility fix, regenerate the
-evidence-bound `1.0 (1)` candidate from that merged commit, and upload it once.
-Controlled owned-device observation and the explicit Go/No-Go decision remain
-pending; `DEVICE-001` and every later step remain untouched.
+archived as absent before retry permission was restored.
+
+PR #49 merged the named-`.ipa` compatibility fix. A replacement DemoLab
+`1.0 (1)` candidate was then built from clean merged commit
+`911db950cff8fc408294d56181477f7319442a36` with IPA SHA-256
+`1bb541456d73d644e7c06a148c1e0c780f64f1eb622ae8af35ae482a75f4ec1b`.
+The source commit, evidence, package metadata, version/build, and Apple
+Distribution signatures were independently rechecked before the one permitted
+upload. App Store Connect first reported that upload as `Processing`, then
+listed TestFlight build `1` for version `1.0` as `Ready to Submit`. Apple
+therefore accepted and processed the candidate; it must not be retried. The
+local lane retained `status: indeterminate` because the terminal `altool`
+stdout was not valid JSON, which is recorded as a tooling-observability gap
+rather than a remote upload failure. No tester group, external distribution,
+Beta App Review, or App Store submission was created.
+
+All three binaries remain `initial_protection_status: not_observed` and
+`expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not
+decryption evidence. The current sequential gate is controlled installation and
+observation on an owned iPhone, followed by the explicit LAB-001 Go/No-Go
+decision. `DEVICE-001` and every later step remain untouched.
 
 ## Execution ledger
 

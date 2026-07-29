@@ -80,6 +80,16 @@ API Key 的普通路径验证通过，而描述符路径验证稳定复现
 确认 `1.0 (1)` 不存在 Build 或上传文件后，本地不确定记录已归档为
 `reconciled_absent`，才恢复重试许可。这只是传输兼容性证据，不是保护状态或明文证据。
 
+PR #49 已合并兼容修复。新的 `1.0 (1)` 候选来自干净的合并 Commit
+`911db950cff8fc408294d56181477f7319442a36`，IPA SHA-256 为
+`1bb541456d73d644e7c06a148c1e0c780f64f1eb622ae8af35ae482a75f4ec1b`。
+唯一一次许可上传后，App Store Connect 先显示“正在处理”，随后在 TestFlight 构建
+列表中将版本 `1.0`、Build `1` 标为“准备提交”。这证明 Apple 已接收并处理该包，
+因此禁止重试。本地结果因 `altool` 最终 stdout 不是有效 JSON 而保留
+`status: indeterminate`；应保持这份仅所有者可访问的记录不变，它表示本地工具
+可观测性缺口，不代表远端上传失败。本次没有创建测试组、外部分发、Beta App Review
+或 App Store 提交。
+
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
 ```sh
@@ -180,12 +190,9 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
 - TestFlight 上传成功只证明 Apple 接收了 Build；不能证明初始保护、已安装字节
   Lineage、正确明文或砸壳能力。
 
-第一个签名候选已从干净的合并 Commit
-`01cd447a1205618c22f24a00f059e54f8a284fd1` 创建并完成本地签名与证据校验；
 2026-07-29 已获得单独的明确上传授权并在仓库外配置最小权限 App Store Connect
-API Key。首次上传因上述 Xcode 26 文件名兼容问题在 Apple 接收 IPA 字节前失败，
-且已完成远端缺失对账和本地不确定记录归档。下一门禁是先合并 `.ipa` 兼容修复，
-再从该合并 Commit 重新生成证据绑定的 `1.0 (1)` 候选并只上传一次。
+API Key。上述第二个候选已经进入 TestFlight，但上传授权不包含创建测试组或安装到
+设备。下一门禁是把这个精确 Build 受控安装到自有 iPhone 并完成真机观察。
 
 执行签名或上传 Lane 前还必须设置：
 

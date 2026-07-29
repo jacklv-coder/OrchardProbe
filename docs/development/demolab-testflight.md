@@ -308,6 +308,19 @@ and the indeterminate local attempt was archived as `reconciled_absent` before
 retry permission was restored. This is transport compatibility evidence, not
 protection or plaintext evidence.
 
+PR #49 merged the compatibility fix. The replacement `1.0 (1)` candidate was
+built from clean merged commit
+`911db950cff8fc408294d56181477f7319442a36`; its IPA SHA-256 is
+`1bb541456d73d644e7c06a148c1e0c780f64f1eb622ae8af35ae482a75f4ec1b`.
+After the single permitted upload, App Store Connect moved the upload from
+`Processing` into the TestFlight build list as version `1.0`, build `1`, status
+`Ready to Submit`. That remote state is authoritative evidence that Apple
+accepted and processed the package, so the build must not be retried. The local
+result remains `status: indeterminate` because terminal `altool` stdout was not
+valid JSON. Keep that owner-only record unchanged: it documents a local
+tooling-observability gap, not a remote upload failure. No tester group,
+external distribution, Beta App Review, or App Store submission was created.
+
 Set this exact confirmation only after checking the target account and build:
 
 ```sh
@@ -401,6 +414,10 @@ selects this exact version/build in TestFlight and installs it on an owned
 iPhone. Record only sanitized facts allowed by the compatibility policy. Do
 not publish the device UDID, serial number, pairing material, receipt,
 protected executable, IPA, or private logs.
+
+The uploaded `1.0 (1)` build is ready for this stage, but no tester group or
+owned-device installation was performed as part of the upload authorization.
+Those actions remain the next sequential gate.
 
 The controlled observation must separately answer:
 
