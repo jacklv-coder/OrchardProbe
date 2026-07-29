@@ -446,10 +446,13 @@ not publish the device UDID, serial number, pairing material, receipt,
 protected executable, IPA, or private logs.
 
 The installed `1.0 (1)` build cannot enter this observation because its invalid
-DemoFramework install name prevents launch. The corrected `1.0 (2)` build is
-now valid and in internal testing. Resume this stage only after the maintainer
-updates the same owned-device boundary to that exact build and independently
-confirms that it remains running.
+DemoFramework install name prevents launch. On 2026-07-29, a read-only device
+query independently identified corrected DemoLab `1.0 (2)` on the same owned
+iPhone. A controlled terminate-existing launch returned success, and the exact
+launched process was still present after both 12 and 32 seconds. The previous
+immediate launch failure was not reproduced. This clears only the launch
+prerequisite; it does not establish installed lineage, initial protection,
+plaintext, or decryption.
 
 The controlled observation must separately answer:
 

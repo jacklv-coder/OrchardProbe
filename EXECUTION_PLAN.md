@@ -142,8 +142,15 @@ response, but the App Store Connect API reported the exact build as `VALID`,
 with internal state `IN_BETA_TESTING` and no missing export compliance. The
 existing internal group already covers all builds; no group mutation, public
 link, external distribution, Beta App Review, or App Store submission was
-performed. The current sequential gate is to update the owned iPhone to this
-exact build and independently confirm that it remains running.
+performed.
+
+On 2026-07-29, a read-only device query independently identified DemoLab
+`1.0 (2)` on the same owned iPhone. A controlled terminate-existing launch
+returned success, and the launched process was still present after both 12 and
+32 seconds. This clears only the launch prerequisite and does not establish
+installed lineage, initial protection, plaintext, or decryption. The current
+sequential gate is the bounded Stage 3 observation and explicit LAB-001
+Go/No-Go decision.
 
 All three binaries remain `initial_protection_status: not_observed` and
 `expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not

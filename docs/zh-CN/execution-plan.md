@@ -115,7 +115,11 @@ PR #51 已合并 `@rpath` 修复及 Fail-closed Archive/IPA 链接检查。DemoL
 App Store Connect API 已确认该精确 Build 为 `VALID`、内部状态为
 `IN_BETA_TESTING`，且不缺少出口合规信息，因此禁止重试。现有内部组覆盖全部 Build；
 没有修改测试组、启用公开链接、外部分发、Beta App Review 或 App Store 提交。
-当前串行门禁是在同一自有 iPhone 上更新到这个精确 Build，并独立确认它保持运行。
+
+2026-07-29，只读设备查询已独立确认同一自有 iPhone 安装了 DemoLab `1.0 (2)`。
+一次先终止旧进程的受控启动成功返回，精确启动的进程在 12 秒和 32 秒后仍存在。这只
+通过了启动前置门禁，不证明已安装字节 Lineage、初始保护、明文或砸壳能力。当前串行
+门禁是完成有界 Stage 3 观察并作出 LAB-001 明确 Go/No-Go。
 
 三个二进制仍分别标记为 `initial_protection_status: not_observed` 和
 `expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
