@@ -50,4 +50,10 @@ DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework
 DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension
 ```
 
+DemoFramework's install name and the app dependency must both be
+`@rpath/DemoFramework.framework/DemoFramework`. The controlled Fastlane check
+validates that linkage in the Simulator product and packaged IPA; the signed
+workflow repeats it for the Archive, exported IPA, and upload-time Archive
+revalidation.
+
 The generated `.xcodeproj`, copied fixture, and `DerivedData` directory are disposable build products and must not be committed.
