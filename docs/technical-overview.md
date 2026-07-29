@@ -232,8 +232,10 @@ falling back to a broader primitive.
 The project currently has no approved backend. LAB-001 completed with a bounded
 No-Go for the stock internal-TestFlight tuple because exact installed lineage,
 initial protection, and plaintext ranges were not independently observable
-within its approved boundary. A separate reviewed plan change is required
-before any device-backend step can be activated.
+within its approved boundary. LAB-002 is now planned to evaluate a fixed-range,
+first-party DemoLab self-observation oracle, but it is not active, implemented,
+or verified. It requires a separate activation PR, and DEVICE-001 remains
+blocked until LAB-002 completes with a Go result.
 
 ### 6. Bounded host/helper session
 
@@ -381,7 +383,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go for the stock internal-TestFlight tuple; new reviewed oracle plan required |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 replacement-oracle research is planned but not active or implemented |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
