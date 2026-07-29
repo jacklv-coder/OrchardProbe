@@ -205,8 +205,11 @@ replacement method must:
 
 - remain limited to project-owned DemoLab;
 - avoid a reusable arbitrary process, filesystem, or memory API;
-- bind each installed binary, architecture, slice, and exact code range;
-- preserve independent initial-protection and plaintext evidence;
+- bind each installed binary, architecture, slice, and exact code range to the
+  exact recorded DemoLab source commit and build;
+- independently prove each installed slice's initially protected state and its
+  transition to mapped plaintext matching a frozen oracle artifact generated
+  from that same commit and build;
 - keep credentials, stable device identifiers, receipts, binaries, and raw logs
   private; and
 - undergo its own threat-model, documentation, CR, and Go/No-Go review before

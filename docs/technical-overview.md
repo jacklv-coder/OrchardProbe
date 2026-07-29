@@ -233,16 +233,19 @@ The project currently has no approved backend. LAB-001 completed with a bounded
 No-Go for the stock internal-TestFlight tuple because exact installed lineage,
 initial protection, and plaintext ranges were not independently observable
 within its approved boundary. LAB-002 is now planned to evaluate a first-party
-DemoLab self-observation oracle. Its complete inventory is the app,
+DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
-the recorded build. A reviewed design/build manifest must freeze a non-empty
-exact mapped-range set for every inventory slice before device observation;
-every inventory item must have independent installed-identity and
-initial-protection evidence, and every predeclared range must match its
-independent expected-plaintext SHA-256. Post-observation omission or
-reclassification is forbidden. LAB-002 is not active, implemented, or
-verified. It requires a separate activation PR, and DEVICE-001 remains blocked
-until LAB-002 completes with a Go result.
+the recorded build. Before device observation, a reviewed design/build manifest
+must freeze the exact DemoLab source commit/build identity, a non-empty exact
+mapped-range set for every inventory slice, and an independently generated
+expected-plaintext oracle artifact/hash for every range, all bound to that same
+commit/build. Every installed inventory item and slice must be independently
+bound to the recorded build, shown to have an initially protected installed
+state, and then shown to expose the same predeclared mapped ranges as plaintext
+matching the frozen oracle. Post-observation omission or reclassification is
+forbidden. LAB-002 is not active, implemented, or verified. It requires a
+separate activation PR, and DEVICE-001 remains blocked until LAB-002 completes
+with a Go result.
 
 ### 6. Bounded host/helper session
 

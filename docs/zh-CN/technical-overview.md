@@ -194,12 +194,14 @@ Version、可执行文件清单、架构与 Slice、Mach-O UUID 和代码签名�
 
 项目目前没有已批准后端。LAB-001 已对公开、非越狱的内部 TestFlight 精确组合得到
 有界 No-Go：在批准边界内无法独立观察精确已安装 Lineage、初始保护和明文范围。
-LAB-002 现已规划用于评估仅限首方 DemoLab 的自观测 Oracle。完整清单固定为
+LAB-002 现已规划用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；
-设备观察前，已评审的设计/构建清单必须为每个 Slice 冻结非空精确区间集合。每个
-清单项必须有独立的已安装身份和初始保护证据，每个预声明区间必须匹配独立预期明文
-SHA-256，且观察后不得删减或重新分类。LAB-002 尚未激活、实现或验证；必须先通过
-独立激活 PR，且只有取得 Go 结果后才能解除 DEVICE-001 的阻塞。
+设备观察前，已评审的设计/构建清单必须冻结精确 DemoLab 源码 Commit/Build 身份、
+每个 Slice 的非空精确区间集合，以及每个区间独立生成的预期明文 Oracle 产物/Hash，
+并全部绑定到同一 Commit/Build。每个已安装清单项/Slice 必须独立绑定到该 Build，
+先证明初始已安装状态受保护，再证明同一预声明映射区间已成为明文并匹配冻结 Oracle；
+观察后不得删减或重新分类。LAB-002 尚未激活、实现或验证；必须先通过独立激活 PR，
+且只有取得 Go 结果后才能解除 DEVICE-001 的阻塞。
 
 ### 6. 有界 Host/Helper Session
 

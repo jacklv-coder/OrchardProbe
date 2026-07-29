@@ -32,6 +32,8 @@ LAB-001 以这个有界 No-Go 完成，并阻塞 DEVICE-001。这不是“永远
 本结果被接受时，后续要求是通过独立计划变更提出并排序替代 Oracle 步骤；该历史
 要求现在由权威执行台账中的 `LAB-002` 计划步骤和 Issue #55 承接。LAB-002 尚未
 激活或实现，仍须定义只面向首方 DemoLab、非通用、可独立验证保护和明文范围的新
-方案，并以 Go 结果完成，DEVICE-001 才能解除阻塞。规划 LAB-002 并不建立受保护
+方案：把每个已安装 Slice、区间和冻结 Oracle 产物绑定到同一精确 DemoLab 源码
+Commit/Build，独立证明初始已安装状态受保护以及同一区间转换为匹配 Oracle 的映射
+明文，并以 Go 结果完成，DEVICE-001 才能解除阻塞。规划 LAB-002 并不建立受保护
 Oracle；项目仍没有设备 Backend、受保护 Oracle、Verified 兼容记录或可用的
 `oprobe decrypt`。
