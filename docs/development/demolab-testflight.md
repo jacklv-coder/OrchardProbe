@@ -45,10 +45,13 @@ it cannot by itself identify the exact bytes installed on a phone:
   repository. Evidence and key bytes are parsed from the same bounded,
   no-follow file descriptors whose owner, mode, inode, and path were validated;
   special-file key paths are opened nonblocking and rejected. The exact
-  evidence-bound IPA and key bytes are copied to anonymous, unlinked files and
-  inherited by Apple's upload tool as open descriptors, so neither pathname can
-  be replaced between validation and use. It does not accept an Apple ID
-  password, patch TestFlight beta metadata, add tester groups, or
+  evidence-bound IPA bytes are copied to a locked, mode-`0400` `DemoLab.ipa`
+  inside a random mode-`0700` workspace because Apple `altool` requires a
+  `.ipa` filename. Its path, inode, descriptor access mode, size, and SHA-256
+  are checked immediately before and after `altool`; the caller's IPA path is
+  never passed to Apple. Key bytes remain in a separate anonymous, unlinked
+  read-only descriptor. The lane does not accept an Apple ID password, patch
+  TestFlight beta metadata, add tester groups, or
   distribute/notify external testers.
 - Run signing and upload only in a trusted, dedicated local macOS login session.
   Directory locks and identity checks reject cooperating concurrent lanes and
@@ -275,26 +278,35 @@ the lane remeasures its three binaries and requires their sizes, hashes,
 architectures, and UUIDs to match the evidence. Every archive path component is
 checked with `lstat`; a symlinked app, framework, plug-in, or directory is
 rejected, and every resolved binary must remain below the same archive root.
-After the API key and anonymous IPA descriptors are ready, the lane repeats the
-complete archive-binary measurement immediately before it revalidates the
-selected Xcode and launches `altool`; a mismatch aborts before any network
-action. It
-also reopens the IPA without extracting it and requires exactly one
-`DemoLab.app`, the expected
-app/framework/extension identities and executables, the marketing/build
-versions in all three bundles, safe ZIP entries (including normal Xcode
-data-descriptor entries), and packaged-binary hashes matching Stage 1. It then
-copies those validated bytes through an open file descriptor into a new
-owner-only temporary snapshot, rechecks that snapshot's exact size and SHA-256,
-closes the writable handle, reopens the same inode through a no-follow
-read-only descriptor, rechecks its access mode/identity/hash, and immediately
-unlinks its pathname. Fastlane then invokes Apple
-`altool --upload-package --wait` with only an inherited `/dev/fd` handle to
-that anonymous file. The upload tool can seek but cannot write the snapshot,
-reopen or replace the original IPA path. The API key is handled by a separate
-read-only anonymous descriptor. The two first-party Bundle ID environment variables and
-numeric App Store Connect Apple ID are therefore required again at upload
-time, but are not written into evidence.
+After the API key descriptor and locked named IPA snapshot are ready, the lane
+repeats the complete archive-binary measurement immediately before it
+revalidates the selected Xcode and launches `altool`; a mismatch aborts before
+any network action. It also reopens the IPA without extracting it and requires
+exactly one `DemoLab.app`, the expected app/framework/extension identities and
+executables, the marketing/build versions in all three bundles, safe ZIP
+entries (including normal Xcode data-descriptor entries), and packaged-binary
+hashes matching Stage 1. It then copies those validated bytes through an open
+file descriptor into a new owner-only temporary snapshot, rechecks that
+snapshot's exact size and SHA-256, closes the writable handle, reopens the same
+inode through a no-follow read-only descriptor, locks it, and retains its
+`.ipa` pathname inside a random private workspace. Xcode 26 `altool` rejects
+extensionless `/dev/fd` package paths, so Fastlane passes this verified private
+`DemoLab.ipa` path to `altool --upload-package --wait` and checks the same inode
+and digest again after the process exits. The upload tool can read the locked
+snapshot but never receives or reopens the caller's original IPA path. The API
+key is handled by a separate read-only anonymous descriptor. The two first-party
+Bundle ID environment variables and numeric App Store Connect Apple ID are
+therefore required again at upload time, but are not written into evidence.
+
+The first controlled upload attempt on 2026-07-29 exposed this filename
+requirement: Apple created only an empty `AWAITING_UPLOAD` reservation and
+returned a product error before accepting any IPA file bytes. Validation with
+the same package and API key succeeded, while descriptor-path validation
+reproduced `Cannot expand files with extension ""`. App Store Connect UI and
+API reconciliation confirmed that no `1.0 (1)` build or uploaded file existed,
+and the indeterminate local attempt was archived as `reconciled_absent` before
+retry permission was restored. This is transport compatibility evidence, not
+protection or plaintext evidence.
 
 Set this exact confirmation only after checking the target account and build:
 
