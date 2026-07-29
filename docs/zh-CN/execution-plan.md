@@ -62,8 +62,9 @@ PR。后续步骤不得复用这个例外。
 
 `LAB-001` 是唯一正在激活的计划步骤。Issue #9 固定其首方 DemoLab 来源、独立的
 初始保护/预期明文 Oracle 证据、脱敏、明确 Go/No-Go、文档和收窄声明标准。激活
-PR 已合并，Issue #9 已记录无需账号的证据审计；当前阶段准备可参数化、由操作员
-显式控制的 DemoLab Archive/证据/上传流程，使用带锁的随机构建暂存、排他发布和
+PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
+构建。已合并的可参数化、由操作员显式控制的 DemoLab Archive/证据/上传流程使用
+带锁的随机构建暂存、排他发布和
 描述符绑定的 Apple 上传；Gym 导出 Scratch 被限制在该暂存目录内并随之清理，同时
 明确校验有界的 `altool` JSON 成功/错误响应；不保存 Apple 凭据，且为上传进程设置
 固定截止时间。预上传记录绑定生成工程时实际使用的
@@ -80,7 +81,20 @@ root 所有绝对路径以及 `/usr/bin/xcrun`、`/usr/bin/plutil`，并在执�
 Shell 不安全字符。该阶段也不把签名、分发或安装变成 `oprobe` 能力。受控自有真机
 观察与明确 Go/No-Go 仍未完成；IPA/API Key 匿名快照会通过经验证的只读描述符重新
 打开，保留的 `altool` 身份则在执行前后立即复核。
-`DEVICE-001` 及以后步骤保持未启动。
+
+Stage 1 已于 2026-07-29 在干净的合并 Commit
+`01cd447a1205618c22f24a00f059e54f8a284fd1` 上完成：DemoLab `1.0 (1)`
+已导出为绑定证据的 App Store 分发候选，IPA SHA-256 为
+`6589c290dbb9478a4744ee32398d67da87d411cf210745532ed970b4e331fcd0`。
+主 App 与 Share Extension 均通过授权 Team 的 Apple Distribution 签名和
+Provisioning Profile 独立校验；公开记录有意隐藏 Bundle ID。本次没有向
+TestFlight 或 App Store Connect 上传。三个二进制仍分别标记为
+`initial_protection_status: not_observed` 和
+`expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
+
+下一串行门禁是：获得单独的明确上传授权并配置最小权限 App Store Connect API Key
+后，才能把这个完全相同的候选上传至内部 TestFlight。受控自有真机观察与明确
+Go/No-Go 决策仍未完成；`DEVICE-001` 及以后步骤保持未启动。
 
 ## 执行台账
 
