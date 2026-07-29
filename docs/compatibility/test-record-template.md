@@ -32,11 +32,21 @@ evidence.
 | Transport capability IDs | `<comma-separated public OrchardProbe IDs>` |
 | Backend capability IDs | `<comma-separated public OrchardProbe IDs>` |
 | DemoLab commit | `<full commit SHA>` |
-| Installed DemoLab build identity | `<sanitized artifact/build hash and reproducible lineage>` |
+| Installed DemoLab build lineage | `<sanitized distribution/build identity; complete the mandatory per-binary installed identity and range fields below>` |
 
 Capability IDs are public identifiers returned by OrchardProbe's versioned
 handshake. Do not record addresses, ports, device identifiers, shell output, or
 private environment values.
+
+For a protected-to-plaintext or end-to-end claim, version/build metadata, a
+successful launch, a process identifier or executable location, and a
+pre-upload IPA hash do not by themselves satisfy `Installed DemoLab build
+lineage`. Record the per-binary fields that bind the exact installed
+architecture, slice, UUID or signature identity, initial-protection state, and
+compared range. If the approved environment cannot expose them independently,
+stop and select No-Go for that protected claim. A transport-integrity or
+contained-collection record may mark protected-claim-only fields
+`not exercised`, but it must not promote that result into a decryption claim.
 
 ## Reproduction procedure
 
@@ -53,20 +63,27 @@ Number of clean runs attempted: `<number>`
 
 Number of clean runs with identical results: `<number>`
 
-## Per-binary evidence
+## Per-slice and range evidence
 
-Create one row for every in-scope DemoLab Mach-O. Do not combine a main
-executable, framework, and extension into one aggregate result.
+Create one row for every in-scope DemoLab Mach-O slice and exact compared
+range. Repeat the DemoLab-relative path when a binary has multiple slices or
+when a slice has multiple compared ranges. Never place a comma-separated list
+of slices, UUIDs, ranges, hashes, or outcomes in one cell, and do not combine a
+main executable, framework, and extension into one aggregate result.
 
-| DemoLab-relative binary | Initial protection evidence | Evidence level | Observed SHA-256 | Known-plaintext oracle SHA-256 | Oracle source | Outcome |
-| --- | --- | --- | --- | --- | --- | --- |
-| `DemoLab.app/DemoLab` | `<sanitized evidence, or unprotected>` | `<metadata / structure / range_hash / known_plaintext>` | `<SHA-256 or not collected>` | `<SHA-256 or unavailable>` | `<artifact from recorded DemoLab commit>` | `<Pass / Inconclusive / Fail / Skipped>` |
-| `DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
-| `DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
+| DemoLab-relative binary | Installed architecture / slice | Installed UUID / signature identity | Initial protection evidence | Compared range (file offset or VM address + length) | Evidence level | Observed range SHA-256 | Known-plaintext range SHA-256 | Oracle source | Outcome |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `DemoLab.app/DemoLab` | `<architecture and slice, or not exercised for a narrower claim>` | `<UUID and sanitized code-signature identity, or not exercised>` | `<independent sanitized evidence, unprotected, or not exercised>` | `<coordinate system, start, and length, or not exercised>` | `<metadata / structure / range_hash / known_plaintext>` | `<SHA-256 or not collected>` | `<SHA-256, unavailable, or not exercised>` | `<artifact and exact range from recorded DemoLab commit, or not exercised>` | `<Pass / Inconclusive / Fail / Skipped>` |
+| `DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
+| `DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
 
-`Pass` is valid only when the evidence level is `known_plaintext` and the
-observed SHA-256 exactly matches the oracle from the recorded DemoLab commit.
-Metadata such as `cryptid == 0` is not a plaintext oracle.
+`Pass` is valid for one row only when the evidence level is `known_plaintext`
+and that row's installed architecture, slice, UUID/signature identity, and
+exact compared range are independently bound, and the observed range SHA-256
+exactly matches the oracle range from the recorded DemoLab commit. Every
+required slice and range needs its own passing row before the binary or claim
+can be declared `Pass`. Metadata such as `cryptid == 0` is not a plaintext
+oracle.
 
 For a protected-to-plaintext or end-to-end export claim, the initial protection
 evidence must also show that this exact installed binary exercised the claimed
@@ -110,6 +127,12 @@ Select exactly one:
 - [ ] **No-Go — Insufficient evidence:** no support-tier decision can be made.
 
 Decision rationale: `<concise evidence-based explanation>`
+
+When the failure is a repeatable capability boundary for the exact tuple, use
+`No-Go — Unsupported` and name that tuple narrowly. Use
+`No-Go — Insufficient evidence` when the observation is incomplete or cannot
+distinguish an unavailable capability from an untested one. Neither decision
+authorizes a weaker identity fallback.
 
 ## Maintainer verification sign-off
 

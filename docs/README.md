@@ -21,6 +21,8 @@ implementation behind it. Start with the document that matches what you need:
   path for learners.
 - [Scope and threat model](architecture/RFC-0001-scope-and-threat-model.md) —
   authorization boundary, security invariants, and No-Go conditions.
+- [LAB-001 protected-oracle result](research/lab-001-protected-oracle.md) —
+  why the stock internal-TestFlight tuple produced a bounded No-Go.
 - [Bounded host/helper protocol](architecture/RFC-0002-bounded-host-helper-protocol.md)
   — the accepted device-free protocol design gate.
 - [Rust host architecture decision](architecture/ADR-0001-rust-host.md) — why

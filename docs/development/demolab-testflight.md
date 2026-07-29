@@ -6,11 +6,11 @@ future end-user workflow. A user who eventually runs
 `oprobe decrypt <input.ipa>` must not need an Apple Developer account,
 TestFlight, Fastlane, or this fixture.
 
-The runbook does **not** establish that TestFlight produces a representative
-protected artifact. It also does not establish installed-artifact lineage,
-expected plaintext, a working device backend, extraction, decryption, or IPA
-reconstruction. Those are separate evidence questions in
-[Issue #9](https://github.com/jacklv-coder/OrchardProbe/issues/9).
+The completed run did **not** establish that this TestFlight tuple provides a
+usable protected oracle. It did not establish exact installed-artifact lineage,
+expected plaintext ranges, a working device backend, extraction, decryption, or
+IPA reconstruction. The bounded result is recorded in the
+[LAB-001 research note](../research/lab-001-protected-oracle.md).
 
 ## Why this controlled build exists
 
@@ -468,6 +468,22 @@ The controlled observation must separately answer:
 If any required property cannot be established, `LAB-001` records the
 corresponding bounded No-Go. A successful TestFlight upload alone is never a
 Go result and does not activate `DEVICE-001`.
+
+The 2026-07-29 controlled observation produced that bounded No-Go. Public
+CoreDevice app/process metadata did not expose per-binary installed UUIDs,
+signature identities, slices, or hashes; the file service did not offer an
+installed-app-bundle domain; and the distribution-signed app had
+`get-task-allow=false`. LLDB could identify a connected process but had no
+executable images to enumerate or interrupt. The pre-upload arm64 binaries were
+`cryptid=0` plaintext candidates, while Apple documents additional distribution
+processing and DRM. The upload hash therefore could not substitute for exact
+installed lineage or an independent protected/plaintext range comparison.
+
+See the
+[LAB-001 protected-oracle result](../research/lab-001-protected-oracle.md) for
+the sanitized tuple, per-binary evidence, reproduction procedure, criteria, and
+required plan change. LAB-001 completes as No-Go without activating
+`DEVICE-001`.
 
 ## Retention and deletion
 

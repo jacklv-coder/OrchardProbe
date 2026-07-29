@@ -37,6 +37,17 @@ protected-to-plaintext claim. Such a result is at most Experimental for that
 claim, regardless of matching hashes. The source commit alone does not prove
 the identity or initial protection state of an installed artifact.
 
+A TestFlight/App Store Connect build record, installed app version/build,
+successful launch, process identifier or executable location, and pre-upload
+IPA hash are also insufficient, individually or together, for a
+protected-to-plaintext or end-to-end claim. If the approved environment cannot
+independently expose per-binary installed identity, initial-protection evidence,
+and the exact compared ranges, that protected claim is No-Go. Do not replace
+the missing evidence with a weaker metadata fallback. Transport and contained-
+collection records may mark those protected-claim-only fields `not exercised`,
+but must not broaden their claim. LAB-001 records one such bounded result in the
+[protected-oracle research note](../research/lab-001-protected-oracle.md).
+
 A single user report never creates or upgrades an official support claim, even
 when its observed behavior is successful. It remains an unverified intake until
 the maintainer verification workflow above is complete.
@@ -79,10 +90,14 @@ evidence needed to reproduce a result:
   future helper artifact SHA-256 when a helper is exercised;
 - public, project-defined transport and backend capability IDs;
 - the exact DemoLab commit;
-- the narrowly worded claim under test and sanitized DemoLab build identity;
-- per-binary initial-protection evidence, evidence level, and outcome; and
-- the known-plaintext oracle source and SHA-256 value for each in-scope DemoLab
-  binary.
+- the narrowly worded claim under test and sanitized DemoLab build lineage;
+- for a protected-to-plaintext or end-to-end claim, each in-scope binary's
+  independently observed installed architecture, slice, UUID or sanitized
+  signature identity, and initial-protection evidence;
+- for each range compared by the claim, its coordinate system, start, length,
+  evidence level, observed SHA-256, and outcome; and
+- for a known-plaintext claim, the exact-range oracle source and SHA-256 value
+  for each in-scope DemoLab binary.
 
 Do not collect or publish UDIDs, ECIDs, serial numbers, IP addresses, host or
 device usernames, credentials, tokens, proprietary application names or bundle
@@ -108,11 +123,12 @@ Evidence strength and outcome are separate:
 - `known_plaintext` compares the observed output hash with an independently
   recorded SHA-256 oracle produced from the same DemoLab commit.
 
-An internal test record may declare a binary `Pass` only at the
-`known_plaintext` level with matching observed and oracle hashes. Missing or
-weaker evidence is `Inconclusive`, `Fail`, or `Skipped` as appropriate. Public
-issue intake deliberately avoids `Pass` so an unreviewed observation cannot be
-mistaken for verified plaintext or official support.
+An internal test record records every Mach-O slice and exact compared range in
+a separate row. It may declare a binary `Pass` only when every required row is
+at the `known_plaintext` level with matching observed and oracle hashes.
+Missing or weaker evidence is `Inconclusive`, `Fail`, or `Skipped` as
+appropriate. Public issue intake deliberately avoids `Pass` so an unreviewed
+observation cannot be mistaken for verified plaintext or official support.
 
 Evidence is scoped to the claim. A matching known-plaintext hash proves the
 observed output matches its oracle; it does not prove that the input exercised

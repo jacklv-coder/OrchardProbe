@@ -54,8 +54,9 @@ App/Framework/Extension 清点。受控 TestFlight 实验要进一步确认：Ap
   Bit。Lane 会直接解析当前配置的 `TMPDIR`，不依赖 Ruby 已缓存的 `Dir.tmpdir`；
   若自定义 `TMPDIR` 指向仓库内，或配置路径/解析后路径含单引号或控制字符，会在创建
   任何临时产物前拒绝，避免不安全路径进入 Fastlane Gym 的 Shell 导出参数。
-- 尚未执行受控真机观察，因此 `LAB-001` 仍为 `active`，当前既不是 Go，也不是
-  No-Go，更不能宣称已经具备砸壳能力。
+- 受控真机观察已完成并得到有界 No-Go：当前精确组合无法在批准边界内独立绑定
+  已安装 Lineage、初始保护和明文范围。`LAB-001` 已完成但不激活 `DEVICE-001`，
+  更不能宣称已经具备砸壳能力。
 
 ## Fastlane 登录与本机安装
 
@@ -219,8 +220,15 @@ API Key。`1.0 (1)` 已进入 TestFlight 并安装到自有设备，但其错误
 Install Name 阻止启动，不能用于 LAB-001 观察。2026-07-29，只读设备查询已独立确认
 同一自有 iPhone 安装的是修复后的 `1.0 (2)`；一次先终止旧进程的受控启动成功返回，
 精确启动的进程在 12 秒和 32 秒后仍存在，之前的即时闪退没有复现。这只通过了启动
-前置门禁，不证明已安装字节 Lineage、初始保护、明文或砸壳能力。下一门禁是完成
-受控真机观察并作出 LAB-001 明确 Go/No-Go。
+前置门禁，不证明已安装字节 Lineage、初始保护、明文或砸壳能力。
+
+受控观察最终得到有界 No-Go。公开 CoreDevice App/Process 元数据没有逐二进制的
+已安装 UUID、签名身份、Slice 或哈希，文件服务不提供已安装 App Bundle 域；
+分发签名为 `get-task-allow=false`，LLDB 也无法获得可执行映像。上传前二进制虽为
+`cryptid=0` 明文候选，但 Apple 分发还会增加 DRM 和重新处理二进制，所以上传
+哈希不能替代精确的已安装 Lineage 或独立的保护/明文范围比较。完整结论见
+[LAB-001 首方受保护 Oracle 结论](lab-001-protected-oracle.md)。LAB-001 以
+No-Go 完成，不激活 DEVICE-001。
 
 执行签名或上传 Lane 前还必须设置：
 
