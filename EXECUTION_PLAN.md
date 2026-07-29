@@ -68,9 +68,11 @@ decryption support.
 
 ## Current gate
 
-`LAB-001` is the only active planning step. Issue #9 fixes its first-party
-DemoLab provenance, independent initial-protection/plaintext-oracle evidence,
-redaction, explicit Go/No-Go, documentation, and claim-narrowing criteria.
+No planning step is active after this result PR merges. LAB-001 completed with
+a bounded No-Go; LAB-002 and DEVICE-001 remain planned and inactive. Issue #9
+fixed the first-party DemoLab provenance, independent
+initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
+documentation, and claim-narrowing criteria.
 The activation and workflow-preparation PRs are merged. The account-free
 evidence audit and the first signed-candidate run are recorded in Issue #9.
 The merged, parameterized, operator-controlled DemoLab archive/evidence/upload
@@ -148,14 +150,24 @@ On 2026-07-29, a read-only device query independently identified DemoLab
 `1.0 (2)` on the same owned iPhone. A controlled terminate-existing launch
 returned success, and the launched process was still present after both 12 and
 32 seconds. This clears only the launch prerequisite and does not establish
-installed lineage, initial protection, plaintext, or decryption. The current
-sequential gate is the bounded Stage 3 observation and explicit LAB-001
-Go/No-Go decision.
+installed lineage, initial protection, plaintext, or decryption.
 
 All three binaries remain `initial_protection_status: not_observed` and
 `expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not
-decryption evidence. Controlled observation and the explicit LAB-001 Go/No-Go
-decision remain pending; `DEVICE-001` and every later step remain untouched.
+decryption evidence. The bounded Stage 3 observation confirmed that public
+CoreDevice records do not expose per-binary installed identity or hashes, its
+file service offers no installed-app-bundle domain, and the distribution-signed
+app cannot expose executable images through public LLDB. Apple distribution
+processing also prevents the pre-upload IPA hash from standing in for the
+installed bytes. Exact installed lineage, initial protection, and plaintext
+ranges therefore cannot be independently bound within the approved boundary.
+
+The documented
+[bounded No-Go](docs/research/lab-001-protected-oracle.md) completes LAB-001
+when this result PR merges. It does not activate `LAB-002` or `DEVICE-001`.
+LAB-002 must be activated separately, establish a replacement first-party
+protected oracle, and complete with a Go result before any device-backend work
+can start.
 
 ## Execution ledger
 
@@ -175,20 +187,21 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 9 | `HOST-008` | `done` | Materialize the immutable source IPA into a private bounded worktree without symlink/path escape, excluding receipts and `SC_Info`; do not modify the source. | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | [#38](https://github.com/jacklv-coder/OrchardProbe/pull/38) | [#39](https://github.com/jacklv-coder/OrchardProbe/pull/39) |
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
-| 12 | `LAB-001` | `active` | Establish a first-party protected DemoLab oracle with independent initial-protection and expected-plaintext evidence, or record a bounded No-Go result. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | — |
-| 13 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
-| 14 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
-| 15 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
-| 16 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | To record during activation | — |
-| 17 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | To record during activation | — |
-| 18 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | To record during activation | — |
-| 19 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | To record during activation | — |
+| 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
+| 13 | `LAB-002` | `planned` | Establish a replacement first-party protected oracle that independently binds every installed binary, architecture, slice, initial-protection state, and exact plaintext range without exposing a reusable arbitrary process, filesystem, or memory API. | `LAB-001` No-Go | To create during activation | To record during activation | — |
+| 14 | `DEVICE-001` | `planned` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
+| 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
+| 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
+| 17 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | To record during activation | — |
+| 18 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | To record during activation | — |
+| 19 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | To record during activation | — |
+| 20 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | To record during activation | — |
 
 ## What this plan does not claim
 
-Rows after `HOST-009` are plans, not implemented capabilities. In particular,
-the repository does not yet provide a device backend, working decryption,
-device/build matching, Mach-O reconstruction, caller-visible IPA publication,
-the `oprobe decrypt` command, an installable release, or a supported-device
-claim. The output design remains unsigned, analysis-only, and limited to apps
-the user is authorized to analyze.
+Rows beginning with `LAB-002` are plans, not implemented capabilities. In
+particular, the repository does not yet provide a device backend, working
+decryption, device/build matching, Mach-O reconstruction, caller-visible IPA
+publication, the `oprobe decrypt` command, an installable release, or a
+supported-device claim. The output design remains unsigned, analysis-only, and
+limited to apps the user is authorized to analyze.

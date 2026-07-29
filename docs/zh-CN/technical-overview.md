@@ -192,8 +192,9 @@ Version、可执行文件清单、架构与 Slice、Mach-O UUID 和代码签名�
 精确的公开 Capability ID 和数值上限。Host 只能在已评审 Adapter 中选择，不得
 静默回退到权限更宽的原语。
 
-项目目前没有已批准后端。第一个候选仍被首方受保护 DemoLab Oracle 和授权设备
-Go/No-Go Spike 阻塞。
+项目目前没有已批准后端。LAB-001 已对公开、非越狱的内部 TestFlight 精确组合得到
+有界 No-Go：在批准边界内无法独立观察精确已安装 Lineage、初始保护和明文范围。
+激活任何设备 Backend 步骤前，必须先通过独立评审的 Oracle 计划变更。
 
 ### 6. 有界 Host/Helper Session
 
@@ -325,7 +326,7 @@ Rust Host 负责政策、解析、资源记账、重建、验证、打包、脱�
 | 版本化 Manifest/Capability/Error Schema | 已实现 |
 | 首方 DemoLab Simulator Fixture | 已实现 |
 | 有界协议规范 | 设计已接受；未实现 |
-| 受保护首方 Oracle | 等待真实证据，研究被阻塞 |
+| 受保护首方 Oracle | LAB-001 对当前内部 TestFlight 组合得到有界 No-Go；需要新的已评审 Oracle 计划 |
 | 设备发现与 Transport | 未实现 |
 | 设备 Helper 与 Backend | 未实现 |
 | 确定性未签名分析 IPA 打包 | Unix 库内已从保留的私有工作树实现；尚无 CLI 或产物发布 |

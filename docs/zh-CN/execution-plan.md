@@ -60,7 +60,8 @@ PR。后续步骤不得复用这个例外。
 
 ## 当前门禁
 
-`LAB-001` 是唯一正在激活的计划步骤。Issue #9 固定其首方 DemoLab 来源、独立的
+本结果 PR 合并后没有 `active` 计划步骤。LAB-001 以有界 No-Go 完成；LAB-002 和
+DEVICE-001 都保持未激活的 `planned`。Issue #9 固定其首方 DemoLab 来源、独立的
 初始保护/预期明文 Oracle 证据、脱敏、明确 Go/No-Go、文档和收窄声明标准。激活
 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
 构建。已合并的可参数化、由操作员显式控制的 DemoLab Archive/证据/上传流程使用
@@ -78,8 +79,8 @@ Apple 开发者工具也已固定为系统所选 Xcode 下的
 root 所有绝对路径以及 `/usr/bin/xcrun`、`/usr/bin/plutil`，并在执行前后复核
 身份、版本和 SDK，Check 与签名构建均清除继承的 Xcode 选择覆盖，并拒绝调用方 PATH
 中的同名遮蔽工具。配置及解析后的临时根目录会在 Fastlane 组成导出命令前拒绝
-Shell 不安全字符。该阶段也不把签名、分发或安装变成 `oprobe` 能力。受控自有真机
-观察与明确 Go/No-Go 仍未完成；API Key 使用匿名只读描述符，IPA 则因 Apple 拒绝
+Shell 不安全字符。该阶段也不把签名、分发或安装变成 `oprobe` 能力。API Key 使用
+匿名只读描述符，IPA 则因 Apple 拒绝
 无扩展名包路径而使用随机私有工作区内加锁的只读 `.ipa` 快照，并在使用前后复核
 路径、Inode 与哈希；保留的 `altool` 身份同样在执行前后立即复核。
 
@@ -118,12 +119,19 @@ App Store Connect API 已确认该精确 Build 为 `VALID`、内部状态为
 
 2026-07-29，只读设备查询已独立确认同一自有 iPhone 安装了 DemoLab `1.0 (2)`。
 一次先终止旧进程的受控启动成功返回，精确启动的进程在 12 秒和 32 秒后仍存在。这只
-通过了启动前置门禁，不证明已安装字节 Lineage、初始保护、明文或砸壳能力。当前串行
-门禁是完成有界 Stage 3 观察并作出 LAB-001 明确 Go/No-Go。
+通过了启动前置门禁，不证明已安装字节 Lineage、初始保护、明文或砸壳能力。
 
 三个二进制仍分别标记为 `initial_protection_status: not_observed` 和
 `expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
-受控观察和 LAB-001 明确 Go/No-Go 仍未完成；`DEVICE-001` 及以后步骤保持未启动。
+有界 Stage 3 观察确认：公开 CoreDevice 记录没有逐二进制已安装身份或哈希，文件服务
+不提供已安装 App Bundle 域，分发签名 App 也不能通过公开 LLDB 暴露可执行映像；
+Apple 分发处理还意味着上传前 IPA 哈希不能替代设备安装字节。因此无法在批准边界内
+独立绑定精确已安装 Lineage、初始保护和明文范围。
+
+已记录的[有界 No-Go](lab-001-protected-oracle.md)在本结果 PR 合并时完成
+LAB-001，并且不激活 `LAB-002` 或 `DEVICE-001`。LAB-002 必须通过独立 PR 激活，
+建立替代首方受保护 Oracle，并以 Go 结果完成；在此之前不得开始任何设备 Backend
+工作。
 
 ## 执行台账
 
@@ -143,18 +151,19 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 | 9 | `HOST-008` | `done` | 把不可变源 IPA 物化到私有、有界的工作目录，阻止 Symlink/Path Escape，排除 Receipt 和 `SC_Info`，不修改源文件。 | `HOST-007` | [#37](https://github.com/jacklv-coder/OrchardProbe/issues/37) | [#38](https://github.com/jacklv-coder/OrchardProbe/pull/38) | [#39](https://github.com/jacklv-coder/OrchardProbe/pull/39) |
 | 10 | `HOST-009` | `done` | 使用未改变的 Fixture 字节重建确定性、未签名、仅供分析的 IPA；保留必要元数据且绝不宣称已经解密。 | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
-| 12 | `LAB-001` | `active` | 建立首方受保护 DemoLab Oracle，同时提供初始保护状态与预期明文的独立证据；否则记录有界 No-Go。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | — |
-| 13 | `DEVICE-001` | `planned` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-001` | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
-| 14 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
-| 15 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
-| 16 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | 激活时记录 | — |
-| 17 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | 激活时记录 | — |
-| 18 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | 激活时记录 | — |
-| 19 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | 激活时记录 | — |
+| 12 | `LAB-001` | `done` | 记录当前内部 TestFlight 精确组合的有界 No-Go：无法在批准边界内独立观察精确已安装 Lineage、初始保护和明文范围。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
+| 13 | `LAB-002` | `planned` | 建立替代首方受保护 Oracle，在不暴露可复用的任意进程、文件系统或内存 API 的前提下，独立绑定每个已安装二进制、架构、Slice、初始保护状态和精确明文范围。 | `LAB-001` No-Go | 激活时创建 | 激活时记录 | — |
+| 14 | `DEVICE-001` | `planned` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-002` Go 结果 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
+| 15 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
+| 16 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
+| 17 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | 激活时记录 | — |
+| 18 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | 激活时记录 | — |
+| 19 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | 激活时记录 | — |
+| 20 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | 激活时记录 | — |
 
 ## 本计划没有宣称什么
 
-`HOST-009` 之后的条目都是计划，不是已实现能力。仓库目前尤其没有设备后端、
+从 `LAB-002` 开始的条目都是计划，不是已实现能力。仓库目前尤其没有设备后端、
 可用砸壳、设备/构建匹配、Mach-O 重建、调用方可见的 IPA 发布、`oprobe decrypt`
 命令、可安装 Release 或正式支持的设备组合。输出设计仍是未重签、仅供分析，并且
 只适用于用户有权分析的 App。

@@ -7,7 +7,8 @@ This is a simulator-only test fixture built from source. It has no FairPlay or o
 The separate
 [controlled first-party TestFlight runbook](demolab-testflight.md) describes
 the maintainer-only `LAB-001` experiment. That workflow does not change the
-default Simulator fixture or establish a protected-oracle result.
+default Simulator fixture. Its stock internal-TestFlight tuple produced the
+documented bounded No-Go rather than a usable protected oracle.
 
 ## Build locally
 

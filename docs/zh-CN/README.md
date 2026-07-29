@@ -17,6 +17,8 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
   完成定义。
 - [技术总览](technical-overview.md)：端到端数据流、组件边界、Mach-O 重建、
   证据语义和源码阅读顺序。
+- [LAB-001 首方受保护 Oracle 结论](lab-001-protected-oracle.md)：为什么当前
+  内部 TestFlight 研究组合得到有界 No-Go。
 - [范围与威胁模型（英文）](../architecture/RFC-0001-scope-and-threat-model.md)
 - [有界 Host/Helper 协议（英文）](../architecture/RFC-0002-bounded-host-helper-protocol.md)
 - [Rust Host 架构决策（英文）](../architecture/ADR-0001-rust-host.md)

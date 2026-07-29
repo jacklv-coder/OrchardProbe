@@ -229,9 +229,11 @@ and an accepted backend ADR. The helper reports exact public capability IDs and
 numeric limits. The host chooses among reviewed adapters without silently
 falling back to a broader primitive.
 
-The project currently has no approved backend. The first candidate remains
-blocked on a first-party protected DemoLab oracle and an authorized-device
-Go/No-Go spike.
+The project currently has no approved backend. LAB-001 completed with a bounded
+No-Go for the stock internal-TestFlight tuple because exact installed lineage,
+initial protection, and plaintext ranges were not independently observable
+within its approved boundary. A separate reviewed plan change is required
+before any device-backend step can be activated.
 
 ### 6. Bounded host/helper session
 
@@ -379,7 +381,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | Research blocked pending real evidence |
+| Protected first-party oracle | LAB-001 bounded No-Go for the stock internal-TestFlight tuple; new reviewed oracle plan required |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
