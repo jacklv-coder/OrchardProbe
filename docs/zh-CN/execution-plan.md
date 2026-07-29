@@ -61,10 +61,11 @@ PR。后续步骤不得复用这个例外。
 ## 当前门禁
 
 当前没有 `active` 计划步骤。LAB-001 已以有界 No-Go 完成。本计划变更把 Issue
-#55 对应的固定区间、仅限首方 DemoLab 自观测 Oracle 定义为下一项 `planned`
-步骤 `LAB-002`。在 LAB-002 取得 Go 结果前，`DEVICE-001` 保持未激活的
-`blocked`。本计划变更不激活 LAB-002，也不授权 Fixture、签名、TestFlight、
-设备或 Backend 实现；下一项权威变更必须是它独立且只改文档的激活 PR。
+#55 对应的逐二进制、逐 Slice、精确区间、仅限首方 DemoLab 自观测 Oracle
+定义为下一项 `planned` 步骤 `LAB-002`。在 LAB-002 取得 Go 结果前，
+`DEVICE-001` 保持未激活的 `blocked`。本计划变更不激活 LAB-002，也不授权
+Fixture、签名、TestFlight、设备或 Backend 实现；下一项权威变更必须是它独立且
+只改文档的激活 PR。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
 明确 Go/No-Go、文档和收窄声明标准。激活
 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
@@ -134,10 +135,11 @@ Apple 分发处理还意味着上传前 IPA 哈希不能替代设备安装字节
 
 已记录的[有界 No-Go](lab-001-protected-oracle.md)已完成 LAB-001，并阻塞
 `DEVICE-001`。Issue #55 定义的有界替代 Oracle 研究现排序为 `LAB-002`：仅限
-DemoLab、固定二进制和固定区间的自观测方法必须为 App、Framework 和 Share
-Extension 独立绑定已安装身份、初始保护、映射明文和预期明文，否则记录另一个
-有界 No-Go。实现前必须另行合并激活 PR；任何新签名 Build 或 TestFlight 上传前
-还必须单独获得明确授权。在 LAB-002 取得 Go 结果前，不得开始设备 Backend 工作。
+DemoLab 的自观测方法必须把 App、Framework 和 Share Extension 的每个二进制分别
+绑定到已安装身份、架构、Slice 和初始保护，再把每个固定精确映射代码区间的
+SHA-256 与独立生成的预期明文 SHA-256 匹配；否则记录另一个有界 No-Go。实现前
+必须另行合并激活 PR；任何新签名 Build 或 TestFlight 上传前还必须单独获得明确
+授权。在 LAB-002 取得 Go 结果前，不得开始设备 Backend 工作。
 
 ## 执行台账
 
@@ -158,7 +160,7 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 | 10 | `HOST-009` | `done` | 使用未改变的 Fixture 字节重建确定性、未签名、仅供分析的 IPA；保留必要元数据且绝不宣称已经解密。 | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | 记录当前内部 TestFlight 精确组合的有界 No-Go：无法在批准边界内独立观察精确已安装 Lineage、初始保护和明文范围。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `planned` | 评估仅限 DemoLab、固定二进制和固定区间的自观测 Oracle，为 App、Framework 和 Share Extension 独立绑定已安装身份、初始保护、映射明文和预期明文；否则记录有界 No-Go。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 激活时记录 | — |
+| 13 | `LAB-002` | `planned` | 评估仅限 DemoLab 的自观测 Oracle，把 App、Framework 和 Share Extension 的每个二进制分别绑定到已安装身份、架构、Slice 和初始保护，再把每个固定精确映射代码区间的 SHA-256 与独立生成的预期明文 SHA-256 匹配；否则记录有界 No-Go。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 激活时记录 | — |
 | 14 | `DEVICE-001` | `blocked` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-002` Go 结果 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
 | 15 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
 | 16 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |

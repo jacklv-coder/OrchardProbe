@@ -70,7 +70,8 @@ decryption support.
 
 No planning step is active. LAB-001 completed with a bounded No-Go. This plan
 change adds `LAB-002` as the next `planned` step, backed by Issue #55, to
-evaluate a fixed-range, first-party DemoLab self-observation oracle.
+evaluate a per-binary, per-slice, exact-range, first-party DemoLab
+self-observation oracle.
 `DEVICE-001` remains blocked and inactive until LAB-002 completes with a Go
 result. This plan change does not activate LAB-002 or authorize fixture,
 signing, TestFlight, device, or backend implementation; the next authoritative
@@ -170,11 +171,12 @@ ranges therefore cannot be independently bound within the approved boundary.
 The documented
 [bounded No-Go](docs/research/lab-001-protected-oracle.md) completed LAB-001
 and blocked `DEVICE-001`. Issue #55 defines the bounded replacement-oracle
-research now ordered as `LAB-002`: a DemoLab-only, fixed-binary/fixed-range
-self-observation method must independently bind installed identity, initial
-protection, mapped plaintext, and expected plaintext for the app, framework,
-and share extension, or record another bounded No-Go. It requires its own
-activation PR before implementation and a separate explicit authorization
+research now ordered as `LAB-002`: a DemoLab-only self-observation method must
+independently bind each app, framework, and share-extension binary to its
+installed identity, architecture, slice, and initial protection, then match
+every fixed exact mapped-code-range SHA-256 to an independently generated
+expected-plaintext SHA-256, or record another bounded No-Go. It requires its
+own activation PR before implementation and a separate explicit authorization
 before any new signed build or TestFlight upload. No device-backend work can
 start unless LAB-002 completes with a Go result.
 
@@ -197,7 +199,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `planned` | Evaluate a DemoLab-only, fixed-binary/fixed-range self-observation oracle that independently binds installed identity, initial protection, mapped plaintext, and expected plaintext for the app, framework, and share extension; otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | To record during activation | — |
+| 13 | `LAB-002` | `planned` | Evaluate a DemoLab-only self-observation oracle that independently binds each app, framework, and share-extension binary to its installed identity, architecture, slice, and initial protection, then matches every fixed exact mapped-code-range SHA-256 to an independently generated expected-plaintext SHA-256; otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | To record during activation | — |
 | 14 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
