@@ -64,8 +64,8 @@ PR。后续步骤不得复用这个例外。
 初始保护/预期明文 Oracle 证据、脱敏、明确 Go/No-Go、文档和收窄声明标准。激活
 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
 构建。已合并的可参数化、由操作员显式控制的 DemoLab Archive/证据/上传流程使用
-带锁的随机构建暂存、排他发布和
-描述符绑定的 Apple 上传；Gym 导出 Scratch 被限制在该暂存目录内并随之清理，同时
+带锁的随机构建暂存、排他发布和绑定证据的命名 `.ipa` Apple 上传；Gym 导出
+Scratch 被限制在该暂存目录内并随之清理，同时
 明确校验有界的 `altool` JSON 成功/错误响应；不保存 Apple 凭据，且为上传进程设置
 固定截止时间。预上传记录绑定生成工程时实际使用的
 XcodeGen 精确版本，并在执行前校验不可写文件及经过评审的版本/架构 SHA-256 白名单；
@@ -79,22 +79,25 @@ root 所有绝对路径以及 `/usr/bin/xcrun`、`/usr/bin/plutil`，并在执�
 身份、版本和 SDK，Check 与签名构建均清除继承的 Xcode 选择覆盖，并拒绝调用方 PATH
 中的同名遮蔽工具。配置及解析后的临时根目录会在 Fastlane 组成导出命令前拒绝
 Shell 不安全字符。该阶段也不把签名、分发或安装变成 `oprobe` 能力。受控自有真机
-观察与明确 Go/No-Go 仍未完成；IPA/API Key 匿名快照会通过经验证的只读描述符重新
-打开，保留的 `altool` 身份则在执行前后立即复核。
+观察与明确 Go/No-Go 仍未完成；API Key 使用匿名只读描述符，IPA 则因 Apple 拒绝
+无扩展名包路径而使用随机私有工作区内加锁的只读 `.ipa` 快照，并在使用前后复核
+路径、Inode 与哈希；保留的 `altool` 身份同样在执行前后立即复核。
 
 Stage 1 已于 2026-07-29 在干净的合并 Commit
 `01cd447a1205618c22f24a00f059e54f8a284fd1` 上完成：DemoLab `1.0 (1)`
 已导出为绑定证据的 App Store 分发候选，IPA SHA-256 为
 `6589c290dbb9478a4744ee32398d67da87d411cf210745532ed970b4e331fcd0`。
 主 App 与 Share Extension 均通过授权 Team 的 Apple Distribution 签名和
-Provisioning Profile 独立校验；公开记录有意隐藏 Bundle ID。本次没有向
-TestFlight 或 App Store Connect 上传。三个二进制仍分别标记为
+Provisioning Profile 独立校验；公开记录有意隐藏 Bundle ID。三个二进制仍分别标记为
 `initial_protection_status: not_observed` 和
 `expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
 
-下一串行门禁是：获得单独的明确上传授权并配置最小权限 App Store Connect API Key
-后，才能把这个完全相同的候选上传至内部 TestFlight。受控自有真机观察与明确
-Go/No-Go 决策仍未完成；`DEVICE-001` 及以后步骤保持未启动。
+2026-07-29 已获得明确上传授权并在本机配置最小权限 API Key。首次上传在 Apple 接收
+任何 IPA 字节前被拒绝，根因是 Xcode 26 `altool` 无法展开没有扩展名的匿名包路径。
+通过 App Store Connect 页面与 API 对账确认 `1.0 (1)` 不存在 Build 和上传文件；
+本地不确定记录已按“缺席”归档并恢复重试许可。下一串行门禁是合并加锁的命名
+`.ipa` 兼容修复，从该合并 Commit 重新生成绑定证据的 `1.0 (1)` 候选并只上传一次。
+受控自有真机观察与明确 Go/No-Go 决策仍未完成；`DEVICE-001` 及以后步骤保持未启动。
 
 ## 执行台账
 

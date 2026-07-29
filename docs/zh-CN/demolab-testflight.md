@@ -33,9 +33,11 @@ App/Framework/Extension 清点。受控 TestFlight 实验要进一步确认：Ap
 - `demolab_upload_testflight` 只接受仓库外、权限受限的 App Store Connect API
   Key；上传前强制复核源码 Commit、证据类型、IPA 大小与 SHA-256、包内 Bundle
   ID、版本/Build 号、可执行文件路径及三个二进制哈希，再生成只读的私有临时副本、
-  复核大小与 SHA-256，并立即解除该副本的文件名。Fastlane Lane 只把仍然打开的
-  `/dev/fd` 描述符交给 Apple `altool --upload-package --wait`，所以 Apple 工具不能
-  按原路径重新打开或替换另一份 IPA；API Key 也使用独立的匿名描述符。IPA 检查、
+  复核大小与 SHA-256，并以 `0400` 权限锁定在随机 `0700` 工作区中。Xcode 26
+  `altool` 会拒绝没有 `.ipa` 扩展名的 `/dev/fd` 包路径，因此 Lane 传入这个受控的
+  `DemoLab.ipa` 快照路径，并在 `altool --upload-package --wait` 前后复核同一
+  Path、Inode、只读描述符、大小和哈希；Apple 工具不会收到或重新打开调用者原始
+  IPA 路径。API Key 仍使用独立的匿名描述符。IPA 检查、
   大小和哈希来自同一份有界内存快照。证据 JSON 必须由当前用户所有且无组/其他用户权限，并从完成所有者、
   权限、路径和 Inode 校验的同一个有界、拒绝符号链接的文件描述符解析，避免校验后
   再按路径打开另一份文件；上传前还会要求完整的创建时间、源码、工具链、Release/
@@ -70,6 +72,13 @@ Lane 传入 `altool --api-key-subject user`，其他值会被拒绝。团队 Key
 DemoLab 不使用非豁免加密，主 App 明确声明
 `ITSAppUsesNonExemptEncryption=false`，处理后的 Build 不需要额外手工回答出口合规
 问题。
+
+2026-07-29 的首次受控上传暴露了 `.ipa` 文件名要求：Apple 只创建空的
+`AWAITING_UPLOAD` 占位记录，并在接收任何 IPA 文件字节前返回产品错误。同一包和
+API Key 的普通路径验证通过，而描述符路径验证稳定复现
+`Cannot expand files with extension ""`。通过 App Store Connect 页面和 API 对账
+确认 `1.0 (1)` 不存在 Build 或上传文件后，本地不确定记录已归档为
+`reconciled_absent`，才恢复重试许可。这只是传输兼容性证据，不是保护状态或明文证据。
 
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
@@ -133,8 +142,9 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
   员，也不自动安装 App；上传前拒绝所有继承的 `PILOT_*` 环境变量及
   `DEMO_ACCOUNT_REQUIRED`，并用最小显式环境、私有临时 Shell/Foundation Home
   和仅所有者创建掩码启动 Apple `altool`，命令结束即清理该工作区。IPA 与 API Key
-  快照都会先关闭可写 Handle，再以 no-follow 方式重新打开同一 Inode，复核描述符确为
-  只读后才 unlink 并传给 `altool`。两个匿名描述符就绪后，Lane 会紧邻网络启动再次
+  快照都会先关闭可写 Handle，再以 no-follow 方式重新打开同一 Inode 并复核描述符
+  确为只读；IPA 保留受控的 `.ipa` 文件名并加锁，API Key 则 unlink 后仅通过匿名
+  描述符传入。两份受控快照就绪后，Lane 会紧邻网络启动再次
   测量 Archive 的三个二进制，并要求大小、SHA-256、架构和 UUID 仍与证据完全一致；
   随后才复核 Xcode/`altool` 并启动上传。Lane 会先解析
   并验证当前 Xcode
@@ -172,8 +182,10 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
 
 第一个签名候选已从干净的合并 Commit
 `01cd447a1205618c22f24a00f059e54f8a284fd1` 创建并完成本地签名与证据校验；
-本次没有上传。下一步只有在获得单独的明确上传授权并配置低权限 App Store Connect
-API Key 后，才能显式上传这个完全相同、已绑定证据的候选。
+2026-07-29 已获得单独的明确上传授权并在仓库外配置最小权限 App Store Connect
+API Key。首次上传因上述 Xcode 26 文件名兼容问题在 Apple 接收 IPA 字节前失败，
+且已完成远端缺失对账和本地不确定记录归档。下一门禁是先合并 `.ipa` 兼容修复，
+再从该合并 Commit 重新生成证据绑定的 `1.0 (1)` 候选并只上传一次。
 
 执行签名或上传 Lane 前还必须设置：
 

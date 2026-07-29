@@ -55,7 +55,6 @@ DEMO_LAB_TRUSTED_XCODEGEN_BINARIES = {
 DEMO_LAB_LOCAL_RUN_CONFIRMATION = "I_AM_RUNNING_LOCALLY_OUTSIDE_CI"
 DEMO_LAB_RETRY_CONFIRMATION =
   "I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT"
-DEMO_LAB_UPLOAD_IPA_FD = 3
 DEMO_LAB_UPLOAD_KEY_FD = 4
 DEMO_LAB_LINEAGE_NOTE =
   "Pre-upload bytes are candidates, not proof of installed plaintext."
@@ -2011,21 +2010,62 @@ rescue
   raise
 end
 
-def open_unlinked_snapshot_from_path(
+def verify_locked_ipa_snapshot!(
+  snapshot,
+  snapshot_path,
+  expected_identity,
+  workspace_identity
+)
+  current_workspace_identity = private_directory_identity!(
+    File.dirname(snapshot_path),
+    "DemoLab IPA snapshot workspace"
+  )
+  opened = snapshot.stat
+  path_stat = File.lstat(snapshot_path)
+  access_mode = snapshot.fcntl(Fcntl::F_GETFL) & Fcntl::O_ACCMODE
+  observed_identity = [
+    opened.dev,
+    opened.ino,
+    opened.size,
+    opened.mtime.to_i,
+    digest_open_file(snapshot),
+  ]
+  unless current_workspace_identity == workspace_identity &&
+         File.basename(snapshot_path) == "DemoLab.ipa" &&
+         opened.file? &&
+         opened.uid == Process.uid &&
+         (opened.mode & 0o777) == 0o400 &&
+         access_mode == Fcntl::O_RDONLY &&
+         !path_stat.symlink? &&
+         path_stat.dev == opened.dev &&
+         path_stat.ino == opened.ino &&
+         observed_identity == expected_identity
+    UI.user_error!("The locked DemoLab IPA snapshot changed during upload.")
+  end
+  true
+rescue Errno::EACCES,
+       Errno::EBADF,
+       Errno::ELOOP,
+       Errno::ENOENT,
+       Errno::ENOTDIR
+  UI.user_error!("Unable to verify the locked DemoLab IPA snapshot safely.")
+end
+
+def open_locked_snapshot_from_path(
   source_path,
   expected_size:,
   expected_sha256:,
-  label:,
-  suffix: ""
+  label:
 )
-  workspace = external_temporary_directory("orchardprobe-demolab-fd-")
+  workspace = external_temporary_directory("orchardprobe-demolab-ipa-")
+  workspace_identity = private_directory_identity!(
+    workspace,
+    "DemoLab IPA snapshot workspace"
+  )
+  snapshot_path = File.join(workspace, "DemoLab.ipa")
   writable_snapshot = nil
-  read_only_snapshot = nil
+  locked_snapshot = nil
   begin
-    writable_snapshot = Tempfile.new(["snapshot-", suffix], workspace)
-    writable_snapshot.binmode
-    writable_snapshot.chmod(0o600)
-
     flags = File::RDONLY | File::NONBLOCK
     flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
     File.open(source_path, flags) do |source|
@@ -2037,6 +2077,13 @@ def open_unlinked_snapshot_from_path(
         UI.user_error!("#{label} has an invalid size.")
       end
 
+      destination_flags = File::WRONLY | File::CREAT | File::EXCL
+      destination_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+      writable_snapshot = File.open(
+        snapshot_path,
+        destination_flags,
+        0o600
+      )
       copied = 0
       digest = Digest::SHA256.new
       while (chunk = source.read([1024 * 1024, expected_size - copied + 1].min))
@@ -2055,18 +2102,51 @@ def open_unlinked_snapshot_from_path(
       end
     end
 
-    read_only_snapshot = reopen_snapshot_read_only!(
-      writable_snapshot,
-      expected_size: expected_size,
-      expected_sha256: expected_sha256,
-      label: label
+    writable_snapshot.flush
+    writable_snapshot.fsync
+    writable_snapshot.chmod(0o400)
+    written = writable_snapshot.stat
+    writable_snapshot.close
+    writable_snapshot = nil
+
+    snapshot_flags = File::RDONLY | File::NONBLOCK
+    snapshot_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    locked_snapshot = File.open(snapshot_path, snapshot_flags)
+    unless locked_snapshot.flock(File::LOCK_EX | File::LOCK_NB)
+      UI.user_error!("Unable to lock the private DemoLab IPA snapshot.")
+    end
+    opened = locked_snapshot.stat
+    snapshot_identity = [
+      opened.dev,
+      opened.ino,
+      opened.size,
+      opened.mtime.to_i,
+      digest_open_file(locked_snapshot),
+    ]
+    unless written.dev == opened.dev &&
+           written.ino == opened.ino &&
+           opened.size == expected_size &&
+           snapshot_identity.last == expected_sha256
+      UI.user_error!("The private DemoLab IPA snapshot does not match its source.")
+    end
+    verify_locked_ipa_snapshot!(
+      locked_snapshot,
+      snapshot_path,
+      snapshot_identity,
+      workspace_identity
     )
-    FileUtils.rmdir(workspace)
-    workspace = nil
-    read_only_snapshot
+    [
+      locked_snapshot,
+      snapshot_path,
+      snapshot_identity,
+      workspace_identity,
+    ]
   rescue
-    read_only_snapshot&.close
-    writable_snapshot&.close!
+    if locked_snapshot
+      locked_snapshot.flock(File::LOCK_UN) rescue nil
+      locked_snapshot.close rescue nil
+    end
+    writable_snapshot&.close
     FileUtils.rm_rf(workspace) if workspace
     raise
   end
@@ -2104,12 +2184,11 @@ end
 def stage_evidence_bound_ipa(ipa_path, evidence)
   expected_size = evidence.dig("artifacts", "ipa", "size")
   expected_sha256 = evidence.dig("artifacts", "ipa", "sha256")
-  open_unlinked_snapshot_from_path(
+  open_locked_snapshot_from_path(
     ipa_path,
     expected_size: expected_size,
     expected_sha256: expected_sha256,
-    label: "Evidence-bound IPA",
-    suffix: ".ipa"
+    label: "Evidence-bound IPA"
   )
 end
 
@@ -2338,6 +2417,9 @@ end
 
 def upload_demolab_with_altool!(
   ipa_snapshot:,
+  ipa_snapshot_path:,
+  ipa_snapshot_identity:,
+  ipa_workspace_identity:,
   key_snapshot:,
   archive_path:,
   evidence:,
@@ -2351,7 +2433,12 @@ def upload_demolab_with_altool!(
   marketing_version:,
   build_number:
 )
-  ipa_snapshot.rewind
+  verify_locked_ipa_snapshot!(
+    ipa_snapshot,
+    ipa_snapshot_path,
+    ipa_snapshot_identity,
+    ipa_workspace_identity
+  )
   key_snapshot.rewind
   stdout_capture = nil
   stderr_capture = nil
@@ -2380,7 +2467,7 @@ def upload_demolab_with_altool!(
   command = [
     altool.fetch("path"),
     "--upload-package",
-    "/dev/fd/#{DEMO_LAB_UPLOAD_IPA_FD}",
+    ipa_snapshot_path,
     "--platform",
     "ios",
     "--apple-id",
@@ -2423,7 +2510,6 @@ def upload_demolab_with_altool!(
     pid = Process.spawn(
       environment,
       *command,
-      DEMO_LAB_UPLOAD_IPA_FD => ipa_snapshot,
       DEMO_LAB_UPLOAD_KEY_FD => key_snapshot,
       out: stdout_capture,
       err: stderr_capture,
@@ -2440,6 +2526,12 @@ def upload_demolab_with_altool!(
   ensure
     File.umask(prior_umask)
   end
+  verify_locked_ipa_snapshot!(
+    ipa_snapshot,
+    ipa_snapshot_path,
+    ipa_snapshot_identity,
+    ipa_workspace_identity
+  )
   validate_private_altool_logs!(log_directory)
   stdout = read_bounded_altool_output!(stdout_capture, "Apple altool stdout")
   read_bounded_altool_output!(stderr_capture, "Apple altool stderr")
@@ -3728,13 +3820,15 @@ platform :ios do
           },
         },
       }
-      upload_snapshot = stage_evidence_bound_ipa(
-        check_ipa,
-        snapshot_evidence
-      )
+      upload_snapshot,
+        snapshot_path,
+        snapshot_identity,
+        snapshot_workspace_identity = stage_evidence_bound_ipa(
+          check_ipa,
+          snapshot_evidence
+        )
       begin
         expected_snapshot_sha256 = sha256(check_ipa)
-        snapshot_path = upload_snapshot.path
         File.write(check_ipa, "replacement-after-snapshot")
         descriptor_write_rejected = false
         begin
@@ -3748,10 +3842,10 @@ platform :ios do
           "/usr/bin/shasum",
           "-a",
           "256",
-          "/dev/fd/#{DEMO_LAB_UPLOAD_IPA_FD}",
-          DEMO_LAB_UPLOAD_IPA_FD => upload_snapshot
+          snapshot_path
         )
-        unless !File.exist?(snapshot_path) &&
+        unless File.file?(snapshot_path) &&
+               File.basename(snapshot_path) == "DemoLab.ipa" &&
                upload_snapshot.stat.size == snapshot_evidence.dig(
                  "artifacts",
                  "ipa",
@@ -3763,11 +3857,59 @@ platform :ios do
                  Fcntl::O_RDONLY &&
                descriptor_write_rejected &&
                child_status.success? &&
-               child_output.split.first == expected_snapshot_sha256
-          UI.user_error!("Anonymous DemoLab upload snapshot check failed.")
+               child_output.split.first == expected_snapshot_sha256 &&
+               verify_locked_ipa_snapshot!(
+                 upload_snapshot,
+                 snapshot_path,
+                 snapshot_identity,
+                 snapshot_workspace_identity
+               )
+          UI.user_error!("Locked DemoLab upload snapshot check failed.")
         end
       ensure
-        upload_snapshot.close
+        upload_snapshot.flock(File::LOCK_UN) rescue nil
+        upload_snapshot.close rescue nil
+        FileUtils.rm_rf(File.dirname(snapshot_path))
+      end
+
+      tamper_ipa = File.join(workspace, "DemoLab-snapshot-tamper.ipa")
+      FileUtils.cp(complete_ipa, tamper_ipa)
+      tamper_evidence = {
+        "artifacts" => {
+          "ipa" => {
+            "size" => File.size(tamper_ipa),
+            "sha256" => sha256(tamper_ipa),
+          },
+        },
+      }
+      tampered_snapshot,
+        tampered_snapshot_path,
+        tampered_snapshot_identity,
+        tampered_workspace_identity = stage_evidence_bound_ipa(
+          tamper_ipa,
+          tamper_evidence
+        )
+      begin
+        File.unlink(tampered_snapshot_path)
+        File.write(tampered_snapshot_path, "replacement-snapshot")
+        named_snapshot_replacement_rejected = false
+        begin
+          verify_locked_ipa_snapshot!(
+            tampered_snapshot,
+            tampered_snapshot_path,
+            tampered_snapshot_identity,
+            tampered_workspace_identity
+          )
+        rescue FastlaneCore::Interface::FastlaneError
+          named_snapshot_replacement_rejected = true
+        end
+        unless named_snapshot_replacement_rejected
+          UI.user_error!("Replaced DemoLab upload snapshot path was accepted.")
+        end
+      ensure
+        tampered_snapshot.flock(File::LOCK_UN) rescue nil
+        tampered_snapshot.close rescue nil
+        FileUtils.rm_rf(File.dirname(tampered_snapshot_path))
       end
 
       altool_success = {
@@ -4423,6 +4565,9 @@ platform :ios do
     key_content = nil
     key_snapshot = nil
     upload_snapshot = nil
+    upload_snapshot_path = nil
+    upload_snapshot_identity = nil
+    upload_workspace_identity = nil
     result_file = nil
     attempt_recorded = false
     upload_accepted = false
@@ -4439,10 +4584,13 @@ platform :ios do
       )
       key_content.clear
       key_content = nil
-      upload_snapshot = stage_evidence_bound_ipa(
-        ipa_path,
-        evidence
-      )
+      upload_snapshot,
+        upload_snapshot_path,
+        upload_snapshot_identity,
+        upload_workspace_identity = stage_evidence_bound_ipa(
+          ipa_path,
+          evidence
+        )
       attempt = {
         "schema_version" => 1,
         "source_commit" => evidence.dig("source", "commit"),
@@ -4462,6 +4610,9 @@ platform :ios do
 
       upload_demolab_with_altool!(
         ipa_snapshot: upload_snapshot,
+        ipa_snapshot_path: upload_snapshot_path,
+        ipa_snapshot_identity: upload_snapshot_identity,
+        ipa_workspace_identity: upload_workspace_identity,
         key_snapshot: key_snapshot,
         archive_path: archive_path,
         evidence: evidence,
@@ -4475,10 +4626,12 @@ platform :ios do
         marketing_version: evidence.dig("build", "marketing_version"),
         build_number: evidence.dig("build", "build_number")
       )
-      unless digest_open_file(upload_snapshot) ==
-             evidence.dig("artifacts", "ipa", "sha256")
-        UI.user_error!("Anonymous IPA snapshot changed during upload.")
-      end
+      verify_locked_ipa_snapshot!(
+        upload_snapshot,
+        upload_snapshot_path,
+        upload_snapshot_identity,
+        upload_workspace_identity
+      )
 
       result = {
         "schema_version" => 1,
@@ -4491,7 +4644,7 @@ platform :ios do
         "status" => "accepted",
         "note" =>
           "Apple altool returned explicit success without product-errors for " \
-          "the descriptor-bound upload; confirm TestFlight readiness in " \
+          "the evidence-bound upload; confirm TestFlight readiness in " \
           "App Store Connect. This does not establish installed lineage, " \
           "protection, or plaintext.",
       }
@@ -4510,7 +4663,13 @@ platform :ios do
       result_file&.close
       key_content&.clear
       key_snapshot&.close
-      upload_snapshot&.close
+      if upload_snapshot
+        upload_snapshot.flock(File::LOCK_UN) rescue nil
+        upload_snapshot.close rescue nil
+      end
+      if upload_snapshot_path
+        FileUtils.rm_rf(File.dirname(upload_snapshot_path))
+      end
       if attempt_recorded && !upload_accepted
         UI.important(
           "The upload result remains indeterminate. Reconcile the exact " \
