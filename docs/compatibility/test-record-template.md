@@ -63,10 +63,13 @@ Number of clean runs attempted: `<number>`
 
 Number of clean runs with identical results: `<number>`
 
-## Per-binary evidence
+## Per-slice and range evidence
 
-Create one row for every in-scope DemoLab Mach-O. Do not combine a main
-executable, framework, and extension into one aggregate result.
+Create one row for every in-scope DemoLab Mach-O slice and exact compared
+range. Repeat the DemoLab-relative path when a binary has multiple slices or
+when a slice has multiple compared ranges. Never place a comma-separated list
+of slices, UUIDs, ranges, hashes, or outcomes in one cell, and do not combine a
+main executable, framework, and extension into one aggregate result.
 
 | DemoLab-relative binary | Installed architecture / slice | Installed UUID / signature identity | Initial protection evidence | Compared range (file offset or VM address + length) | Evidence level | Observed range SHA-256 | Known-plaintext range SHA-256 | Oracle source | Outcome |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -74,11 +77,13 @@ executable, framework, and extension into one aggregate result.
 | `DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
 | `DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` | `<...>` |
 
-`Pass` is valid only when the evidence level is `known_plaintext` and the
-installed architecture, slice, UUID/signature identity, and exact compared
-range are independently bound, and the observed range SHA-256 exactly matches
-the oracle range from the recorded DemoLab commit. Metadata such as
-`cryptid == 0` is not a plaintext oracle.
+`Pass` is valid for one row only when the evidence level is `known_plaintext`
+and that row's installed architecture, slice, UUID/signature identity, and
+exact compared range are independently bound, and the observed range SHA-256
+exactly matches the oracle range from the recorded DemoLab commit. Every
+required slice and range needs its own passing row before the binary or claim
+can be declared `Pass`. Metadata such as `cryptid == 0` is not a plaintext
+oracle.
 
 For a protected-to-plaintext or end-to-end export claim, the initial protection
 evidence must also show that this exact installed binary exercised the claimed

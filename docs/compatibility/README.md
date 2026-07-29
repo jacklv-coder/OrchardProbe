@@ -123,11 +123,12 @@ Evidence strength and outcome are separate:
 - `known_plaintext` compares the observed output hash with an independently
   recorded SHA-256 oracle produced from the same DemoLab commit.
 
-An internal test record may declare a binary `Pass` only at the
-`known_plaintext` level with matching observed and oracle hashes. Missing or
-weaker evidence is `Inconclusive`, `Fail`, or `Skipped` as appropriate. Public
-issue intake deliberately avoids `Pass` so an unreviewed observation cannot be
-mistaken for verified plaintext or official support.
+An internal test record records every Mach-O slice and exact compared range in
+a separate row. It may declare a binary `Pass` only when every required row is
+at the `known_plaintext` level with matching observed and oracle hashes.
+Missing or weaker evidence is `Inconclusive`, `Fail`, or `Skipped` as
+appropriate. Public issue intake deliberately avoids `Pass` so an unreviewed
+observation cannot be mistaken for verified plaintext or official support.
 
 Evidence is scoped to the claim. A matching known-plaintext hash proves the
 observed output matches its oracle; it does not prove that the input exercised
