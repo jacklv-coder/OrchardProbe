@@ -198,10 +198,10 @@ crossing the approved LAB-001 boundary.
 At the time this result was accepted, LAB-001 completed with No-Go, blocked
 DEVICE-001, and required a replacement-oracle step to be proposed and ordered
 through a separate reviewed plan change. That requirement is now represented by
-the planned `LAB-002` step and Issue #55 in the authoritative execution ledger.
-LAB-002 is not active or implemented; it still must complete with a Go result
-for an independent protected oracle before any device-backend work starts. The
-replacement method must:
+the active `LAB-002` step and Issue #55 in the authoritative execution ledger.
+Activation does not establish or implement an oracle; LAB-002 still must
+complete with a Go result for an independent protected oracle before any
+device-backend work starts. The replacement method must:
 
 - remain limited to project-owned DemoLab;
 - avoid a reusable arbitrary process, filesystem, or memory API;
@@ -215,6 +215,6 @@ replacement method must:
 - undergo its own threat-model, documentation, CR, and Go/No-Go review before
   DEVICE-001 can be activated.
 
-Planning LAB-002 does not establish a protected oracle. OrchardProbe still has
+Activating LAB-002 does not establish a protected oracle. OrchardProbe still has
 no device backend, protected oracle, verified compatibility row, or working
 `oprobe decrypt` command.

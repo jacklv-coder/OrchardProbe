@@ -232,7 +232,7 @@ falling back to a broader primitive.
 The project currently has no approved backend. LAB-001 completed with a bounded
 No-Go for the stock internal-TestFlight tuple because exact installed lineage,
 initial protection, and plaintext ranges were not independently observable
-within its approved boundary. LAB-002 is now planned to evaluate a first-party
+within its approved boundary. LAB-002 is the active research step evaluating a first-party
 DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
 the recorded build. Before device observation, a reviewed design/build manifest
@@ -243,9 +243,10 @@ commit/build. Every installed inventory item and slice must be independently
 bound to the recorded build, shown to have an initially protected installed
 state, and then shown to expose the same predeclared mapped ranges as plaintext
 matching the frozen oracle. Post-observation omission or reclassification is
-forbidden. LAB-002 is not active, implemented, or verified. It requires a
-separate activation PR, and DEVICE-001 remains blocked until LAB-002 completes
-with a Go result.
+forbidden. Activation permits only the bounded Issue #55 implementation; it
+does not establish the oracle or authorize a signed build, TestFlight upload,
+or device observation. LAB-002 is not implemented or verified, and DEVICE-001
+remains blocked until LAB-002 completes with a Go result.
 
 ### 6. Bounded host/helper session
 
@@ -393,7 +394,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 research over the complete three-executable installed-slice inventory and its pre-observation frozen exact-range set is planned but not active or implemented |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 research over the complete three-executable installed-slice inventory and its pre-observation frozen exact-range set is active but not implemented or verified |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
