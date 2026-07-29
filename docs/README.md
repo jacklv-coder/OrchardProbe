@@ -23,6 +23,9 @@ implementation behind it. Start with the document that matches what you need:
   authorization boundary, security invariants, and No-Go conditions.
 - [LAB-001 protected-oracle result](research/lab-001-protected-oracle.md) —
   why the stock internal-TestFlight tuple produced a bounded No-Go.
+- [LAB-002 fixed-range oracle design](research/lab-002-oracle-design.md) —
+  the active first-party-only trust model, fixed inventory/ranges, reports,
+  two-run procedure, and fail-closed Go/No-Go gate.
 - [Bounded host/helper protocol](architecture/RFC-0002-bounded-host-helper-protocol.md)
   — the accepted device-free protocol design gate.
 - [Rust host architecture decision](architecture/ADR-0001-rust-host.md) — why

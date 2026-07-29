@@ -68,19 +68,40 @@ decryption support.
 
 ## Current gate
 
-This documentation-only change activates `LAB-002`, backed by Issue #55, as the
-only `active` ledger step after this activation PR merges. Implementation may
-then proceed only inside Issue #55's first-party DemoLab self-observation
-boundary and its complete, predeclared inventory, source/build, protection,
-transition, and oracle gates. This activation does not establish a protected
-oracle or authorize a signed build, TestFlight upload, device observation, or
-device-backend work. Any exact new signed version/build still requires separate
-explicit authorization, and its reviewed design/build manifest must be frozen
-before observation. `DEVICE-001` remains blocked and inactive unless LAB-002
-completes with a Go result.
+`LAB-002`, backed by Issue #55 and activated by merged PR #57, is the only
+`active` ledger step. Its
+[device-free design](docs/research/lab-002-oracle-design.md) fixes the
+first-party DemoLab self-observation boundary, three-role/all-slice inventory,
+role-specific authorized-target identity, fixed code range, independent
+pre-upload oracle, bounded reports, two-clean-run procedure, and fail-closed
+Go/No-Go rules. It also requires a fresh host-signed, policy-versioned
+authorized-use envelope before installation and each run, then uses a device-
+local enrollment key/receipt to bind both signed run exports to the same
+physical device, app installation, hardware model, and iOS version/build.
+Implementation may proceed only inside that reviewed design. The design does
+not establish a protected oracle or authorize a signed build, TestFlight
+upload, device observation, or device-backend work. Any exact new signed
+version/build still
+requires separate explicit authorization, and its reviewed design/build
+manifest must be frozen before observation. `DEVICE-001` remains blocked and
+inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.
+
+### LAB-002 checkpoint ledger
+
+As with the main ledger, the status below becomes authoritative only when its
+containing PR is on `main`.
+
+| Order | Checkpoint | Status when this PR is on `main` | Evidence / next gate |
+|---:|---|---|---|
+| 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
+| 2 | Device-free implementation and synthetic/Simulator verification | `planned` | Starts only after PR #58 merges; must implement the closed design and pass local/remote CR and CI |
+| 3 | Exact signed DemoLab build and pre-upload oracle | `blocked` | Requires checkpoint 2 plus separate explicit authorization naming the exact version/build |
+| 4 | Installation enrollment and two clean device observations | `blocked` | Requires checkpoint 3, fresh per-operation authorization, the selected owned iPhone, and the reviewed two-run procedure |
+| 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
+
 The activation and workflow-preparation PRs are merged. The account-free
 evidence audit and the first signed-candidate run are recorded in Issue #9.
 The merged, parameterized, operator-controlled DemoLab archive/evidence/upload

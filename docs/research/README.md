@@ -16,3 +16,10 @@ A research record is evidence for only its named tuple. It does not establish a
 device support claim, a general decryption capability, or a user-facing
 `oprobe decrypt` workflow unless the corresponding execution gates separately
 complete with the required evidence.
+
+Active research designs:
+
+- [LAB-002 fixed-range self-observation oracle design](lab-002-oracle-design.md)
+  defines the device-free trust model, complete inventory, fixed-range oracle,
+  bounded report family, two-run procedure, and Go/No-Go gate. It is not an
+  implementation or device result.
