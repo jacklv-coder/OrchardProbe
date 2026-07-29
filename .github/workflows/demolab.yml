@@ -64,6 +64,8 @@ jobs:
           test -x "$app_binary"
           test -x "$framework/DemoFramework"
           test -x "$extension/DemoShareExtension"
+          test -f "$app/Assets.car"
+          test -f "$app/AppIcon60x60@2x.png"
 
           otool -hv "$app_binary" >/dev/null
           otool -hv "$framework/DemoFramework" >/dev/null
@@ -80,6 +82,9 @@ jobs:
             'com.example.orchardprobe.demolab.framework'
           test "$(plutil -extract CFBundleIdentifier raw "$extension/Info.plist")" = \
             'com.example.orchardprobe.demolab.share'
+          test "$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")" = '1.0'
+          test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = '1'
+          test "$(plutil -extract ITSAppUsesNonExemptEncryption raw "$app/Info.plist")" = 'false'
           test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw "$extension/Info.plist")" = \
             'com.apple.share-services'
           test "$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$extension/Info.plist")" = \

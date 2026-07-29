@@ -4,6 +4,11 @@ DemoLab is a small, repository-owned iOS Simulator app used to exercise the proj
 
 This is a simulator-only test fixture built from source. It has no FairPlay or other DRM, is not a decrypted application, and must not be treated as evidence that device-side extraction or IPA export works.
 
+The separate
+[controlled first-party TestFlight runbook](demolab-testflight.md) describes
+the maintainer-only `LAB-001` experiment. That workflow does not change the
+default Simulator fixture or establish a protected-oracle result.
+
 ## Build locally
 
 Install Xcode and XcodeGen on macOS. From the repository root, run:
@@ -26,6 +31,12 @@ xcodebuild \
 ```
 
 Both `fixtures/DemoLab/DemoLab.xcodeproj` and `fixtures/DemoLab/DerivedData` are generated locally and ignored by Git. Pull requests copy the fixture to the runner's temporary `fixtures/DemoLab` directory, then generate and build it there, so CI does not modify the checkout.
+
+The equivalent no-credential Fastlane check is:
+
+```sh
+bundle _4.0.16_ exec fastlane ios demolab_check
+```
 
 ## Build products
 

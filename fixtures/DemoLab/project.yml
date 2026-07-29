@@ -7,8 +7,13 @@ options:
 
 settings:
   base:
+    CURRENT_PROJECT_VERSION: "1"
+    DEMO_LAB_APP_BUNDLE_ID: com.example.orchardprobe.demolab
+    DEMO_LAB_FRAMEWORK_BUNDLE_ID: com.example.orchardprobe.demolab.framework
+    DEMO_LAB_SHARE_BUNDLE_ID: com.example.orchardprobe.demolab.share
     ENABLE_DEBUG_DYLIB: NO
     IPHONEOS_DEPLOYMENT_TARGET: "15.0"
+    MARKETING_VERSION: "1.0"
     SWIFT_VERSION: "5.0"
 
 targets:
@@ -22,7 +27,7 @@ targets:
         headerVisibility: public
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.orchardprobe.demolab.framework
+        PRODUCT_BUNDLE_IDENTIFIER: $(DEMO_LAB_FRAMEWORK_BUNDLE_ID)
         PRODUCT_NAME: DemoFramework
         INFOPLIST_FILE: Framework/Info.plist
         GENERATE_INFOPLIST_FILE: NO
@@ -37,7 +42,7 @@ targets:
       - path: ShareExtension/Sources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.orchardprobe.demolab.share
+        PRODUCT_BUNDLE_IDENTIFIER: $(DEMO_LAB_SHARE_BUNDLE_ID)
         PRODUCT_NAME: DemoShareExtension
         INFOPLIST_FILE: ShareExtension/Info.plist
         GENERATE_INFOPLIST_FILE: NO
@@ -50,6 +55,8 @@ targets:
     platform: iOS
     sources:
       - path: App/Sources
+      - path: App/Resources/Assets.xcassets
+        buildPhase: resources
     dependencies:
       - target: DemoFramework
         embed: true
@@ -57,7 +64,8 @@ targets:
         embed: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.orchardprobe.demolab
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_BUNDLE_IDENTIFIER: $(DEMO_LAB_APP_BUNDLE_ID)
         PRODUCT_NAME: DemoLab
         INFOPLIST_FILE: App/Info.plist
         GENERATE_INFOPLIST_FILE: NO

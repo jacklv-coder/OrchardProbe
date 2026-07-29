@@ -40,8 +40,18 @@ coverage/
 *.der
 *.key
 *.pem
+*.p8
 *.mobileprovision
 *.provisionprofile
+
+# Fastlane local output
+.bundle/
+vendor/bundle/
+/fastlane/README.md
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
 
 # Exported apps and local analysis artifacts
 *.ipa

@@ -50,10 +50,9 @@ A step is complete only when all applicable conditions hold:
 
 - its acceptance criteria and documentation are complete;
 - local tests, formatting, linting, and safety checks pass;
-- the final diff receives a read-only independent review; the local Claude CLI
-  may be used for this advisory review, but its result must record the model
-  actually reported by the CLI, and Claude must never write files, commits, PRs,
-  reviews, or merges;
+- the final diff receives a read-only Codex CR covering correctness,
+  concurrency and security risk, test gaps, and documentation consistency;
+  every P1/P2 finding must be resolved before push or merge;
 - the pushed branch matches the locally reviewed commit and exact diff;
 - the PR is reviewed again from the remote GitHub diff;
 - every required GitHub check succeeds and every review thread is resolved;
@@ -72,9 +71,33 @@ decryption support.
 `LAB-001` is the only active planning step. Issue #9 fixes its first-party
 DemoLab provenance, independent initial-protection/plaintext-oracle evidence,
 redaction, explicit Go/No-Go, documentation, and claim-narrowing criteria.
-Research implementation must not start until this documentation-only
-activation PR is reviewed and merged; `DEVICE-001` and every later step remain
-untouched.
+The activation PR is merged. The account-free evidence audit is recorded in
+Issue #9, and the current phase prepares a parameterized, operator-controlled
+DemoLab archive/evidence/upload workflow with locked random build staging,
+Gym export scratch constrained beneath and cleaned with that staging, exclusive
+publication, descriptor-bound Apple upload, and explicit bounded `altool` JSON
+success/error validation with a fixed process deadline. The
+pre-upload record binds the exact XcodeGen version used for project generation;
+the generator must be non-writable and match a reviewed version/architecture
+SHA-256 allowlist before its verified bytes are copied through a stable
+read-only descriptor and executed from a locked, read-only snapshot in the
+private run workspace. Controlled child processes clear inherited dynamic-loader
+overrides before execution. Archive binary paths reject symlinks at every
+component and remain beneath one archive root; the three binaries are
+remeasured immediately before the Apple upload process starts. Apple developer tools use root-owned
+absolute paths from the system-selected Xcode plus
+`/usr/bin/xcrun` and `/usr/bin/plutil`, with identities and SDK metadata checked
+before and after use; both the check and signed build clear inherited Xcode
+selection overrides. Configured and resolved temporary roots reject
+shell-unsafe characters before Fastlane can construct export commands.
+Upload-state transitions use fsynced atomic
+publication/replacement so an interruption cannot leave the live recovery
+record as partial JSON. Anonymous IPA/key snapshots are reopened through
+verified read-only descriptors, and the retained `altool` identity is checked
+immediately before and after execution. The phase does not store Apple credentials or turn
+signing, distribution, or installation into an `oprobe` capability.
+The controlled owned-device observation and explicit Go/No-Go decision remain
+pending; `DEVICE-001` and every later step remain untouched.
 
 ## Execution ledger
 

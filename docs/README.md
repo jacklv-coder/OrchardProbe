@@ -40,6 +40,7 @@ implementation behind it. Start with the document that matches what you need:
 - [Device-free IPA package evidence manifest](development/ipa-package-manifest.md)
 - [Versioned schema guide](development/schemas.md)
 - [DemoLab development guide](development/demolab.md)
+- [Controlled first-party DemoLab TestFlight runbook](development/demolab-testflight.md)
 - [Compatibility test-record template](compatibility/test-record-template.md)
 
 > [!IMPORTANT]

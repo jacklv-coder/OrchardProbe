@@ -7,6 +7,14 @@ DemoLab is a small, first-party iOS application used to test OrchardProbe agains
 - `DemoShareExtension.appex`, a Swift share extension with bundle identifier `com.example.orchardprobe.demolab.share`.
 
 Every source file is kept in this directory, and the fixture has no third-party source or binary dependencies.
+The fixture does not use non-exempt encryption, and its main app declares
+`ITSAppUsesNonExemptEncryption=false` for App Store Connect processing.
+
+The checked-in identifiers remain generic. The maintainer-only `LAB-001`
+Fastlane lane overrides them from local environment variables for one
+first-party signed build; no Apple team or registered identifier is committed.
+See the
+[controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
 
 ## Safety boundary
 
