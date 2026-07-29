@@ -337,7 +337,19 @@ equal `@rpath/DemoFramework.framework/DemoFramework`. The check runs against
 the Simulator product, signed Archive, exported IPA, and each upload-time
 Archive revalidation. Any absolute or different matching path fails before
 publication or upload. Because App Store Connect build numbers are immutable,
-the next candidate is `1.0 (2)` built from the merged correction.
+the next candidate was defined as `1.0 (2)` built from the merged correction.
+
+PR #51 merged that correction. The `1.0 (2)` candidate was built from clean
+merged commit `5785c56e8bee8e30fdaefcb6e263852e9be874ab`; its IPA SHA-256 is
+`e383fcf0ee550effb68b183965208b1ef274688cc5233649b8e452135aafde40`.
+Before upload, the evidence, signatures, package metadata, Archive linkage, and
+exported IPA linkage were independently rechecked. The one upload call again
+left a local `status: indeterminate` record because the terminal `altool`
+response was not parseable JSON. Do not retry: the App Store Connect API
+reported the exact build as `VALID`, with internal state `IN_BETA_TESTING` and
+no missing export compliance. The existing internal group already covers all
+builds. No group was created or changed, no public link was enabled, and no
+external distribution, Beta App Review, or App Store submission was performed.
 
 Set this exact confirmation only after checking the target account and build:
 
@@ -434,9 +446,10 @@ not publish the device UDID, serial number, pairing material, receipt,
 protected executable, IPA, or private logs.
 
 The installed `1.0 (1)` build cannot enter this observation because its invalid
-DemoFramework install name prevents launch. Resume this stage only after the
-corrected `1.0 (2)` build is accepted, installed on the same owned-device
-boundary, and independently confirmed to remain running.
+DemoFramework install name prevents launch. The corrected `1.0 (2)` build is
+now valid and in internal testing. Resume this stage only after the maintainer
+updates the same owned-device boundary to that exact build and independently
+confirms that it remains running.
 
 The controlled observation must separately answer:
 

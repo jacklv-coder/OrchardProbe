@@ -129,9 +129,21 @@ install name because they used
 `/Library/Frameworks/DemoFramework.framework/DemoFramework` instead of
 `@rpath/DemoFramework.framework/DemoFramework`. The framework bytes were
 present in the exported app bundle, so build `1` is retained as failure evidence
-and must not be retried or used for the plaintext-oracle observation. The
-current sequential gate is to merge the `@rpath` correction plus fail-closed
-Archive/IPA linkage checks, then build and upload `1.0 (2)` from that merge.
+and must not be retried or used for the plaintext-oracle observation.
+
+PR #51 merged the `@rpath` correction and fail-closed Archive/IPA linkage
+checks. DemoLab `1.0 (2)` was built from clean merged commit
+`5785c56e8bee8e30fdaefcb6e263852e9be874ab`; its IPA SHA-256 is
+`e383fcf0ee550effb68b183965208b1ef274688cc5233649b8e452135aafde40`.
+The evidence, signatures, package metadata, Archive linkage, and exported IPA
+linkage were independently rechecked before one upload attempt. The local lane
+retained `status: indeterminate` after `altool` returned an unparseable terminal
+response, but the App Store Connect API reported the exact build as `VALID`,
+with internal state `IN_BETA_TESTING` and no missing export compliance. The
+existing internal group already covers all builds; no group mutation, public
+link, external distribution, Beta App Review, or App Store submission was
+performed. The current sequential gate is to update the owned iPhone to this
+exact build and independently confirm that it remains running.
 
 All three binaries remain `initial_protection_status: not_observed` and
 `expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not

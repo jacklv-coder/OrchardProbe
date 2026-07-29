@@ -101,8 +101,18 @@ Build `1` 随后安装到自有且获授权的 iPhone，但受控的 Mac 侧启�
 工作流使用固定到所选 Xcode 的 `otool`，要求 Framework ID 及主程序中所有匹配依赖
 都精确等于 `@rpath/DemoFramework.framework/DemoFramework`。检查覆盖 Simulator
 产物、签名 Archive、导出 IPA 和每次上传前的 Archive 复核；任何绝对路径或其他匹配
-路径都会在发布或上传前失败。App Store Connect 的 Build 号不可变，因此下一候选是
-从合并修复生成的 `1.0 (2)`。
+路径都会在发布或上传前失败。App Store Connect 的 Build 号不可变，因此将下一候选
+预先确定为从合并修复生成的 `1.0 (2)`。
+
+PR #51 已合并该修复。`1.0 (2)` 候选来自干净的合并 Commit
+`5785c56e8bee8e30fdaefcb6e263852e9be874ab`，IPA SHA-256 为
+`e383fcf0ee550effb68b183965208b1ef274688cc5233649b8e452135aafde40`。
+上传前已独立复核证据、签名、包元数据、Archive 链接和导出 IPA 链接。唯一一次上传
+调用后，本地因 `altool` 最终响应不是可解析 JSON 而保留
+`status: indeterminate`，但不得重试：App Store Connect API 已把这个精确 Build
+报告为 `VALID`，内部状态为 `IN_BETA_TESTING`，且不缺少出口合规信息。现有内部组
+本身覆盖全部 Build；本次没有创建或修改测试组、启用公开链接、外部分发、
+Beta App Review 或 App Store 提交。
 
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
@@ -206,8 +216,9 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
 
 2026-07-29 已获得单独的明确上传授权并在仓库外配置最小权限 App Store Connect
 API Key。`1.0 (1)` 已进入 TestFlight 并安装到自有设备，但其错误 Framework
-Install Name 阻止启动，不能用于 LAB-001 观察。下一门禁是合并修复、生成并上传
-`1.0 (2)`，安装后先独立确认它保持运行，再继续真机观察。
+Install Name 阻止启动，不能用于 LAB-001 观察。修复后的 `1.0 (2)` 已有效并进入
+内部测试；下一门禁是在同一自有设备上更新到这个精确 Build，先独立确认它保持运行，
+再继续真机观察。
 
 执行签名或上传 Lane 前还必须设置：
 
