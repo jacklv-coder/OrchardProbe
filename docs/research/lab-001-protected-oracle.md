@@ -193,23 +193,28 @@ internal-TestFlight installation plus the exercised public Xcode/CoreDevice
 interfaces cannot satisfy OrchardProbe's stronger evidence standard without
 crossing the approved LAB-001 boundary.
 
-## Required plan change
+## Required plan change and current disposition
 
-LAB-001 completes with No-Go and blocks DEVICE-001. Before any device-backend
-work starts, a replacement-oracle step must be proposed and ordered through a
-separate reviewed plan change, then complete with a Go result for an independent
-protected oracle. This result does not assign that future step an ID or ledger
-position. A proposal may evaluate a purpose-built, first-party-only observation
-mechanism or a separately approved test environment, but it must:
+At the time this result was accepted, LAB-001 completed with No-Go, blocked
+DEVICE-001, and required a replacement-oracle step to be proposed and ordered
+through a separate reviewed plan change. That requirement is now represented by
+the planned `LAB-002` step and Issue #55 in the authoritative execution ledger.
+LAB-002 is not active or implemented; it still must complete with a Go result
+for an independent protected oracle before any device-backend work starts. The
+replacement method must:
 
 - remain limited to project-owned DemoLab;
 - avoid a reusable arbitrary process, filesystem, or memory API;
-- bind each installed binary, architecture, slice, and exact code range;
-- preserve independent initial-protection and plaintext evidence;
+- bind each installed binary, architecture, slice, and exact code range to the
+  exact recorded DemoLab source commit and build;
+- independently prove each installed slice's initially protected state and its
+  transition to mapped plaintext matching a frozen oracle artifact generated
+  from that same commit and build;
 - keep credentials, stable device identifiers, receipts, binaries, and raw logs
   private; and
 - undergo its own threat-model, documentation, CR, and Go/No-Go review before
   DEVICE-001 can be activated.
 
-Until such a plan is accepted, OrchardProbe has no device backend, protected
-oracle, verified compatibility row, or working `oprobe decrypt` command.
+Planning LAB-002 does not establish a protected oracle. OrchardProbe still has
+no device backend, protected oracle, verified compatibility row, or working
+`oprobe decrypt` command.
