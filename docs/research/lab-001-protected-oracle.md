@@ -105,6 +105,31 @@ path, private bundle identifier, or raw private log is retained in this
 repository. The generic public DemoLab-relative paths and fixture identifiers
 remain intentionally documented.
 
+## Audit record and maintainer sign-off
+
+| Field | Recorded value |
+|---|---|
+| Claim under test | Whether the exact stock internal-TestFlight/public-CoreDevice tuple can independently establish installed binary lineage, initial protection, and matching plaintext ranges for a protected-oracle claim |
+| OrchardProbe observation baseline | `17df24f768d69c2cad1df7d028bb69efb5f0a0aa` |
+| DemoLab commit | `5785c56e8bee8e30fdaefcb6e263852e9be874ab` |
+| Helper artifact | Not exercised |
+| OrchardProbe transport/backend capability IDs | Not exercised; no OrchardProbe device transport or backend existed |
+| Controlled clean runs attempted | `1` |
+| Controlled clean runs with the recorded result | `1` |
+| Decision | **No-Go — Unsupported for this exact research tuple** |
+| Verified by | `@jacklv-coder` |
+| Verification date | `2026-07-29` UTC |
+| Review links | [Issue #9](https://github.com/jacklv-coder/OrchardProbe/issues/9) and [result PR #54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
+| Second maintainer review | Pending |
+
+One run is recorded because the experiment stopped at the approved capability
+boundary; no installed byte or range comparison was available to repeat. This
+does not meet or claim the two-clean-run requirement for `Go — Verified`.
+`Unsupported` here records the confirmed capability boundary for only the
+named tuple, not verified decryption behavior or broader device support. PR #54
+contains the reviewed procedure and publishes the final merge commit alongside
+its checks and discussion.
+
 ## Per-binary evidence
 
 The SHA-256 values and Mach-O UUIDs below describe pre-upload Archive binaries

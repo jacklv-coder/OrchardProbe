@@ -23,7 +23,9 @@ Issue #9 同时禁止本阶段新增设备 Backend、Helper、Transport、进程
 
 三个二进制的设备侧结论均为 `Inconclusive`，没有读取或伪造任何设备侧字节、范围或
 哈希。完整证据、逐项标准和官方资料见
-[英文研究说明](../research/lab-001-protected-oracle.md)。
+[英文研究说明](../research/lab-001-protected-oracle.md)。该记录也包含执行时
+OrchardProbe 基线 Commit、一次受控运行的计数、维护者签署、UTC 日期、Issue/PR
+链接和二次维护者复核状态；一次运行不满足也不宣称 `Go — Verified` 的两次运行门禁。
 
 LAB-001 以这个有界 No-Go 完成，并阻塞 DEVICE-001。这不是“永远无法砸壳”的结论，
 而是说明当前公开、非越狱 TestFlight 研究组合无法达到项目自己的严格证据标准。
