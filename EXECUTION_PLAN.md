@@ -68,15 +68,16 @@ decryption support.
 
 ## Current gate
 
-No planning step is active. LAB-001 completed with a bounded No-Go. This plan
-change adds `LAB-002` as the next `planned` step, backed by Issue #55, to
-evaluate a per-binary, per-slice, exact-range, first-party DemoLab
-self-observation oracle for an independently reviewable protected-to-plaintext
-transition over a complete, predeclared inventory and range set.
-`DEVICE-001` remains blocked and inactive until LAB-002 completes with a Go
-result. This plan change does not activate LAB-002 or authorize fixture,
-signing, TestFlight, device, or backend implementation; the next authoritative
-change must be its separate documentation-only activation PR.
+This documentation-only change activates `LAB-002`, backed by Issue #55, as the
+only `active` ledger step after this activation PR merges. Implementation may
+then proceed only inside Issue #55's first-party DemoLab self-observation
+boundary and its complete, predeclared inventory, source/build, protection,
+transition, and oracle gates. This activation does not establish a protected
+oracle or authorize a signed build, TestFlight upload, device observation, or
+device-backend work. Any exact new signed version/build still requires separate
+explicit authorization, and its reviewed design/build manifest must be frozen
+before observation. `DEVICE-001` remains blocked and inactive unless LAB-002
+completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.
@@ -185,9 +186,10 @@ initial installed state is protected, and then show that the same predeclared
 mapped ranges are plaintext matching the frozen oracle. A range or inventory
 item cannot be omitted or reclassified after observation; failure to prove any
 binding or protected-to-plaintext transition records another bounded No-Go.
-LAB-002 requires its own activation PR before implementation and a separate
-explicit authorization before any new signed build or TestFlight upload. No
-device-backend work can start unless LAB-002 completes with a Go result.
+This activation PR satisfies the documentation gate before LAB-002
+implementation. A separate explicit authorization remains required before any
+new signed build or TestFlight upload. No device-backend work can start unless
+LAB-002 completes with a Go result.
 
 ## Execution ledger
 
@@ -208,7 +210,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `planned` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. The complete inventory is the app, DemoFramework, and DemoShareExtension executables plus every installed architecture/slice in the recorded build. Before device observation, freeze the exact DemoLab source commit/build identity, a non-empty exact mapped-code-range set for every inventory slice, and an independent expected-plaintext oracle artifact/hash for every range, all bound to that same commit/build. Independently bind every installed inventory item/slice to that build, prove its initial installed state is protected, and prove the same mapped ranges become plaintext matching the frozen oracle; no post-observation omission or reclassification is allowed, otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | To record during activation | — |
+| 13 | `LAB-002` | `active` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. The complete inventory is the app, DemoFramework, and DemoShareExtension executables plus every installed architecture/slice in the recorded build. Before device observation, freeze the exact DemoLab source commit/build identity, a non-empty exact mapped-code-range set for every inventory slice, and an independent expected-plaintext oracle artifact/hash for every range, all bound to that same commit/build. Independently bind every installed inventory item/slice to that build, prove its initial installed state is protected, and prove the same mapped ranges become plaintext matching the frozen oracle; no post-observation omission or reclassification is allowed, otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Current PR; link before merge | — |
 | 14 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
@@ -219,8 +221,8 @@ and required-check history, so merge SHAs are not duplicated in this table.
 
 ## What this plan does not claim
 
-Rows beginning with `LAB-002` are planned or blocked, not implemented
-capabilities. In particular, the repository does not yet provide a protected
+`LAB-002` is active research, and later rows are blocked or planned; none is an
+implemented capability. In particular, the repository does not yet provide a protected
 oracle, device backend, working decryption, device/build matching, Mach-O
 reconstruction, caller-visible IPA publication, the `oprobe decrypt` command,
 an installable release, or a supported-device claim. The output design remains
