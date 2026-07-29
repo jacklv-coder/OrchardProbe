@@ -122,11 +122,21 @@ stdout was not valid JSON, which is recorded as a tooling-observability gap
 rather than a remote upload failure. No tester group, external distribution,
 Beta App Review, or App Store submission was created.
 
+The installed `1.0 (1)` build then exposed a separate launch blocker on an
+owned, authorized iPhone. A controlled Mac-side launch captured `dyld`
+rejecting both the app's DemoFramework dependency and the embedded framework's
+install name because they used
+`/Library/Frameworks/DemoFramework.framework/DemoFramework` instead of
+`@rpath/DemoFramework.framework/DemoFramework`. The framework bytes were
+present in the exported app bundle, so build `1` is retained as failure evidence
+and must not be retried or used for the plaintext-oracle observation. The
+current sequential gate is to merge the `@rpath` correction plus fail-closed
+Archive/IPA linkage checks, then build and upload `1.0 (2)` from that merge.
+
 All three binaries remain `initial_protection_status: not_observed` and
 `expected_plaintext_status: candidate_pre_upload_archive_only`, so this is not
-decryption evidence. The current sequential gate is controlled installation and
-observation on an owned iPhone, followed by the explicit LAB-001 Go/No-Go
-decision. `DEVICE-001` and every later step remain untouched.
+decryption evidence. Controlled observation and the explicit LAB-001 Go/No-Go
+decision remain pending; `DEVICE-001` and every later step remain untouched.
 
 ## Execution ledger
 

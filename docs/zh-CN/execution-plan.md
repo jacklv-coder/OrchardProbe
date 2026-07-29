@@ -99,10 +99,18 @@ IPA SHA-256 为
 `status: indeterminate`；这记录为工具可观测性缺口，不代表远端上传失败。本次没有
 创建测试组、外部分发、Beta App Review 或 App Store 提交。
 
+`1.0 (1)` 安装到自有且获授权的 iPhone 后暴露了独立的启动阻塞。受控 Mac 侧启动
+捕获到 `dyld` 拒绝主程序的 DemoFramework 依赖和嵌入 Framework 自身的 Install
+Name：二者使用
+`/Library/Frameworks/DemoFramework.framework/DemoFramework`，而不是
+`@rpath/DemoFramework.framework/DemoFramework`。Framework 字节实际存在于导出的
+App Bundle，所以 Build `1` 保留为失败证据，不得重试，也不能用于明文 Oracle 观察。
+当前串行门禁是合并 `@rpath` 修复及 Fail-closed Archive/IPA 链接检查，再从该合并
+Commit 构建并上传 `1.0 (2)`。
+
 三个二进制仍分别标记为 `initial_protection_status: not_observed` 和
 `expected_plaintext_status: candidate_pre_upload_archive_only`，因此这不是砸壳证据。
-下一串行门禁是在自有 iPhone 上受控安装和观察，再作出 LAB-001 明确 Go/No-Go；
-`DEVICE-001` 及以后步骤保持未启动。
+受控观察和 LAB-001 明确 Go/No-Go 仍未完成；`DEVICE-001` 及以后步骤保持未启动。
 
 ## 执行台账
 

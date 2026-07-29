@@ -129,7 +129,7 @@ overrides cannot change what the check verifies.
 Apple developer tools are never selected from the caller's `PATH`. The lanes
 read the system Xcode selection through `/usr/bin/xcode-select` with an
 inherited `DEVELOPER_DIR` removed, require its developer directory and
-`xcodebuild`, `dwarfdump`, and `lipo` executables to be root-owned and
+`xcodebuild`, `dwarfdump`, `lipo`, and `otool` executables to be root-owned and
 non-writable, and likewise pin `/usr/bin/xcrun` and `/usr/bin/plutil`. The
 archive gives Gym the absolute `xcodebuild`, fixes
 `DEVELOPER_DIR`, removes inherited SDK/toolchain/xcconfig selection, and uses a
@@ -138,8 +138,8 @@ directory. This also pins Gym's bare `dwarfdump`/`lipo` calls during optional
 dSYM and BCSymbolMap processing. Executable identities, hashes, Xcode version,
 and iPhoneOS SDK version/build are captured before use and revalidated after
 the archive and evidence passes. The regression lane prepends shadow
-`xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo` files and proves none can be
-selected.
+`xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo`/`otool` files and proves none
+can be selected.
 
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload
@@ -321,6 +321,24 @@ valid JSON. Keep that owner-only record unchanged: it documents a local
 tooling-observability gap, not a remote upload failure. No tester group,
 external distribution, Beta App Review, or App Store submission was created.
 
+After build `1` was installed on an owned, authorized iPhone, a controlled
+Mac-side launch reproduced the reported immediate exit. `dyld` showed that the
+app requested
+`/Library/Frameworks/DemoFramework.framework/DemoFramework`; the embedded
+framework used the same invalid absolute install name. The framework was
+present in the app bundle, so this was a linkage-configuration defect rather
+than missing IPA content, TestFlight rejection, or decryption evidence. Build
+`1` must remain unchanged as failure evidence and must not be retried.
+
+The correction fixes DemoFramework's install-name base to `@rpath`. The
+regression lane and the signed workflow use the pinned selected-Xcode `otool`
+to require both the framework ID and every matching dependency in the app to
+equal `@rpath/DemoFramework.framework/DemoFramework`. The check runs against
+the Simulator product, signed Archive, exported IPA, and each upload-time
+Archive revalidation. Any absolute or different matching path fails before
+publication or upload. Because App Store Connect build numbers are immutable,
+the next candidate is `1.0 (2)` built from the merged correction.
+
 Set this exact confirmation only after checking the target account and build:
 
 ```sh
@@ -415,9 +433,10 @@ iPhone. Record only sanitized facts allowed by the compatibility policy. Do
 not publish the device UDID, serial number, pairing material, receipt,
 protected executable, IPA, or private logs.
 
-The uploaded `1.0 (1)` build is ready for this stage, but no tester group or
-owned-device installation was performed as part of the upload authorization.
-Those actions remain the next sequential gate.
+The installed `1.0 (1)` build cannot enter this observation because its invalid
+DemoFramework install name prevents launch. Resume this stage only after the
+corrected `1.0 (2)` build is accepted, installed on the same owned-device
+boundary, and independently confirmed to remain running.
 
 The controlled observation must separately answer:
 

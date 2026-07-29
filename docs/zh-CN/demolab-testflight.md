@@ -90,6 +90,20 @@ PR #49 已合并兼容修复。新的 `1.0 (1)` 候选来自干净的合并 Comm
 可观测性缺口，不代表远端上传失败。本次没有创建测试组、外部分发、Beta App Review
 或 App Store 提交。
 
+Build `1` 随后安装到自有且获授权的 iPhone，但受控的 Mac 侧启动复现了立即退出。
+`dyld` 显示主程序请求
+`/Library/Frameworks/DemoFramework.framework/DemoFramework`，嵌入 Framework
+自身也使用相同的错误绝对 Install Name。Framework 实际存在于 App Bundle 中，因此
+这是链接配置缺陷，不是 IPA 缺少内容、TestFlight 拒绝或砸壳证据。Build `1` 必须
+保持不变作为失败证据，不得重试。
+
+修复会把 DemoFramework 的 Install Name Base 固定为 `@rpath`。回归 Lane 和签名
+工作流使用固定到所选 Xcode 的 `otool`，要求 Framework ID 及主程序中所有匹配依赖
+都精确等于 `@rpath/DemoFramework.framework/DemoFramework`。检查覆盖 Simulator
+产物、签名 Archive、导出 IPA 和每次上传前的 Archive 复核；任何绝对路径或其他匹配
+路径都会在发布或上传前失败。App Store Connect 的 Build 号不可变，因此下一候选是
+从合并修复生成的 `1.0 (2)`。
+
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
 ```sh
@@ -126,14 +140,14 @@ Xcode 环境中执行，调用方继承的 Developer Directory、SDK、Toolchain
 
 Apple 开发者工具不会从调用方的 `PATH` 选择。Lane 只通过
 `/usr/bin/xcode-select` 读取系统当前选中的 Xcode，且读取时先移除调用方继承的
-`DEVELOPER_DIR`；它要求 Developer 目录及其中的 `xcodebuild`、`dwarfdump`、`lipo`
-均为 root 所有且不可写，并同样固定 `/usr/bin/xcrun` 和 `/usr/bin/plutil`。
+`DEVELOPER_DIR`；它要求 Developer 目录及其中的 `xcodebuild`、`dwarfdump`、`lipo`、
+`otool` 均为 root 所有且不可写，并同样固定 `/usr/bin/xcrun` 和 `/usr/bin/plutil`。
 Archive 会把绝对 `xcodebuild` 路径交给 Gym，固定 `DEVELOPER_DIR`，移除继承的
 SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode Toolchain 目录开头
 的最小 PATH；因此 Gym 在可选 dSYM/BCSymbolMap 处理中调用的裸 `dwarfdump`/`lipo`
 也固定到同一 Xcode。执行前记录可执行文件身份与哈希、Xcode 版本、iPhoneOS SDK
 版本/Build，归档和证据生成后再次复核。回归 Lane 还会在 PATH 最前放置伪造的
-`xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo`，确认它们均不会被选中。
+`xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo`/`otool`，确认它们均不会被选中。
 
 ## 安全边界
 
@@ -191,8 +205,9 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
   Lineage、正确明文或砸壳能力。
 
 2026-07-29 已获得单独的明确上传授权并在仓库外配置最小权限 App Store Connect
-API Key。上述第二个候选已经进入 TestFlight，但上传授权不包含创建测试组或安装到
-设备。下一门禁是把这个精确 Build 受控安装到自有 iPhone 并完成真机观察。
+API Key。`1.0 (1)` 已进入 TestFlight 并安装到自有设备，但其错误 Framework
+Install Name 阻止启动，不能用于 LAB-001 观察。下一门禁是合并修复、生成并上传
+`1.0 (2)`，安装后先独立确认它保持运行，再继续真机观察。
 
 执行签名或上传 Lane 前还必须设置：
 

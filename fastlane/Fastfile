@@ -252,6 +252,12 @@ def selected_xcode_toolchain
     "--find",
     "lipo"
   )
+  otool_path = command_output_with_environment(
+    environment,
+    xcrun.fetch("path"),
+    "--find",
+    "otool"
+  )
   dwarfdump = pinned_executable(
     dwarfdump_path,
     "Selected Xcode dwarfdump",
@@ -262,9 +268,15 @@ def selected_xcode_toolchain
     "Selected Xcode lipo",
     required_root: developer_dir
   )
+  otool = pinned_executable(
+    otool_path,
+    "Selected Xcode otool",
+    required_root: developer_dir
+  )
   toolchain_binary_directories = [
     File.dirname(dwarfdump.fetch("path")),
     File.dirname(lipo.fetch("path")),
+    File.dirname(otool.fetch("path")),
   ].uniq
   toolchain_binary_directories.each do |directory|
     resolved_directory = File.realpath(directory)
@@ -314,6 +326,7 @@ def selected_xcode_toolchain
     "plutil" => plutil,
     "dwarfdump" => dwarfdump,
     "lipo" => lipo,
+    "otool" => otool,
     "xcode_version" => xcode_version,
     "iphoneos_sdk_version" => command_output_with_environment(
       environment,
@@ -357,12 +370,12 @@ def verify_selected_xcode_toolchain!(toolchain)
     UI.user_error!("The selected Xcode developer directory changed during use.")
   end
 
-  %w[xcodebuild xcrun plutil dwarfdump lipo].each do |name|
+  %w[xcodebuild xcrun plutil dwarfdump lipo otool].each do |name|
     executable = toolchain.fetch(name)
     observed = pinned_executable(
       executable.fetch("path"),
       "Pinned #{name}",
-      required_root: %w[xcodebuild dwarfdump lipo].include?(name) ?
+      required_root: %w[xcodebuild dwarfdump lipo otool].include?(name) ?
         toolchain.fetch("developer_dir") : nil
     )
     unless observed == executable
@@ -1320,8 +1333,7 @@ def plist_value_from_zip_entry(entry, key, xcode_toolchain:)
   end
 end
 
-def zip_binary_evidence(entry, relative_path, role)
-  content = read_zip_entry(entry, DEMO_LAB_MAX_BINARY_BYTES)
+def zip_binary_evidence(content, relative_path, role)
   {
     "role" => role,
     "relative_path" => relative_path,
@@ -1330,6 +1342,99 @@ def zip_binary_evidence(entry, relative_path, role)
     "initial_protection_status" => "not_observed",
     "expected_plaintext_status" => "candidate_pre_upload_archive_only",
   }
+end
+
+def validate_demolab_dynamic_linkage_outputs!(
+  framework_id_output,
+  main_dependencies_output
+)
+  expected_framework_path =
+    "@rpath/DemoFramework.framework/DemoFramework"
+  framework_ids = framework_id_output.lines.map(&:strip).reject do |line|
+    line.empty? || line.end_with?(":")
+  end
+  unless framework_ids.length.between?(1, 8) &&
+         framework_ids.uniq == [expected_framework_path]
+    UI.user_error!(
+      "DemoFramework must use the expected @rpath install name."
+    )
+  end
+
+  main_dependencies = main_dependencies_output.lines.map(&:strip).reject do |line|
+    line.empty? || line.end_with?(":")
+  end.map do |line|
+    match = line.match(/\A(.+?) \(compatibility version /)
+    match && match[1]
+  end.compact
+  framework_dependencies = main_dependencies.select do |path|
+    path.end_with?("/DemoFramework.framework/DemoFramework")
+  end
+  unless framework_dependencies.length.between?(1, 8) &&
+         framework_dependencies.uniq == [expected_framework_path]
+    UI.user_error!(
+      "DemoLab must load DemoFramework through the expected @rpath."
+    )
+  end
+  true
+end
+
+def validate_demolab_dynamic_linkage_content!(
+  main_content,
+  framework_content,
+  xcode_toolchain:
+)
+  with_external_temporary_file(
+    ["orchardprobe-demolab-main-", ".macho"]
+  ) do |main_file|
+    main_file.binmode
+    main_file.write(main_content)
+    main_file.flush
+    with_external_temporary_file(
+      ["orchardprobe-demolab-framework-", ".macho"]
+    ) do |framework_file|
+      framework_file.binmode
+      framework_file.write(framework_content)
+      framework_file.flush
+
+      framework_id_output = command_output(
+        xcode_toolchain.dig("otool", "path"),
+        "-D",
+        framework_file.path
+      )
+      main_dependencies_output = command_output(
+        xcode_toolchain.dig("otool", "path"),
+        "-L",
+        main_file.path
+      )
+      validate_demolab_dynamic_linkage_outputs!(
+        framework_id_output,
+        main_dependencies_output
+      )
+    end
+  end
+  true
+end
+
+def validate_demolab_dynamic_linkage_paths!(
+  main_path,
+  framework_path,
+  xcode_toolchain:
+)
+  main_content = read_regular_file_snapshot(
+    main_path,
+    DEMO_LAB_MAX_BINARY_BYTES,
+    "DemoLab main executable"
+  )
+  framework_content = read_regular_file_snapshot(
+    framework_path,
+    DEMO_LAB_MAX_BINARY_BYTES,
+    "DemoFramework executable"
+  )
+  validate_demolab_dynamic_linkage_content!(
+    main_content,
+    framework_content,
+    xcode_toolchain: xcode_toolchain
+  )
 end
 
 def inspect_demolab_ipa!(
@@ -1432,15 +1537,24 @@ def inspect_demolab_ipa!(
     binaries = binary_specs.map do |entry_name, relative_path, role|
       entry = archive.find_entry(entry_name)
       UI.user_error!("DemoLab IPA is missing a required packaged binary.") unless entry
-      zip_binary_evidence(entry, relative_path, role)
+      content = read_zip_entry(entry, DEMO_LAB_MAX_BINARY_BYTES)
+      [
+        zip_binary_evidence(content, relative_path, role),
+        content,
+      ]
     end
+    validate_demolab_dynamic_linkage_content!(
+      binaries[0][1],
+      binaries[1][1],
+      xcode_toolchain: xcode_toolchain
+    )
 
     inspection = {
       "application" => "DemoLab.app",
       "identity_validated" => true,
       "export_compliance_validated" => true,
       "archive" => ipa_measurement,
-      "binaries" => binaries,
+      "binaries" => binaries.map(&:first),
     }
   end
   inspection
@@ -1486,6 +1600,11 @@ def write_pre_upload_evidence(
       role,
     ]
   end
+  validate_demolab_dynamic_linkage_paths!(
+    binaries[0][0],
+    binaries[1][0],
+    xcode_toolchain: xcode_toolchain
+  )
   packaged = inspect_demolab_ipa!(
     ipa_path,
     app_identifier: app_identifier,
@@ -1863,6 +1982,11 @@ def verify_evidence_bound_archive!(
       ensure_outside_repository!(resolved_path, "Evidence-bound archive binary")
       [resolved_path, relative_path, role]
     end
+  validate_demolab_dynamic_linkage_paths!(
+    archive_binaries[0][0],
+    archive_binaries[1][0],
+    xcode_toolchain: xcode_toolchain
+  )
   observed_archive_binaries = archive_binaries.map do |path, relative_path, role|
     binary_evidence(
       path,
@@ -2962,7 +3086,7 @@ platform :ios do
     begin
       shadow_tools = File.join(workspace, "shadow-developer-tools")
       Dir.mkdir(shadow_tools, 0o700)
-      %w[xcodebuild xcrun plutil dwarfdump lipo xcodegen].each do |name|
+      %w[xcodebuild xcrun plutil dwarfdump lipo otool xcodegen].each do |name|
         shadow_path = File.join(shadow_tools, name)
         File.write(shadow_path, "#!/bin/sh\nprintf 'shadow-tool\\n'\n")
         File.chmod(0o500, shadow_path)
@@ -2981,7 +3105,7 @@ platform :ios do
         end
 
         shadow_selection = selected_xcode_toolchain
-        unless %w[xcodebuild xcrun plutil dwarfdump lipo].all? { |name|
+        unless %w[xcodebuild xcrun plutil dwarfdump lipo otool].all? { |name|
           shadow_selection.fetch(name) == xcode_toolchain.fetch(name) &&
             !shadow_selection.dig(name, "path").start_with?(
               "#{shadow_tools}#{File::SEPARATOR}"
@@ -2993,11 +3117,11 @@ platform :ios do
         ENV["XCODE_XCCONFIG_FILE"] = File.join(workspace, "untrusted.xcconfig")
         begin
           with_pinned_xcode_environment(xcode_toolchain) do
-            unless %w[xcodebuild xcrun plutil dwarfdump lipo].all? { |name|
+            unless %w[xcodebuild xcrun plutil dwarfdump lipo otool].all? { |name|
               resolved_from_path = pinned_executable(
                 command_output("/usr/bin/which", name),
                 "PATH-selected #{name}",
-                required_root: %w[xcodebuild dwarfdump lipo].include?(name) ?
+                required_root: %w[xcodebuild dwarfdump lipo otool].include?(name) ?
                   xcode_toolchain.fetch("developer_dir") : nil
               )
               resolved_from_path == xcode_toolchain.fetch(name)
@@ -3432,6 +3556,29 @@ platform :ios do
       ]
       expected_binaries.each do |binary|
         UI.user_error!("DemoLab product is missing: #{binary}") unless File.executable?(binary)
+      end
+      validate_demolab_dynamic_linkage_paths!(
+        expected_binaries[0],
+        expected_binaries[1],
+        xcode_toolchain: xcode_toolchain
+      )
+      invalid_framework_path =
+        "/Library/Frameworks/DemoFramework.framework/DemoFramework"
+      invalid_linkage = "fixture:\n#{invalid_framework_path}\n"
+      invalid_dependency =
+        "fixture:\n#{invalid_framework_path} " \
+        "(compatibility version 0.0.0, current version 0.0.0)\n"
+      invalid_linkage_rejected = false
+      begin
+        validate_demolab_dynamic_linkage_outputs!(
+          invalid_linkage,
+          invalid_dependency
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        invalid_linkage_rejected = true
+      end
+      unless invalid_linkage_rejected
+        UI.user_error!("An absolute DemoFramework install name was accepted.")
       end
 
       expected_identifiers = {
