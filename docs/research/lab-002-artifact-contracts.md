@@ -1,6 +1,6 @@
 # LAB-002 closed artifact contracts
 
-Status: **checkpoint 2B branch-local contract**
+Status: **checkpoint 2B completed on `main`**
 
 This document explains the schema bundle at
 [`schemas/lab002/lab-002-artifacts-v1.schema.json`](../../schemas/lab002/lab-002-artifacts-v1.schema.json).
