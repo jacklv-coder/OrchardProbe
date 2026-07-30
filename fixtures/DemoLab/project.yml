@@ -28,6 +28,8 @@ targets:
     platform: iOS
     sources:
       - path: Framework/Sources
+      - path: Shared/Sources/LAB002MachOObserverCore.swift
+      - path: Shared/Sources/LAB002LiveMachOObserver.swift
       - path: Framework/Headers
         buildPhase: headers
         headerVisibility: public

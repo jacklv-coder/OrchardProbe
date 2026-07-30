@@ -116,6 +116,16 @@
   入口只存在于 Debug 测试 Harness；生产构造保持私有，留给 2C.4c 的零参数 Role
   Wrapper。28 项合成 Simulator 测试、Release Simulator Build 与专项 Codex CR
   均通过，且没有剩余可执行 P1/P2。
+- 2C.4c1 已组装三个零参数 Target-local Observation。每个 Target 只在内部提供固定
+  Bundle 与编译 Anchor，要求 `dladdr` Path 绑定，把一个 Mapped Header 精确匹配到
+  安装 CPU/Subtype/UUID/Range，检查 Read+Execute VM 包含，并且只在 Disk
+  Inspection 后 Hash 精确 Mapped Range。有界 Embedded SuperBlob/Primary
+  CodeDirectory Parser 会记录 Identifier、Team、选定 Entitlement、
+  CMS/Ad-hoc/Unknown Kind 与 SuperBlob SHA-256；精确 Target-identity 分帧与 Core
+  一致。由于 iOS 没有公开 `SecStaticCode` Validator，Validation 会明确保持
+  `not_checked`，绝不能产生签名通过声明。30 项 Simulator 测试覆盖合成签名/身份
+  一致性与零参数失败关闭，Release Simulator Build 与专项 Codex CR 均通过，没有
+  剩余可执行 P1/P2。
 
 ## 已完成的 2B 门禁
 
@@ -176,5 +186,6 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 |---:|---|---|---|
 | 2C.4a | 闭合并持久化不可变 Run Session | `完成` | 精确 Session Report 字段只来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、精确 Counter 与系统随机数/时间；Counter/Session 中断发布只可由原先精确 Quarantine 恢复，`session.json` 排他创建，19 项 Simulator 测试与专项 CR 通过 |
 | 2C.4b | 实现 Target 私有 Mach-O Observer Core | `完成` | Stable No-follow Descriptor 读取、有界 Thin/FAT 解析、精确固定 Section/Encryption/Fixup 证据、Mapped Header/Anchor 绑定、28 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有调用方可选输入 |
-| 2C.4c | 接入三个零参数 Role 入口 | `进行中` | Main App、DemoFramework、Share Extension 只解析自身，按固定顺序各发布一次固定报告，并拒绝重复、过期或冲突 Session |
+| 2C.4c1 | 组装三个 Target 私有零参数观察 | `完成` | 固定 Bundle/Anchor 与 `dladdr` 绑定、有界安装签名身份、Active Mapped Header/Range/VM 绑定、精确 Disk/Mapped Digest、30 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有选择器输入 |
+| 2C.4c2 | 编码并发布三份固定 Role Report | `进行中` | 精确规范报告绑定不可变 Session，按 Main/Framework/Share 顺序排他发布，并拒绝重复、过期、冲突、超限或乱序状态 |
 | 2C.4d | 完成 Session 并执行专项门禁 | `planned` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |

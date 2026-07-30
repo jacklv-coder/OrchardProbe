@@ -157,6 +157,19 @@ installation, device observation, or device-backend work.
   production construction remains private for the 2C.4c zero-argument role
   wrappers. Twenty-eight synthetic Simulator tests, a Release Simulator build,
   and focused Codex CR pass with no remaining actionable P1/P2.
+- 2C.4c1 now assembles the three zero-argument target-local observations.
+  Each target supplies only its fixed bundle and compiled anchor, requires
+  `dladdr` path binding, matches one mapped header to the installed
+  CPU/subtype/UUID/range, checks readable executable VM containment, and hashes
+  the exact mapped range only after disk inspection. A bounded embedded
+  SuperBlob/primary-CodeDirectory parser records identifier, team, selected
+  entitlements, CMS/ad-hoc/unknown kind, and SuperBlob SHA-256; the exact
+  target-identity framing matches Core. Because iOS has no public
+  `SecStaticCode` validator, validation is explicitly `not_checked` and can
+  never produce a passing signature claim. Thirty Simulator tests, including
+  synthetic signature/identity parity and zero-argument fail-closed checks,
+  plus a Release Simulator build and focused Codex CR pass with no remaining
+  actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -228,5 +241,6 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 |---:|---|---|---|
 | 2C.4a | Close and persist the immutable run session | `done` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, the exact counter, and system randomness/time; interrupted counter/session publication is recoverable only from the pre-existing exact quarantine, `session.json` is exclusive, and 19 Simulator tests plus focused CR pass |
 | 2C.4b | Implement the target-private Mach-O observer core | `done` | Stable no-follow descriptor reads, bounded thin/FAT parsing, exact fixed-section/encryption/fixup evidence, mapped-header/anchor binding, 28 Simulator tests, Release build, and focused CR pass without a production caller-selected input |
-| 2C.4c | Wire the three zero-argument role entries | `in progress` | Main App, DemoFramework, and Share Extension resolve only themselves, publish the three fixed reports once in required order, and reject duplicate/stale/conflicting sessions |
+| 2C.4c1 | Assemble the three target-private zero-argument observations | `done` | Fixed bundle/anchor and `dladdr` binding, bounded installed signature identity, active mapped-header/range/VM binding, exact disk/mapped digests, 30 Simulator tests, Release build, and focused CR pass without production selector input |
+| 2C.4c2 | Encode and publish the three fixed role reports | `in progress` | Exact canonical reports bind the immutable session, publish exclusively in main/framework/share order, and reject duplicate, stale, conflicting, oversized, or out-of-order state |
 | 2C.4d | Close the session and run focused gates | `planned` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |

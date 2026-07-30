@@ -3,6 +3,8 @@ import Darwin
 import Foundation
 
 enum LAB002ObserverReason: String, Error {
+    case identityMismatch = "identity_mismatch"
+    case signatureInvalidOrUnchecked = "signature_invalid_or_unchecked"
     case inventoryMismatch = "inventory_mismatch"
     case missingOrDuplicateFixedSection = "missing_or_duplicate_fixed_section"
     case fixedSectionOutOfBounds = "fixed_section_out_of_bounds"
@@ -11,6 +13,43 @@ enum LAB002ObserverReason: String, Error {
     case encryptionDoesNotCoverRange = "encryption_does_not_cover_range"
     case unexpectedInstalledSlice = "unexpected_installed_slice"
     case reportLimitExceeded = "report_limit_exceeded"
+}
+
+enum LAB002SignaturePresence: String {
+    case present
+    case absent
+}
+
+enum LAB002SignatureKind: String {
+    case cms
+    case adHoc = "ad_hoc"
+    case unknown
+    case notApplicable = "not_applicable"
+}
+
+enum LAB002SignatureValidation: String {
+    case valid
+    case invalid
+    case notChecked = "not_checked"
+    case notApplicable = "not_applicable"
+}
+
+struct LAB002SelectedEntitlements: Equatable {
+    let applicationIdentifier: String?
+    let developerTeamIdentifier: String?
+    let applicationGroups: [String]?
+}
+
+struct LAB002MachOSigningMetadata: Equatable {
+    let presence: LAB002SignaturePresence
+    let kind: LAB002SignatureKind
+    let validation: LAB002SignatureValidation
+    let validatorID: String
+    let validatorRevision: String
+    let superblobSHA256: String?
+    let codeDirectoryIdentifier: String?
+    let codeDirectoryTeamIdentifier: String?
+    let entitlements: LAB002SelectedEntitlements
 }
 
 enum LAB002MachOContainerKind: String {
@@ -47,6 +86,7 @@ struct LAB002MachOFixedSlice: Equatable {
     let sectionLength: UInt64
     let diskSHA256: String
     let encryption: LAB002MachOEncryptionEvidence
+    let signing: LAB002MachOSigningMetadata
 
     fileprivate let textVMAddress: UInt64
     fileprivate let sectionVMAddress: UInt64
@@ -277,7 +317,7 @@ private struct LAB002ParsedSlice {
     let loadCommandBytes: Data
 }
 
-private enum LAB002MachOObserverCore {
+enum LAB002MachOObserverCore {
     static let maximumExecutableBytes: UInt64 = 100 * 1024 * 1024
     static let maximumLoadCommands = 4_096
     static let maximumLoadCommandBytes = 4 * 1024 * 1024
@@ -288,13 +328,14 @@ private enum LAB002MachOObserverCore {
     private static let lcDysymtab: UInt32 = 0xb
     private static let lcSegment64: UInt32 = 0x19
     private static let lcUUID: UInt32 = 0x1b
+    private static let lcCodeSignature: UInt32 = 0x1d
     private static let lcDyldInfo: UInt32 = 0x22
     private static let lcDyldInfoOnly: UInt32 = 0x8000_0022
     private static let lcEncryptionInfo: UInt32 = 0x21
     private static let lcEncryptionInfo64: UInt32 = 0x2c
     private static let lcDyldChainedFixups: UInt32 = 0x8000_0034
 
-    static func parseInstalled<R: LAB002MachOReading>(
+    private static func parseInstalled<R: LAB002MachOReading>(
         _ reader: R
     ) throws -> LAB002InstalledMachO {
         guard (4...maximumExecutableBytes).contains(reader.size) else {
@@ -345,6 +386,50 @@ private enum LAB002MachOObserverCore {
             container: container,
             slices: slices
         )
+    }
+
+    static func parseInstalledFile(
+        at fixedExecutableURL: URL
+    ) throws -> LAB002InstalledMachO {
+        try parseInstalled(
+            LAB002DescriptorMachOReader(
+                fixedExecutableURL: fixedExecutableURL
+            )
+        )
+    }
+
+    static func parseInstalledBytes(
+        _ bytes: Data
+    ) throws -> LAB002InstalledMachO {
+        try parseInstalled(LAB002DataMachOReader(bytes))
+    }
+
+    static func matchMappedHeader(
+        _ headerBytes: Data,
+        installed: LAB002InstalledMachO,
+        anchorVMOffset: UInt64
+    ) throws -> (
+        activeSliceIndex: Int,
+        mappedRange: LAB002MappedMachORange
+    ) {
+        var match: (Int, LAB002MappedMachORange)?
+        for (index, slice) in installed.slices.enumerated() {
+            guard let range = try? parseMappedHeader(
+                headerBytes,
+                matching: slice,
+                anchorVMOffset: anchorVMOffset
+            ) else {
+                continue
+            }
+            guard match == nil else {
+                throw LAB002ObserverReason.inventoryMismatch
+            }
+            match = (index, range)
+        }
+        guard let match else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        return match
     }
 
     static func parseMappedHeader(
@@ -526,6 +611,7 @@ private enum LAB002MachOObserverCore {
         )?
         var classicStreams: [LAB002ClassicFixupStream] = []
         var chainedFixups: (offset: UInt32, size: UInt32)?
+        var codeSignature: (offset: UInt32, size: UInt32)?
         var sawDysymtab = false
         var sawSymtab = false
 
@@ -598,6 +684,14 @@ private enum LAB002MachOObserverCore {
                     throw LAB002ObserverReason.fixedSectionHasFixups
                 }
                 chainedFixups = (
+                    try magic.order.uint32(bytes, 8),
+                    try magic.order.uint32(bytes, 12)
+                )
+            case lcCodeSignature:
+                guard size == 16, codeSignature == nil else {
+                    throw LAB002ObserverReason.inventoryMismatch
+                }
+                codeSignature = (
                     try magic.order.uint32(bytes, 8),
                     try magic.order.uint32(bytes, 12)
                 )
@@ -737,6 +831,21 @@ private enum LAB002MachOObserverCore {
         } else {
             digest = String(repeating: "0", count: 64)
         }
+        let signing: LAB002MachOSigningMetadata
+        if inspectFixupPayloads {
+            if let codeSignature {
+                guard UInt64(codeSignature.offset) >= sectionEnd else {
+                    throw LAB002ObserverReason.inventoryMismatch
+                }
+            }
+            signing = try inspectCodeSignature(
+                reader,
+                descriptor: descriptor,
+                command: codeSignature
+            )
+        } else {
+            signing = absentSigningMetadata()
+        }
         return LAB002ParsedSlice(
             fixed: LAB002MachOFixedSlice(
                 ordinal: descriptor.ordinal,
@@ -759,10 +868,338 @@ private enum LAB002MachOObserverCore {
                     cryptid: encryption.cryptid,
                     coversFixedSection: covers
                 ),
+                signing: signing,
                 textVMAddress: textVMAddress,
                 sectionVMAddress: fixedSection.vmAddress
             ),
             loadCommandBytes: commands
+        )
+    }
+
+    private static func inspectCodeSignature<R: LAB002MachOReading>(
+        _ reader: R,
+        descriptor: LAB002SliceDescriptor,
+        command: (offset: UInt32, size: UInt32)?
+    ) throws -> LAB002MachOSigningMetadata {
+        guard let command else {
+            return absentSigningMetadata()
+        }
+        guard command.size >= 12,
+              UInt64(command.size) <= UInt64(maximumFixupPayloadBytes),
+              try checkedAdd(
+                UInt64(command.offset),
+                UInt64(command.size),
+                reason: .inventoryMismatch
+              ) <= descriptor.size
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        let absolute = try checkedAdd(
+            descriptor.offset,
+            UInt64(command.offset),
+            reason: .inventoryMismatch
+        )
+        let blob = try reader.read(
+            offset: absolute,
+            count: Int(command.size)
+        )
+        let order = LAB002ByteOrder.big
+        guard try order.uint32(blob, 0) == 0xfade_0cc0,
+              Int(try order.uint32(blob, 4)) == blob.count
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        let count = Int(try order.uint32(blob, 8))
+        guard (1...64).contains(count),
+              12 + count * 8 <= blob.count
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+
+        var slots: [UInt32: Data] = [:]
+        var intervals: [(start: Int, end: Int)] = []
+        for index in 0..<count {
+            let slot = try order.uint32(blob, 12 + index * 8)
+            let offset = Int(try order.uint32(blob, 16 + index * 8))
+            guard slots[slot] == nil,
+                  offset >= 12 + count * 8,
+                  offset <= blob.count - 8
+            else {
+                throw LAB002ObserverReason.inventoryMismatch
+            }
+            let length = Int(try order.uint32(blob, offset + 4))
+            guard length >= 8, offset + length <= blob.count else {
+                throw LAB002ObserverReason.inventoryMismatch
+            }
+            slots[slot] = blob.subdata(in: offset..<(offset + length))
+            intervals.append((offset, offset + length))
+        }
+        intervals.sort { $0.start < $1.start }
+        for pair in zip(intervals, intervals.dropFirst()) {
+            guard pair.0.end <= pair.1.start else {
+                throw LAB002ObserverReason.inventoryMismatch
+            }
+        }
+
+        guard let codeDirectory = slots[0],
+              try order.uint32(codeDirectory, 0) == 0xfade_0c02,
+              Int(try order.uint32(codeDirectory, 4))
+                == codeDirectory.count,
+              codeDirectory.count >= 44
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        let version = try order.uint32(codeDirectory, 8)
+        let flags = try order.uint32(codeDirectory, 12)
+        let hashOffset = Int(try order.uint32(codeDirectory, 16))
+        let identifierOffset = Int(try order.uint32(codeDirectory, 20))
+        let specialSlotCount = Int(
+            try order.uint32(codeDirectory, 24)
+        )
+        let codeSlotCount = Int(try order.uint32(codeDirectory, 28))
+        let codeLimit32 = UInt64(try order.uint32(codeDirectory, 32))
+        let hashSize = Int(codeDirectory[36])
+        let hashType = codeDirectory[37]
+        let pageSizePower = codeDirectory[39]
+        let minimumLength: Int
+        switch version {
+        case 0x20200..<0x20300:
+            minimumLength = 52
+        case 0x20300..<0x20400:
+            minimumLength = 64
+        case 0x20400..<0x20500:
+            minimumLength = 88
+        case 0x20500..<0x20600:
+            minimumLength = 96
+        case 0x20600:
+            minimumLength = 108
+        default:
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        guard codeDirectory.count >= minimumLength,
+              try order.uint32(codeDirectory, 40) == 0,
+              pageSizePower >= 12,
+              pageSizePower <= 16,
+              hashSizeForType(hashType) == hashSize
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        if version >= 0x20300 {
+            guard try order.uint32(codeDirectory, 52) == 0 else {
+                throw LAB002ObserverReason.inventoryMismatch
+            }
+        }
+        let codeLimit64 = version >= 0x20300
+            ? try order.uint64(codeDirectory, 56)
+            : 0
+        let codeLimit = codeLimit64 == 0 ? codeLimit32 : codeLimit64
+        let pageSize = UInt64(1) << UInt64(pageSizePower)
+        let expectedCodeSlots = Int(
+            (try checkedAdd(
+                codeLimit,
+                pageSize - 1,
+                reason: .inventoryMismatch
+            )) / pageSize
+        )
+        let specialBytes = specialSlotCount * hashSize
+        let codeBytes = codeSlotCount * hashSize
+        guard codeLimit > 0,
+              codeLimit == UInt64(command.offset),
+              codeLimit <= maximumExecutableBytes,
+              codeSlotCount == expectedCodeSlots,
+              hashOffset >= specialBytes,
+              hashOffset + codeBytes <= codeDirectory.count
+        else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        let dynamicDataStart = hashOffset - specialBytes
+        guard dynamicDataStart >= minimumLength else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        let identifier = try codeSignatureString(
+            codeDirectory,
+            offset: identifierOffset,
+            upperBound: dynamicDataStart
+        )
+        let teamIdentifier: String
+        if version >= 0x20200 {
+            teamIdentifier = try codeSignatureString(
+                codeDirectory,
+                offset: Int(try order.uint32(codeDirectory, 48)),
+                upperBound: dynamicDataStart
+            )
+        } else {
+            throw LAB002ObserverReason.inventoryMismatch
+        }
+        guard isBundleIdentifier(identifier),
+              isTeamIdentifier(teamIdentifier)
+        else {
+            throw LAB002ObserverReason.identityMismatch
+        }
+
+        let entitlements: LAB002SelectedEntitlements
+        if let entitlementBlob = slots[5] {
+            guard try order.uint32(entitlementBlob, 0) == 0xfade_7171 else {
+                throw LAB002ObserverReason.identityMismatch
+            }
+            let payload = entitlementBlob.subdata(
+                in: 8..<entitlementBlob.count
+            )
+            guard let object = try PropertyListSerialization.propertyList(
+                from: payload,
+                options: [],
+                format: nil
+            ) as? [String: Any] else {
+                throw LAB002ObserverReason.identityMismatch
+            }
+            entitlements = try selectedEntitlements(object)
+        } else {
+            entitlements = LAB002SelectedEntitlements(
+                applicationIdentifier: nil,
+                developerTeamIdentifier: nil,
+                applicationGroups: nil
+            )
+        }
+
+        let isAdHoc = flags & 0x2 != 0
+        let hasCMS: Bool
+        if let cms = slots[0x1_0000], cms.count > 8 {
+            hasCMS = try order.uint32(cms, 0) == 0xfade_0b01
+        } else {
+            hasCMS = false
+        }
+        return LAB002MachOSigningMetadata(
+            presence: .present,
+            kind: isAdHoc ? .adHoc : (hasCMS ? .cms : .unknown),
+            validation: .notChecked,
+            validatorID: "demolab-bounded-codesign-parser",
+            validatorRevision: "1",
+            superblobSHA256: lowerHex(Data(SHA256.hash(data: blob))),
+            codeDirectoryIdentifier: identifier,
+            codeDirectoryTeamIdentifier: teamIdentifier,
+            entitlements: entitlements
+        )
+    }
+
+    private static func codeSignatureString(
+        _ bytes: Data,
+        offset: Int,
+        upperBound: Int
+    ) throws -> String {
+        guard offset >= 8,
+              offset < upperBound,
+              upperBound <= bytes.count,
+              let terminator = bytes[offset..<upperBound].firstIndex(of: 0),
+              terminator > offset,
+              let value = String(
+                data: bytes.subdata(in: offset..<terminator),
+                encoding: .utf8
+              ),
+              value.unicodeScalars.allSatisfy({
+                  $0.value >= 0x20 && $0.value != 0x7f
+              })
+        else {
+            throw LAB002ObserverReason.identityMismatch
+        }
+        return value
+    }
+
+    private static func hashSizeForType(_ type: UInt8) -> Int? {
+        switch type {
+        case 1: return 20
+        case 2: return 32
+        case 3: return 20
+        case 4: return 48
+        default: return nil
+        }
+    }
+
+    private static func selectedEntitlements(
+        _ object: [String: Any]
+    ) throws -> LAB002SelectedEntitlements {
+        func optionalString(_ key: String) throws -> String? {
+            guard let value = object[key] else { return nil }
+            guard let string = value as? String else {
+                throw LAB002ObserverReason.identityMismatch
+            }
+            return string
+        }
+        let applicationIdentifier = try optionalString(
+            "application-identifier"
+        )
+        let developerTeamIdentifier = try optionalString(
+            "com.apple.developer.team-identifier"
+        )
+        let applicationGroups: [String]?
+        if let value = object["com.apple.security.application-groups"] {
+            guard let groups = value as? [String],
+                  !groups.isEmpty,
+                  groups == groups.sorted(),
+                  Set(groups).count == groups.count,
+                  groups.allSatisfy({
+                      $0.hasPrefix("group.")
+                          && isBundleIdentifier(
+                              String($0.dropFirst("group.".count))
+                          )
+                  })
+            else {
+                throw LAB002ObserverReason.identityMismatch
+            }
+            applicationGroups = groups
+        } else {
+            applicationGroups = nil
+        }
+        if let developerTeamIdentifier,
+           !isTeamIdentifier(developerTeamIdentifier) {
+            throw LAB002ObserverReason.identityMismatch
+        }
+        return LAB002SelectedEntitlements(
+            applicationIdentifier: applicationIdentifier,
+            developerTeamIdentifier: developerTeamIdentifier,
+            applicationGroups: applicationGroups
+        )
+    }
+
+    private static func isBundleIdentifier(_ value: String) -> Bool {
+        !value.isEmpty
+            && value.utf8.count <= 255
+            && value.split(
+                separator: ".",
+                omittingEmptySubsequences: false
+            ).allSatisfy {
+                !$0.isEmpty && $0.utf8.allSatisfy {
+                    (0x30...0x39).contains($0)
+                        || (0x41...0x5a).contains($0)
+                        || (0x61...0x7a).contains($0)
+                        || $0 == 0x2d
+                }
+            }
+    }
+
+    private static func isTeamIdentifier(_ value: String) -> Bool {
+        value.utf8.count == 10
+            && value.utf8.allSatisfy {
+                (0x30...0x39).contains($0)
+                    || (0x41...0x5a).contains($0)
+            }
+    }
+
+    private static func absentSigningMetadata()
+        -> LAB002MachOSigningMetadata {
+        LAB002MachOSigningMetadata(
+            presence: .absent,
+            kind: .notApplicable,
+            validation: .notApplicable,
+            validatorID: "demolab-bounded-codesign-parser",
+            validatorRevision: "1",
+            superblobSHA256: nil,
+            codeDirectoryIdentifier: nil,
+            codeDirectoryTeamIdentifier: nil,
+            entitlements: LAB002SelectedEntitlements(
+                applicationIdentifier: nil,
+                developerTeamIdentifier: nil,
+                applicationGroups: nil
+            )
         )
     }
 
@@ -1585,9 +2022,7 @@ private enum LAB002MachOObserverCore {
 #if DEBUG
 enum LAB002MachOObserverTestHarness {
     static func parseInstalled(_ bytes: Data) throws -> LAB002InstalledMachO {
-        try LAB002MachOObserverCore.parseInstalled(
-            LAB002DataMachOReader(bytes)
-        )
+        try LAB002MachOObserverCore.parseInstalledBytes(bytes)
     }
 
     static func parseMappedHeader(
@@ -1605,10 +2040,8 @@ enum LAB002MachOObserverTestHarness {
     static func parseInstalledFile(
         at fixedExecutableURL: URL
     ) throws -> LAB002InstalledMachO {
-        try LAB002MachOObserverCore.parseInstalled(
-            LAB002DescriptorMachOReader(
-                fixedExecutableURL: fixedExecutableURL
-            )
+        try LAB002MachOObserverCore.parseInstalledFile(
+            at: fixedExecutableURL
         )
     }
 }

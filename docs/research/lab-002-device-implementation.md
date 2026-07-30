@@ -80,6 +80,33 @@ The core returns only closed evidence structures and closed reason codes. It
 does not perform oracle comparison, signing-identity validation, mapped-memory
 hashing, or report publication; those remain ordered work in 2C.4c.
 
+### Zero-argument local role assembly
+
+Checkpoint 2C.4c1 compiles the same reviewed core separately into the app,
+framework, and extension, then exposes only the three fixed zero-argument
+entries. Each entry supplies its own fixed `Bundle` and compiled assembly
+anchor internally. `dladdr` must bind that anchor to the same executable path
+resolved by the fixed bundle before disk inspection starts.
+
+The active 64-bit mapped header is bounded to 4,096 commands and 4 MiB, matched
+to exactly one installed slice by CPU type/subtype, UUID, fixed coordinates,
+and anchor containment. Both the mapped header and fixed section must be wholly
+contained in one readable executable VM region before bytes are copied and
+hashed. Disk inspection time precedes mapped-hash time.
+
+The installed slice also parses one bounded embedded code-signature SuperBlob:
+its primary CodeDirectory layout, identifier, team identifier, selected XML
+entitlements, CMS/ad-hoc/unknown kind, and complete SuperBlob SHA-256. The
+compiled 32-byte identity nonce and fixed role are framed with those selected
+identity values using the same target-identity domain as Core. iOS exposes no
+public `SecStaticCode` validation surface, so this parser deliberately records
+`not_checked`; launch success, a CMS-shaped slot, identifiers, or a digest
+never become `valid`. Consequently the future report is No-Go unless a
+separately reviewed validator can supply real validation.
+
+Report encoding and exclusive ordered publication are not part of this local
+assembly and remain 2C.4c2.
+
 ## Fixed production container
 
 Production code obtains the container only from

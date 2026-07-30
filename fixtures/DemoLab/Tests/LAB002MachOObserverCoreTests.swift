@@ -1,9 +1,24 @@
 import CryptoKit
+import DemoFramework
 import Foundation
 import XCTest
 @testable import DemoLab
 
 final class LAB002MachOObserverCoreTests: XCTestCase {
+    func testZeroArgumentEntriesFailClosedOnUnencryptedSimulator() {
+        XCTAssertThrowsError(try observeCurrentMainExecutable()) { error in
+            XCTAssertTrue(
+                [
+                    LAB002ObserverReason.inventoryMismatch.rawValue,
+                    LAB002ObserverReason.encryptionCommandInvalid.rawValue,
+                ].contains(
+                    (error as? LAB002ObserverReason)?.rawValue ?? ""
+                )
+            )
+        }
+        XCTAssertThrowsError(try observeCurrentFrameworkImage())
+    }
+
     func testThinImageProducesBoundedEvidence() throws {
         let bytes = makeThinMachO(uuidSeed: 0x10)
 
@@ -39,6 +54,10 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
         XCTAssertEqual(slice.encryption.cryptFileEnd, 0x1100)
         XCTAssertEqual(slice.encryption.cryptid, 1)
         XCTAssertTrue(slice.encryption.coversFixedSection)
+        XCTAssertEqual(slice.signing.presence, .absent)
+        XCTAssertEqual(slice.signing.kind, .notApplicable)
+        XCTAssertEqual(slice.signing.validation, .notApplicable)
+        XCTAssertNil(slice.signing.superblobSHA256)
     }
 
     func testFatImageBindsEveryDeclaredSlice() throws {
@@ -172,6 +191,57 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
         }
     }
 
+    func testBoundedCodeSignatureMetadataIsClosed() throws {
+        let installed = try LAB002MachOObserverTestHarness.parseInstalled(
+            makeThinMachO(includeCodeSignature: true)
+        )
+        let signing = try XCTUnwrap(installed.slices.first?.signing)
+
+        XCTAssertEqual(signing.presence, .present)
+        XCTAssertEqual(signing.kind, .cms)
+        XCTAssertEqual(signing.validation, .notChecked)
+        XCTAssertEqual(
+            signing.validatorID,
+            "demolab-bounded-codesign-parser"
+        )
+        XCTAssertEqual(signing.validatorRevision, "1")
+        XCTAssertEqual(
+            signing.codeDirectoryIdentifier,
+            "com.example.orchardprobe.demolab"
+        )
+        XCTAssertEqual(
+            signing.codeDirectoryTeamIdentifier,
+            "36XNX296J9"
+        )
+        XCTAssertEqual(
+            signing.entitlements.applicationIdentifier,
+            "36XNX296J9.com.example.orchardprobe.demolab"
+        )
+        XCTAssertEqual(
+            signing.entitlements.developerTeamIdentifier,
+            "36XNX296J9"
+        )
+        XCTAssertEqual(
+            signing.entitlements.applicationGroups,
+            ["group.com.example.orchardprobe.demolab"]
+        )
+        XCTAssertEqual(signing.superblobSHA256?.count, 64)
+        XCTAssertEqual(
+            try LAB002LiveMachOObserver.testTargetIdentityBinding(
+                bundleIdentifier: "com.example.orchardprobe.demolab",
+                nonceHex: String(repeating: "11", count: 32),
+                fixedRole: .mainApp,
+                signing: signing
+            ),
+            "8c694cc52e3f2ab1a89dcd2bb217441b"
+                + "fd36bc893588d6019e2b5130faa8ee00"
+        )
+
+        var malformed = makeThinMachO(includeCodeSignature: true)
+        writeBigEndian(UInt32(0), to: &malformed, at: 0x1200)
+        assertRejects(malformed, .inventoryMismatch)
+    }
+
     private func assertMappedRejects(
         _ bytes: Data,
         matching slice: LAB002MachOFixedSlice,
@@ -210,7 +280,8 @@ private func makeThinMachO(
     uuidSeed: UInt8 = 0x10,
     cpuSubtype: Int32 = 0,
     includeClassicTextFixup: Bool = false,
-    includeChainedTextFixup: Bool = false
+    includeChainedTextFixup: Bool = false,
+    includeCodeSignature: Bool = false
 ) -> Data {
     precondition(!(includeClassicTextFixup && includeChainedTextFixup))
     var segment = Data()
@@ -270,7 +341,23 @@ private func makeThinMachO(
         appendLittleEndian(UInt32(62), to: &chainedFixups)
     }
 
-    let commands = segment + uuid + encryption + dyldInfo + chainedFixups
+    let signatureBlob = includeCodeSignature
+        ? makeCodeSignatureBlob()
+        : Data()
+    var codeSignature = Data()
+    if includeCodeSignature {
+        appendLittleEndian(UInt32(0x1d), to: &codeSignature)
+        appendLittleEndian(UInt32(16), to: &codeSignature)
+        appendLittleEndian(UInt32(0x1200), to: &codeSignature)
+        appendLittleEndian(UInt32(signatureBlob.count), to: &codeSignature)
+    }
+
+    let commands = segment
+        + uuid
+        + encryption
+        + dyldInfo
+        + chainedFixups
+        + codeSignature
     var result = Data()
     result.append(contentsOf: [0xcf, 0xfa, 0xed, 0xfe])
     appendLittleEndian(UInt32(0x0100_000c), to: &result)
@@ -278,7 +365,10 @@ private func makeThinMachO(
     appendLittleEndian(UInt32(2), to: &result)
     appendLittleEndian(
         UInt32(
-            includeClassicTextFixup || includeChainedTextFixup ? 4 : 3
+            3
+                + (includeClassicTextFixup ? 1 : 0)
+                + (includeChainedTextFixup ? 1 : 0)
+                + (includeCodeSignature ? 1 : 0)
         ),
         to: &result
     )
@@ -286,7 +376,8 @@ private func makeThinMachO(
     appendLittleEndian(UInt32(0), to: &result)
     appendLittleEndian(UInt32(0), to: &result)
     result.append(commands)
-    result.append(Data(repeating: 0, count: 0x1200 - result.count))
+    let fileSize = includeCodeSignature ? 0x1600 : 0x1200
+    result.append(Data(repeating: 0, count: fileSize - result.count))
     if includeClassicTextFixup {
         result.replaceSubrange(
             0x300..<0x306,
@@ -315,10 +406,96 @@ private func makeThinMachO(
         precondition(payload.count == 62)
         result.replaceSubrange(0x300..<0x33e, with: payload)
     }
+    if includeCodeSignature {
+        result.replaceSubrange(
+            0x1200..<(0x1200 + signatureBlob.count),
+            with: signatureBlob
+        )
+    }
     for index in 0..<0x100 {
         result[0x1000 + index] = UInt8(truncatingIfNeeded: index)
     }
     return result
+}
+
+private func makeCodeSignatureBlob() -> Data {
+    let identifier = Data("com.example.orchardprobe.demolab\0".utf8)
+    let team = Data("36XNX296J9\0".utf8)
+    let identifierOffset = 52
+    let teamOffset = identifierOffset + identifier.count
+    let dynamicStart = teamOffset + team.count
+    let hashOffset = dynamicStart + 5 * 32
+    let codeDirectoryLength = hashOffset + 2 * 32
+
+    var codeDirectory = Data()
+    appendBigEndian(UInt32(0xfade_0c02), to: &codeDirectory)
+    appendBigEndian(UInt32(codeDirectoryLength), to: &codeDirectory)
+    appendBigEndian(UInt32(0x20200), to: &codeDirectory)
+    appendBigEndian(UInt32(0), to: &codeDirectory)
+    appendBigEndian(UInt32(hashOffset), to: &codeDirectory)
+    appendBigEndian(UInt32(identifierOffset), to: &codeDirectory)
+    appendBigEndian(UInt32(5), to: &codeDirectory)
+    appendBigEndian(UInt32(2), to: &codeDirectory)
+    appendBigEndian(UInt32(0x1200), to: &codeDirectory)
+    codeDirectory.append(contentsOf: [32, 2, 0, 12])
+    appendBigEndian(UInt32(0), to: &codeDirectory)
+    appendBigEndian(UInt32(0), to: &codeDirectory)
+    appendBigEndian(UInt32(teamOffset), to: &codeDirectory)
+    codeDirectory.append(identifier)
+    codeDirectory.append(team)
+    codeDirectory.append(
+        Data(
+            repeating: 0x41,
+            count: codeDirectoryLength - codeDirectory.count
+        )
+    )
+
+    let entitlementObject: [String: Any] = [
+        "application-identifier":
+            "36XNX296J9.com.example.orchardprobe.demolab",
+        "com.apple.developer.team-identifier": "36XNX296J9",
+        "com.apple.security.application-groups": [
+            "group.com.example.orchardprobe.demolab",
+        ],
+    ]
+    let entitlementPayload = try! PropertyListSerialization.data(
+        fromPropertyList: entitlementObject,
+        format: .xml,
+        options: 0
+    )
+    var entitlements = Data()
+    appendBigEndian(UInt32(0xfade_7171), to: &entitlements)
+    appendBigEndian(
+        UInt32(8 + entitlementPayload.count),
+        to: &entitlements
+    )
+    entitlements.append(entitlementPayload)
+
+    var cms = Data()
+    appendBigEndian(UInt32(0xfade_0b01), to: &cms)
+    appendBigEndian(UInt32(12), to: &cms)
+    cms.append(contentsOf: [1, 2, 3, 4])
+
+    let count = 3
+    let firstOffset = 12 + count * 8
+    let entitlementOffset = firstOffset + codeDirectory.count
+    let cmsOffset = entitlementOffset + entitlements.count
+    let totalLength = cmsOffset + cms.count
+    var superblob = Data()
+    appendBigEndian(UInt32(0xfade_0cc0), to: &superblob)
+    appendBigEndian(UInt32(totalLength), to: &superblob)
+    appendBigEndian(UInt32(count), to: &superblob)
+    appendBigEndian(UInt32(0), to: &superblob)
+    appendBigEndian(UInt32(firstOffset), to: &superblob)
+    appendBigEndian(UInt32(5), to: &superblob)
+    appendBigEndian(UInt32(entitlementOffset), to: &superblob)
+    appendBigEndian(UInt32(0x1_0000), to: &superblob)
+    appendBigEndian(UInt32(cmsOffset), to: &superblob)
+    superblob.append(codeDirectory)
+    superblob.append(entitlements)
+    superblob.append(cms)
+    precondition(superblob.count == totalLength)
+    return superblob
 }
 
 private func makeFat32MachO() -> Data {

@@ -69,6 +69,28 @@ Mode、Link Count、Size、Modification Time 与 Change Time。Parser 随后：
 Core 只返回闭合证据结构与闭合 Reason Code，不执行 Oracle 比较、签名身份验证、
 Mapped-memory Hash 或报告发布；这些仍按顺序留给 2C.4c。
 
+### 零参数本地 Role 组装
+
+检查点 2C.4c1 把同一份已评审 Core 分别编译进 App、Framework 与 Extension，并且
+只暴露三个固定零参数入口。每个入口在内部提供自身固定 `Bundle` 与编译期 Assembly
+Anchor。Disk Inspection 开始前，`dladdr` 必须把该 Anchor 绑定到固定 Bundle 解析
+出的同一 Executable Path。
+
+Active 64-bit Mapped Header 被限制为 4,096 个 Command 和 4 MiB，并通过 CPU
+Type/Subtype、UUID、固定坐标及 Anchor 包含关系精确匹配一个安装 Slice。复制并 Hash
+字节前，Mapped Header 与固定 Section 都必须完整落在同一个 Read+Execute VM Region
+内。Disk Inspection 时间必须先于 Mapped Hash 时间。
+
+安装 Slice 还会解析一份有界 Embedded Code-signature SuperBlob：Primary
+CodeDirectory Layout、Identifier、Team Identifier、选定 XML Entitlement、
+CMS/Ad-hoc/Unknown Kind，以及完整 SuperBlob SHA-256。编译期 32 字节 Identity Nonce
+与固定 Role 会和这些选定身份值一起，使用与 Core 相同的 Target-identity Domain
+进行长度分帧。iOS 没有公开 `SecStaticCode` 验证 Surface，因此 Parser 会明确记录
+`not_checked`；成功启动、形似 CMS 的 Slot、Identifier 或 Digest 都不会变成
+`valid`。所以除非以后有另行评审的 Validator 提供真实验证，最终报告必须为 No-Go。
+
+报告编码与按固定顺序排他发布不属于本次本地组装，仍留给 2C.4c2。
+
 ## 固定生产 Container
 
 生产代码只通过 `containerURL(forSecurityApplicationGroupIdentifier:)` 获取
