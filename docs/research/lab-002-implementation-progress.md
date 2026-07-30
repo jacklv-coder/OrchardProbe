@@ -189,3 +189,12 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.3 | Implement enrollment state and device-only key boundary | `done` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, authenticated same-envelope interruption recovery, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment; 11 Simulator tests, Debug/Release builds, and focused Codex CR pass |
 | 2C.4 | Implement session lifecycle and three zero-argument observers | `in progress` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters |
 | 2C.5 | Implement signed export, receipt, and cleanup boundaries | `planned` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |
+
+### 2C.4 execution order
+
+| Order | Work item | Status | Exit gate |
+|---:|---|---|---|
+| 2C.4a | Close and persist the immutable run session | `in progress` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, committed counter, and system randomness/time; `session.json` is exclusively created before observation |
+| 2C.4b | Implement the target-private Mach-O observer core | `planned` | Bounded no-follow installed-file and mapped-image parsing derive only the compiled `__TEXT,__oprobe` range and closed structural evidence/reasons without caller-selected inputs |
+| 2C.4c | Wire the three zero-argument role entries | `planned` | Main App, DemoFramework, and Share Extension resolve only themselves, publish the three fixed reports once in required order, and reject duplicate/stale/conflicting sessions |
+| 2C.4d | Close the session and run focused gates | `planned` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |

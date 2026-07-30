@@ -146,3 +146,12 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `完成` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；支持同一已认证 Envelope 的中断恢复；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment；11 项 Simulator 测试、Debug/Release Build 与专项 Codex CR 均通过 |
 | 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `进行中` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address |
 | 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `planned` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
+
+### 2C.4 执行顺序
+
+| 顺序 | 工作项 | 状态 | 退出门禁 |
+|---:|---|---|---|
+| 2C.4a | 闭合并持久化不可变 Run Session | `进行中` | 精确 Session Report 字段只能来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、已提交 Counter 与系统随机数/时间；观察前排他创建 `session.json` |
+| 2C.4b | 实现 Target 私有 Mach-O Observer Core | `planned` | 对安装文件做 No-follow 有界解析并解析已映射 Image，只推导编译固定的 `__TEXT,__oprobe` Range；返回闭合结构证据/原因，不接受调用方选择输入 |
+| 2C.4c | 接入三个零参数 Role 入口 | `planned` | Main App、DemoFramework、Share Extension 只解析自身，按固定顺序各发布一次固定报告，并拒绝重复、过期或冲突 Session |
+| 2C.4d | 完成 Session 并执行专项门禁 | `planned` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |
