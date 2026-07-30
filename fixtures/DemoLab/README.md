@@ -16,7 +16,28 @@ first-party signed build; no Apple team or registered identifier is committed.
 The checked-in App Group is likewise the generic
 `group.com.example.orchardprobe.demolab`; a future reviewed signed LAB-002
 build must replace it with the registered first-party group for both the app
-and share extension.
+and share extension. The main app's fixed Keychain access group is one explicit
+build setting shared by its entitlement and Info.plist. The controlled signed
+lane injects the full Team ID plus bundle identifier instead of relying on
+`AppIdentifierPrefix` expansion; its enrollment key is non-synchronizable and
+`kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. The Keychain item also binds
+the exact build digest: if enrollment is interrupted after key persistence but
+before nonce-state persistence, only a later authenticated enrollment for that
+same build may recover the orphaned key and finish exclusive state creation.
+If state persistence completed but authorization deletion was interrupted,
+Enrollment alone may resume and revalidate that exact quarantined
+authorization, strictly load the same-build state/key, and finish deletion.
+Run paths cannot invoke either recovery, a fresh re-enrollment cannot reuse
+persisted state, and another build is rejected.
+LAB-002 enrollment/run/discard production entry points source wall-clock time
+internally and require `DEMO_LAB_BUILD_BINDING_SHA256` to inject the exact
+lowercase 64-hex build binding into the app Info.plist. The checked-in setting
+is deliberately empty, so production coordination fails closed until the
+reviewed LAB-002 pre-build step derives it from every frozen binding input.
+The signed archive lane refuses a missing or malformed precomputed binding and
+injects the validated value into the compiled Info.plist; it does not invent a
+default. Runtime caller-controlled overrides are available only through the
+Debug test initializer.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
 The branch-local LAB-002 app/extension capability, fixed-container, and state

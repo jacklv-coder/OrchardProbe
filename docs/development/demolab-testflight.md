@@ -173,6 +173,7 @@ checkout, or export them only in the local terminal:
 | `DEMO_LAB_TEAM_ID` | archive | Apple Developer team used by Xcode signing. |
 | `DEMO_LAB_MARKETING_VERSION` | archive | Optional dotted version; defaults to `1.0`. |
 | `DEMO_LAB_BUILD_NUMBER` | archive | New positive integer for every App Store Connect upload. |
+| `DEMO_LAB_BUILD_BINDING_SHA256` | archive | Exact lowercase 64-hex binding produced by the reviewed LAB-002 pre-build step from every frozen source, version, manifest, and toolchain input. The archive lane validates and injects it; it never supplies a default. |
 | `DEMO_LAB_OUTPUT_DIR` | archive | Absolute dedicated directory outside the repository. It must already exist, be owned by the current user, not be a symlink, already have mode `0700`, and contain no single quote or control character; the lane never creates it or changes its permissions. |
 | `DEMO_LAB_EVIDENCE_PATH` | upload, reconciliation | Absolute path to the generated pre-upload evidence JSON. It must remain owned by the current user with no group/other access. |
 | `DEMO_LAB_APPLE_ID` | upload | Numeric Apple ID of the existing App Store Connect app record; this binds Apple's package-upload command to the intended app. |

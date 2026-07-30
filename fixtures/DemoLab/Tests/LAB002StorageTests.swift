@@ -4,12 +4,16 @@ import XCTest
 @testable import DemoLab
 
 private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
-    let metadata: LAB002AuthorizationMetadata
+    var metadata: LAB002AuthorizationMetadata
     var shouldFail = false
 
-    init(expectedCounter: UInt64? = 1, build: String = String(repeating: "a", count: 64)) {
+    init(
+        kind: LAB002AuthorizationKind = .collectionRun,
+        expectedCounter: UInt64? = 1,
+        build: String = String(repeating: "a", count: 64)
+    ) {
         metadata = LAB002AuthorizationMetadata(
-            kind: .collectionRun,
+            kind: kind,
             buildBindingSHA256: build,
             notBefore: 1_000,
             notAfter: 1_900,
@@ -22,6 +26,87 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
             throw LAB002CoordinatorError.wrongOperation
         }
         return metadata
+    }
+}
+
+private final class TestEnrollmentKeyStore: LAB002EnrollmentKeyStoring {
+    private var raw: Data?
+    private var storedBuild: String?
+    private(set) var createCount = 0
+
+    init(
+        seed: UInt8 = 0x41,
+        preloaded: Bool = false,
+        build: String = String(repeating: "a", count: 64)
+    ) {
+        raw = preloaded ? Data(repeating: seed, count: 32) : nil
+        storedBuild = preloaded ? build : nil
+        self.seed = seed
+    }
+
+    private let seed: UInt8
+
+    func createOrRecoverForAuthenticatedEnrollment(
+        buildBindingSHA256: String
+    ) throws -> any LAB002EnrollmentSigningKey {
+        if let raw {
+            guard storedBuild == buildBindingSHA256 else {
+                throw LAB002EnrollmentError.buildMismatch
+            }
+            return try LAB002CryptoKitSigningKey(rawRepresentation: raw)
+        }
+        createCount += 1
+        let value = Data(repeating: seed, count: 32)
+        raw = value
+        storedBuild = buildBindingSHA256
+        return try LAB002CryptoKitSigningKey(rawRepresentation: value)
+    }
+
+    func loadExisting(
+        buildBindingSHA256: String
+    ) throws -> any LAB002EnrollmentSigningKey {
+        guard let raw else {
+            throw LAB002EnrollmentError.notEnrolled
+        }
+        guard storedBuild == buildBindingSHA256 else {
+            throw LAB002EnrollmentError.buildMismatch
+        }
+        return try LAB002CryptoKitSigningKey(rawRepresentation: raw)
+    }
+}
+
+private final class TestRandomBytes: LAB002RandomBytesGenerating {
+    let byte: UInt8
+    var failureCount: Int
+
+    init(byte: UInt8, failureCount: Int = 0) {
+        self.byte = byte
+        self.failureCount = failureCount
+    }
+
+    func bytes(count: Int) throws -> Data {
+        if failureCount > 0 {
+            failureCount -= 1
+            throw LAB002EnrollmentError.randomnessFailure(errSecAllocate)
+        }
+        return Data(repeating: byte, count: count)
+    }
+}
+
+private final class TestRuntimeContext: LAB002RuntimeContextProviding {
+    let buildBindingSHA256: String
+    var now: Int64
+
+    init(
+        build: String = String(repeating: "a", count: 64),
+        now: Int64 = 1_500
+    ) {
+        buildBindingSHA256 = build
+        self.now = now
+    }
+
+    func currentUnixTime() throws -> Int64 {
+        now
     }
 }
 
@@ -48,7 +133,10 @@ final class LAB002StorageTests: XCTestCase {
         let validator = TestAuthorizationValidator()
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
-            validator: validator
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext()
         )
         let source = temporaryRoot.appendingPathComponent("source.json")
         try Data("valid".utf8).write(to: source)
@@ -75,16 +163,21 @@ final class LAB002StorageTests: XCTestCase {
         let validator = TestAuthorizationValidator(expectedCounter: 1, build: build)
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
-            validator: validator
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
         )
         let source = temporaryRoot.appendingPathComponent("source.json")
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
 
-        let consumed = try await coordinator.startCleanRun(
-            now: 1_500,
-            buildBindingSHA256: build
-        )
+        let consumed = try await coordinator.startCleanRun()
         XCTAssertEqual(consumed.canonicalBytes, Data("valid".utf8))
 
         let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
@@ -103,17 +196,22 @@ final class LAB002StorageTests: XCTestCase {
         let validator = TestAuthorizationValidator(expectedCounter: 2, build: build)
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
-            validator: validator
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
         )
         let source = temporaryRoot.appendingPathComponent("source.json")
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
 
         do {
-            _ = try await coordinator.startCleanRun(
-                now: 1_500,
-                buildBindingSHA256: build
-            )
+            _ = try await coordinator.startCleanRun()
             XCTFail("skipped counter succeeded")
         } catch LAB002StorageError.counterMismatch {
         }
@@ -134,27 +232,26 @@ final class LAB002StorageTests: XCTestCase {
     func testDiscardRestoresCurrentAndDeletesExpiredOrMalformed() async throws {
         let build = String(repeating: "a", count: 64)
         let validator = TestAuthorizationValidator(expectedCounter: 1, build: build)
+        let runtimeContext = TestRuntimeContext(build: build)
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
-            validator: validator
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtimeContext
         )
         let source = temporaryRoot.appendingPathComponent("source.json")
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
 
         do {
-            _ = try await coordinator.discardStaleAuthorization(
-                now: 1_500,
-                buildBindingSHA256: build
-            )
+            _ = try await coordinator.discardStaleAuthorization()
             XCTFail("current authorization was discarded")
         } catch LAB002CoordinatorError.authorizationStillValid {
         }
 
-        let expired = try await coordinator.discardStaleAuthorization(
-            now: 2_021,
-            buildBindingSHA256: build
-        )
+        runtimeContext.now = 2_021
+        let expired = try await coordinator.discardStaleAuthorization()
         guard case .expired = expired else {
             return XCTFail("expected expired")
         }
@@ -162,10 +259,8 @@ final class LAB002StorageTests: XCTestCase {
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
         validator.shouldFail = true
-        let malformed = try await coordinator.discardStaleAuthorization(
-            now: 1_500,
-            buildBindingSHA256: build
-        )
+        runtimeContext.now = 1_500
+        let malformed = try await coordinator.discardStaleAuthorization()
         guard case .malformed = malformed else {
             return XCTFail("expected malformed")
         }
@@ -175,7 +270,15 @@ final class LAB002StorageTests: XCTestCase {
         let validator = TestAuthorizationValidator()
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
-            validator: validator
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext()
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: String(repeating: "a", count: 64)
         )
         let source = temporaryRoot.appendingPathComponent("source.json")
         let link = temporaryRoot.appendingPathComponent("link.json")
@@ -199,10 +302,7 @@ final class LAB002StorageTests: XCTestCase {
             ofItemAtPath: quarantine.path
         )
         do {
-            _ = try await coordinator.startCleanRun(
-                now: 1_500,
-                buildBindingSHA256: String(repeating: "a", count: 64)
-            )
+            _ = try await coordinator.startCleanRun()
             XCTFail("quarantine residue was ignored")
         } catch LAB002StorageError.existingEntry {
         }
@@ -245,5 +345,300 @@ final class LAB002StorageTests: XCTestCase {
             """.utf8
         )
         XCTAssertThrowsError(try LAB002CounterRecord(canonicalBytes: unshippedDraft))
+    }
+
+    func testEnrollmentCreatesExactStateAndRunOnlyLoadsIt() async throws {
+        let build = String(repeating: "c", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x61)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let continuity = try await coordinator.confirmInstallationEnrollment()
+
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        let state = try XCTUnwrap(storage.readInstallationState())
+        XCTAssertEqual(state, continuity.state)
+        XCTAssertEqual(keyStore.createCount, 1)
+        XCTAssertEqual(
+            String(decoding: try state.canonicalData(), as: UTF8.self),
+            """
+            {"build_binding_sha256":"\(build)","enrollment_public_key":"\(state.enrollmentPublicKey)","installation_nonce":"\(String(repeating: "62", count: 32))","profile":"orchardprobe.demolab.lab002.observation.v1","schema":"orchardprobe.lab002.installation-nonce-state.v1"}
+            """
+        )
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1
+        )
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        XCTAssertEqual(keyStore.createCount, 1)
+    }
+
+    func testEnrollmentUsesInternalRuntimeClockAndBuildBinding() async throws {
+        let expiredRoot = temporaryRoot.appendingPathComponent(
+            "expired",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: expiredRoot,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let expiredBuild = String(repeating: "c", count: 64)
+        let expiredValidator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: expiredBuild
+        )
+        let expiredKeyStore = TestEnrollmentKeyStore(seed: 0x63)
+        let expiredCoordinator = try LAB002InboxCoordinator(
+            testContainerURL: expiredRoot,
+            validator: expiredValidator,
+            enrollmentKeyStore: expiredKeyStore,
+            random: TestRandomBytes(byte: 0x64),
+            testRuntimeContext: TestRuntimeContext(
+                build: expiredBuild,
+                now: 2_021
+            )
+        )
+        let expiredSource = expiredRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: expiredSource)
+        try await expiredCoordinator.importAuthorization(from: expiredSource)
+        do {
+            _ = try await expiredCoordinator.confirmInstallationEnrollment()
+            XCTFail("expired enrollment succeeded")
+        } catch LAB002CoordinatorError.stale {
+        }
+        XCTAssertEqual(expiredKeyStore.createCount, 0)
+
+        let wrongBuildRoot = temporaryRoot.appendingPathComponent(
+            "wrong-build",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: wrongBuildRoot,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let authorizedBuild = String(repeating: "d", count: 64)
+        let compiledBuild = String(repeating: "e", count: 64)
+        let wrongBuildValidator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: authorizedBuild
+        )
+        let wrongBuildKeyStore = TestEnrollmentKeyStore(seed: 0x65)
+        let wrongBuildCoordinator = try LAB002InboxCoordinator(
+            testContainerURL: wrongBuildRoot,
+            validator: wrongBuildValidator,
+            enrollmentKeyStore: wrongBuildKeyStore,
+            random: TestRandomBytes(byte: 0x66),
+            testRuntimeContext: TestRuntimeContext(build: compiledBuild)
+        )
+        let wrongBuildSource = wrongBuildRoot.appendingPathComponent(
+            "source.json"
+        )
+        try Data("valid".utf8).write(to: wrongBuildSource)
+        try await wrongBuildCoordinator.importAuthorization(
+            from: wrongBuildSource
+        )
+        do {
+            _ = try await wrongBuildCoordinator.confirmInstallationEnrollment()
+            XCTFail("cross-build enrollment succeeded")
+        } catch LAB002CoordinatorError.wrongBuild {
+        }
+        XCTAssertEqual(wrongBuildKeyStore.createCount, 0)
+    }
+
+    func testRunCannotCreateRepairOrCrossBuildEnrollment() throws {
+        let build = String(repeating: "d", count: 64)
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        let enrolledStore = TestEnrollmentKeyStore(seed: 0x71)
+        let enrollment = LAB002EnrollmentStateCoordinator(
+            storage: storage,
+            keyStore: enrolledStore,
+            random: TestRandomBytes(byte: 0x72)
+        )
+        _ = try enrollment.createAfterAuthenticatedEnrollment(
+            buildBindingSHA256: build
+        )
+
+        XCTAssertThrowsError(
+            try enrollment.loadForRun(
+                buildBindingSHA256: String(repeating: "e", count: 64)
+            )
+        )
+
+        let missingStore = TestEnrollmentKeyStore(seed: 0x73)
+        let runOnly = LAB002EnrollmentStateCoordinator(
+            storage: storage,
+            keyStore: missingStore,
+            random: TestRandomBytes(byte: 0x74)
+        )
+        XCTAssertThrowsError(
+            try runOnly.loadForRun(buildBindingSHA256: build)
+        )
+        XCTAssertEqual(missingStore.createCount, 0)
+
+        let mismatchedStore = TestEnrollmentKeyStore(
+            seed: 0x75,
+            preloaded: true,
+            build: build
+        )
+        let mismatchedRun = LAB002EnrollmentStateCoordinator(
+            storage: storage,
+            keyStore: mismatchedStore,
+            random: TestRandomBytes(byte: 0x76)
+        )
+        XCTAssertThrowsError(
+            try mismatchedRun.loadForRun(buildBindingSHA256: build)
+        )
+        XCTAssertEqual(mismatchedStore.createCount, 0)
+    }
+
+    func testAuthenticatedEnrollmentRecoversOnlySameBuildOrphanedKey() throws {
+        let build = String(repeating: "f", count: 64)
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        let keyStore = TestEnrollmentKeyStore(seed: 0x77)
+        let random = TestRandomBytes(byte: 0x78, failureCount: 1)
+        let enrollment = LAB002EnrollmentStateCoordinator(
+            storage: storage,
+            keyStore: keyStore,
+            random: random
+        )
+
+        XCTAssertThrowsError(
+            try enrollment.createAfterAuthenticatedEnrollment(
+                buildBindingSHA256: build
+            )
+        )
+        XCTAssertNil(try storage.readInstallationState())
+        XCTAssertEqual(keyStore.createCount, 1)
+
+        let continuity = try enrollment.createAfterAuthenticatedEnrollment(
+            buildBindingSHA256: build
+        )
+        XCTAssertEqual(continuity.state.buildBindingSHA256, build)
+        XCTAssertEqual(keyStore.createCount, 1)
+
+        let crossBuildRoot = temporaryRoot.appendingPathComponent(
+            "cross-build-orphan",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: crossBuildRoot,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let crossBuildStorage = try LAB002FixedStorage(
+            testContainerURL: crossBuildRoot
+        )
+        let orphanedStore = TestEnrollmentKeyStore(
+            seed: 0x79,
+            preloaded: true,
+            build: build
+        )
+        let crossBuildEnrollment = LAB002EnrollmentStateCoordinator(
+            storage: crossBuildStorage,
+            keyStore: orphanedStore,
+            random: TestRandomBytes(byte: 0x7a)
+        )
+        XCTAssertThrowsError(
+            try crossBuildEnrollment.createAfterAuthenticatedEnrollment(
+                buildBindingSHA256: String(repeating: "e", count: 64)
+            )
+        )
+        XCTAssertNil(try crossBuildStorage.readInstallationState())
+        XCTAssertEqual(orphanedStore.createCount, 0)
+    }
+
+    func testEnrollmentResumesOnlyItsValidatedQuarantineAfterStatePersistence()
+        async throws
+    {
+        let build = String(repeating: "b", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x7b)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x7c),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        _ = try storage.quarantineAuthorization()
+        let enrollment = LAB002EnrollmentStateCoordinator(
+            storage: storage,
+            keyStore: keyStore,
+            random: TestRandomBytes(byte: 0x7c)
+        )
+        _ = try enrollment.createAfterAuthenticatedEnrollment(
+            buildBindingSHA256: build
+        )
+
+        let continuity = try await coordinator.confirmInstallationEnrollment()
+        XCTAssertEqual(continuity.state.buildBindingSHA256, build)
+        XCTAssertEqual(keyStore.createCount, 1)
+        XCTAssertThrowsError(try storage.quarantineAuthorization())
+
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        do {
+            _ = try await coordinator.confirmInstallationEnrollment()
+            XCTFail("fresh re-enrollment accepted existing state")
+        } catch LAB002EnrollmentError.alreadyEnrolled {
+        }
+        _ = try storage.quarantineAuthorization()
+    }
+
+    private func enroll(
+        coordinator: LAB002InboxCoordinator,
+        validator: TestAuthorizationValidator,
+        build: String
+    ) async throws {
+        let expectedRunCounter = validator.metadata.expectedRunCounter ?? 1
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .installationEnrollment,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: nil
+        )
+        let source = temporaryRoot.appendingPathComponent("enrollment.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.confirmInstallationEnrollment()
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: expectedRunCounter
+        )
     }
 }

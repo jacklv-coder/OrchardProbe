@@ -98,6 +98,33 @@ installation, device observation, or device-backend work.
   uninstalled branch-local draft. It is rejected rather than migrated because
   accepting bytes outside the frozen three-field schema would create trusted
   monotonic state from an invalid format; no released build wrote that draft.
+- 2C.3 now has the exact five-field installation-nonce state and one fixed
+  production Keychain tuple. Authenticated enrollment alone may create its
+  Ed25519 key and 32-byte nonce; production items are non-synchronizable and
+  `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. The Keychain entitlement and
+  Info.plist consume one explicit access-group build setting; the controlled
+  signed lane injects the complete Team ID plus App bundle identifier. Every
+  run only loads and compares the recorded build/public key, so missing,
+  cross-build, or mismatched key state fails without creation or repair.
+  Production enrollment/run/discard entry points take neither time nor build
+  identity from their caller: time comes from the system clock and the exact
+  lowercase 64-hex build binding comes from the compile-time-injected app
+  Info.plist. The signed archive refuses a missing or malformed precomputed
+  binding and injects the validated value; it cannot emit a production
+  candidate with the checked-in empty setting. Test overrides exist only
+  behind the Debug-only test initializer. The first focused CR found one
+  interrupted-enrollment recovery gap: a Keychain item could survive while
+  nonce/state persistence failed. The item now stores and checks its build
+  binding, so only a later authenticated enrollment for that same build may
+  recover the orphaned key and finish the exclusive state creation; a run
+  cannot invoke that path and a different build is rejected. The next recheck
+  found the complementary crash boundary after state persistence but before
+  authorization deletion. Enrollment alone may now resume that exact
+  quarantined authorization, revalidate it, strictly load the persisted
+  state/key, and finish deletion. A fresh re-enrollment and every run still
+  reject quarantine/state conflicts. Eleven synthetic Simulator tests and
+  Debug/Release builds pass; the final focused Codex recheck found no remaining
+  actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -159,6 +186,6 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 |---:|---|---|---|
 | 2C.1 | Freeze target-private API and storage boundaries | `done` | The bilingual device implementation contract freezes fixed relative names, state transitions, zero-argument observer entries, test-only dependency injection, and the prohibition on host/App-Group access or caller-selected path/target/range inputs |
 | 2C.2 | Implement fixed inbox and durable state coordinator | `done` | Main-app-only Import/Start/Discard, fixed App Group production lookup, no-follow bounded reads, lock/quarantine identity checks, exact counter commits, atomic writes, protection/backup policy, 6 Simulator tests, Debug/Release builds, and focused Codex CR pass with no remaining P1/P2 |
-| 2C.3 | Implement enrollment state and device-only key boundary | `in progress` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment |
-| 2C.4 | Implement session lifecycle and three zero-argument observers | `planned` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters |
+| 2C.3 | Implement enrollment state and device-only key boundary | `done` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, authenticated same-envelope interruption recovery, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment; 11 Simulator tests, Debug/Release builds, and focused Codex CR pass |
+| 2C.4 | Implement session lifecycle and three zero-argument observers | `in progress` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters |
 | 2C.5 | Implement signed export, receipt, and cleanup boundaries | `planned` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |

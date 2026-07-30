@@ -92,20 +92,28 @@ quarantined --proven stale/malformed/build-mismatch--> discarded
 ```
 
 意外 Quarantine、Lock 失败、非普通文件、Symlink、目录项/Descriptor 身份不匹配、
-部分写、重复 Import 或崩溃残留都会阻塞，绝不自动修复。
+部分写、重复 Import 或崩溃残留都会阻塞，绝不自动修复。唯一的窄例外是下述显式、
+已认证的 Enrollment Resume；它会重新验证同一份已隔离 Envelope，Run 无法调用。
 
 ### Enrollment
 
 ```text
 uninitialized --valid installation envelope--> creating
+creating --explicit same-envelope authenticated resume--> creating
 creating --key + nonce + receipt committed--> enrolled
-creating --any partial failure--> experiment failed
+creating --unrecognized/conflicting partial failure--> experiment failed
 enrolled --every run--> read-only continuity check
 ```
 
 只有通过认证的安装动作可以创建设备专属 Key 和 Installation Nonce。Run 代码不能
 创建、替换、修复、导入、导出或重置它们。Key 缺失/不可访问、Nonce 记录缺失/畸形、
 Build 不匹配或公钥不匹配都必须在观察前失败。
+
+中断的 Enrollment 只有在同一授权仍位于固定 Quarantine 时才能恢复。显式确认会重新
+验证这些精确字节以及当前时间/Build。如果 Keychain Item 已存在而 Nonce State 不存在，
+只有其记录的 Build Binding 匹配才能完成 State 创建；如果 Nonce State 已存在，则必须
+严格匹配同一 Build 的 Key/Public Key Tuple，才能完成剩余 Enrollment 提交。新的授权
+不能复用已有 State，普通 Cleanup、Run 与跨 Build 路径均不能进入这两个恢复分支。
 
 ### Run
 

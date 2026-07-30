@@ -24,6 +24,10 @@
 	<false/>
 	<key>LAB002AppGroupIdentifier</key>
 	<string>$(DEMO_LAB_APP_GROUP_ID)</string>
+	<key>LAB002KeychainAccessGroup</key>
+	<string>$(DEMO_LAB_KEYCHAIN_ACCESS_GROUP)</string>
+	<key>LAB002BuildBindingSHA256</key>
+	<string>$(DEMO_LAB_BUILD_BINDING_SHA256)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

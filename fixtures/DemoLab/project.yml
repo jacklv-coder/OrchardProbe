@@ -10,7 +10,9 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEMO_LAB_APP_BUNDLE_ID: com.example.orchardprobe.demolab
     DEMO_LAB_APP_GROUP_ID: group.com.example.orchardprobe.demolab
+    DEMO_LAB_BUILD_BINDING_SHA256: ""
     DEMO_LAB_FRAMEWORK_BUNDLE_ID: com.example.orchardprobe.demolab.framework
+    DEMO_LAB_KEYCHAIN_ACCESS_GROUP: $(PRODUCT_BUNDLE_IDENTIFIER)
     DEMO_LAB_SHARE_BUNDLE_ID: com.example.orchardprobe.demolab.share
     ENABLE_DEBUG_DYLIB: NO
     IPHONEOS_DEPLOYMENT_TARGET: "15.0"

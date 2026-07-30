@@ -67,6 +67,11 @@ struct LAB002QuarantinedAuthorization {
     fileprivate let identity: LAB002FileIdentity
 }
 
+struct LAB002EnrollmentAuthorization {
+    let quarantined: LAB002QuarantinedAuthorization
+    let resumedAfterPersistence: Bool
+}
+
 struct LAB002CounterRecord {
     static let schema = "orchardprobe.lab002.run-counter-state.v1"
 
@@ -277,6 +282,65 @@ final class LAB002FixedStorage {
         )
     }
 
+    func quarantineEnrollmentAuthorization() throws
+        -> LAB002EnrollmentAuthorization
+    {
+        guard try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        ) != nil
+        else {
+            return LAB002EnrollmentAuthorization(
+                quarantined: try quarantineAuthorization(),
+                resumedAfterPersistence: false
+            )
+        }
+        guard try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorization
+        ) == nil
+        else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.authorization
+            )
+        }
+        let descriptor = try openRegularFile(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        )
+        let descriptorIdentity = try identity(descriptor)
+        let entry = try requireMatchingEntry(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine,
+            descriptorIdentity: descriptorIdentity
+        )
+        guard entry.isRegularOwnerOnly else {
+            throw LAB002StorageError.unsafeEntry(
+                LAB002FixedName.authorizationQuarantine
+            )
+        }
+        let bytes = try Self.readBounded(
+            descriptor,
+            maximum: LAB002Limit.controlDocument,
+            label: LAB002FixedName.authorizationQuarantine
+        )
+        return LAB002EnrollmentAuthorization(
+            quarantined: LAB002QuarantinedAuthorization(
+                bytes: bytes,
+                descriptor: descriptor,
+                identity: descriptorIdentity
+            ),
+            resumedAfterPersistence: true
+        )
+    }
+
+    func hasQuarantinedAuthorization() throws -> Bool {
+        try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        ) != nil
+    }
+
     func restoreAuthorization(_ record: LAB002QuarantinedAuthorization) throws {
         _ = try requireMatchingEntry(
             directory: inboxDirectory,
@@ -398,6 +462,43 @@ final class LAB002FixedStorage {
             label: LAB002FixedName.counter
         )
         return try LAB002CounterRecord(canonicalBytes: bytes)
+    }
+
+    func createInstallationState(_ record: LAB002InstallationState) throws {
+        try writeAtomic(
+            directory: stateDirectory,
+            directoryURL: stateURL,
+            destination: LAB002FixedName.installationNonce,
+            temporary: LAB002FixedName.installationNonceTemporary,
+            bytes: try record.canonicalData(),
+            replacing: nil
+        )
+    }
+
+    func readInstallationState() throws -> LAB002InstallationState? {
+        guard try entryIdentity(
+            directory: stateDirectory,
+            name: LAB002FixedName.installationNonce
+        ) != nil
+        else {
+            return nil
+        }
+        let descriptor = try openRegularFile(
+            directory: stateDirectory,
+            name: LAB002FixedName.installationNonce
+        )
+        let descriptorIdentity = try identity(descriptor)
+        _ = try requireMatchingEntry(
+            directory: stateDirectory,
+            name: LAB002FixedName.installationNonce,
+            descriptorIdentity: descriptorIdentity
+        )
+        let bytes = try Self.readBounded(
+            descriptor,
+            maximum: LAB002Limit.fixedState,
+            label: LAB002FixedName.installationNonce
+        )
+        return try LAB002InstallationState(canonicalBytes: bytes)
     }
 
     private func writeAtomic(

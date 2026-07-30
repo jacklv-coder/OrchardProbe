@@ -4439,6 +4439,10 @@ platform :ios do
       "DEMO_LAB_BUILD_NUMBER",
       pattern: /\A[1-9][0-9]{0,17}\z/
     )
+    build_binding_sha256 = required_environment(
+      "DEMO_LAB_BUILD_BINDING_SHA256",
+      pattern: /\A[0-9a-f]{64}\z/
+    )
 
     output_identity = private_output_directory
     output_root = output_identity.first
@@ -4497,6 +4501,9 @@ platform :ios do
             "DEVELOPMENT_TEAM=#{team_identifier}",
             "DEMO_LAB_APP_BUNDLE_ID=#{app_identifier}",
             "DEMO_LAB_FRAMEWORK_BUNDLE_ID=#{app_identifier}.framework",
+            "DEMO_LAB_BUILD_BINDING_SHA256=#{build_binding_sha256}",
+            "DEMO_LAB_KEYCHAIN_ACCESS_GROUP=" \
+              "#{team_identifier}.#{app_identifier}",
             "DEMO_LAB_SHARE_BUNDLE_ID=#{share_identifier}",
             "MARKETING_VERSION=#{marketing_version}",
           ].shelljoin

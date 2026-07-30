@@ -101,14 +101,17 @@ quarantined --proven stale/malformed/build-mismatch--> discarded
 
 An unexpected quarantine, lock failure, non-regular file, symlink, entry/
 descriptor identity mismatch, partial write, duplicate import, or crash residue
-is a blocking failure. It is never repaired automatically.
+is a blocking failure. It is never repaired automatically. The sole narrow
+exception is the explicit authenticated Enrollment resume below; it revalidates
+the exact already-quarantined envelope and cannot be invoked by a run.
 
 ### Enrollment
 
 ```text
 uninitialized --valid installation envelope--> creating
+creating --explicit same-envelope authenticated resume--> creating
 creating --key + nonce + receipt committed--> enrolled
-creating --any partial failure--> experiment failed
+creating --unrecognized/conflicting partial failure--> experiment failed
 enrolled --every run--> read-only continuity check
 ```
 
@@ -116,6 +119,15 @@ Only the authenticated installation action may create the device-only key and
 installation nonce. Run code cannot create, replace, repair, import, export, or
 reset them. A missing/inaccessible key, missing/malformed nonce record, build
 mismatch, or public-key mismatch fails before observation.
+
+An interrupted Enrollment is resumable only while the same authorization
+remains in the fixed quarantine. Explicit confirmation revalidates those exact
+bytes and the current time/build. If the Keychain item exists but nonce state
+does not, its stored build binding must match before state creation may finish.
+If nonce state exists, the same-build key/public-key tuple must match before
+the remaining Enrollment commit may finish. A fresh authorization cannot reuse
+existing state, and no generic cleanup, run, or cross-build path can enter
+either resume branch.
 
 ### Run
 

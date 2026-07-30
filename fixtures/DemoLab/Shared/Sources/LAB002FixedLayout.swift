@@ -8,6 +8,8 @@ enum LAB002FixedName {
     static let authorizationTemporary = "authorization-v1.json.tmp"
     static let authorizationQuarantine = "authorization-quarantine-v1.json"
     static let state = "state"
+    static let installationNonce = "installation-nonce-v1.json"
+    static let installationNonceTemporary = "installation-nonce-v1.json.tmp"
     static let counter = "run-counter-v1.json"
     static let counterTemporary = "run-counter-v1.json.tmp"
     static let reports = "reports"

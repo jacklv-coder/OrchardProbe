@@ -76,6 +76,23 @@
 - 早期四字段 Counter 形态只存在于未 Push、未安装的分支本地草稿中。实现明确拒绝而
   不迁移该格式，因为接受冻结三字段 Schema 之外的字节会把无效格式转成受信任的单调
   状态；没有已发布构建写入过该草稿。
+- 2C.3 已实现精确五字段 Installation Nonce 状态与唯一固定的生产 Keychain Tuple。
+  只有认证后的 Enrollment 可以创建 Ed25519 Key 和 32 字节 Nonce；生产 Key 不可同步，
+  且使用 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`。Keychain Entitlement 与
+  Info.plist 读取同一个显式 Access Group 构建设置，受控签名 Lane 注入完整
+  `Team ID + App Bundle ID`。每个 Run 只能加载并比对记录的 Build/Public Key，
+  因此 Key 丢失、跨 Build 或不匹配都会失败，不能创建或修复。
+  生产 Enrollment/Run/Discard 入口不接受调用方提供的时间或 Build 身份：时间来自系统
+  时钟，精确 64 字符小写 Hex Build Binding 来自编译期注入的 App Info.plist；覆盖值
+  只能通过 Debug 专用测试初始化器注入。签名 Archive 会拒绝缺失或格式错误的预计算
+  Binding，并把校验后的值注入构建，不会用仓库内的空设置生成生产候选。首次专项
+  CR 发现一个中断恢复缺口：Keychain Item 可能已落盘，而 Nonce/State 持久化失败。
+  现在 Item 会记录并校验 Build Binding，只有同一 Build 再次通过认证的 Enrollment
+  才能恢复该孤立 Key 并完成独占状态创建；Run 无法调用恢复路径，其他 Build 会被拒绝。
+  下一次复审发现状态持久化成功、授权删除前崩溃的互补边界。现在只有 Enrollment 可以
+  恢复那一个精确的隔离授权，重新验证后严格加载已持久化的 State/Key，再完成删除；
+  新的重复 Enrollment 与所有 Run 仍会拒绝隔离/状态冲突。11 项合成 Simulator 测试与
+  Debug/Release Build 已通过；最终专项 Codex 复审没有剩余可执行的 P1/P2。
 
 ## 已完成的 2B 门禁
 
@@ -126,6 +143,6 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 |---:|---|---|---|
 | 2C.1 | 冻结 Target 私有 API 与存储边界 | `完成` | 中英双语设备端实现契约已冻结固定相对名称、状态迁移、零参数 Observer 入口、仅测试依赖注入，以及 Host 禁止访问 App Group、调用者不得选择 Path/Target/Range 的边界 |
 | 2C.2 | 实现固定 Inbox 与持久状态协调器 | `完成` | 仅 Main App 的 Import/Start/Discard、固定 App Group 生产定位、No-follow 有界读取、Lock/Quarantine 身份检查、精确 Counter 提交、原子写、Protection/Backup 策略、6 项 Simulator 测试、Debug/Release Build 和专项 Codex CR 均通过且没有剩余 P1/P2 |
-| 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `进行中` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment |
-| 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `planned` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address |
+| 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `完成` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；支持同一已认证 Envelope 的中断恢复；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment；11 项 Simulator 测试、Debug/Release Build 与专项 Codex CR 均通过 |
+| 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `进行中` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address |
 | 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `planned` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
