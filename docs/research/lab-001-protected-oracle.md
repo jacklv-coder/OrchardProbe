@@ -199,8 +199,8 @@ At the time this result was accepted, LAB-001 completed with No-Go, blocked
 DEVICE-001, and required a replacement-oracle step to be proposed and ordered
 through a separate reviewed plan change. That requirement is now represented by
 `LAB-002` and Issue #55 in the authoritative execution ledger. Its device-free
-checkpoint 2 is complete, while checkpoint 3 is blocked pending exact-build
-authorization. Neither activation nor device-free implementation establishes
+checkpoint 2 is complete, while checkpoint 3 is active only for the authorized
+DemoLab `1.0 (3)` candidate/oracle scope. Neither activation nor device-free implementation establishes
 an oracle; LAB-002 still must
 complete with a Go result for an independent protected oracle before any
 device-backend work starts. The replacement method must:
