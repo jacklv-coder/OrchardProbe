@@ -13,6 +13,10 @@ The fixture does not use non-exempt encryption, and its main app declares
 The checked-in identifiers remain generic. The maintainer-only `LAB-001`
 Fastlane lane overrides them from local environment variables for one
 first-party signed build; no Apple team or registered identifier is committed.
+The checked-in App Group is likewise the generic
+`group.com.example.orchardprobe.demolab`; a future reviewed signed LAB-002
+build must replace it with the registered first-party group for both the app
+and share extension.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
 The branch-local LAB-002 app/extension capability, fixed-container, and state
@@ -51,6 +55,22 @@ The built fixture is under `DerivedData/Build/Products/Debug-iphonesimulator/Dem
 ```text
 DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework
 DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension
+```
+
+The generated `DemoLab` scheme also has an explicit `DemoLabTests` test action.
+Select an available Simulator identifier from `xcrun simctl list devices
+available`, then run the device-free storage tests:
+
+```sh
+xcodebuild \
+  -project "$work_dir/DemoLab/DemoLab.xcodeproj" \
+  -scheme DemoLab \
+  -configuration Debug \
+  -destination 'platform=iOS Simulator,id=SIMULATOR-UDID' \
+  -derivedDataPath "$work_dir/DerivedData" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  test
 ```
 
 DemoFramework's install name and the app dependency must both be

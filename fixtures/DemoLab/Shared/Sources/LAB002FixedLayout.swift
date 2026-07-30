@@ -1,0 +1,27 @@
+import Foundation
+
+enum LAB002FixedName {
+    static let root = "lab-002-v1"
+    static let lock = "coordinator.lock"
+    static let inbox = "inbox"
+    static let authorization = "authorization-v1.json"
+    static let authorizationTemporary = "authorization-v1.json.tmp"
+    static let authorizationQuarantine = "authorization-quarantine-v1.json"
+    static let state = "state"
+    static let counter = "run-counter-v1.json"
+    static let counterTemporary = "run-counter-v1.json.tmp"
+    static let reports = "reports"
+    static let currentReports = "current"
+    static let session = "session.json"
+    static let mainAppReport = "main-app.json"
+    static let frameworkReport = "framework.json"
+    static let shareExtensionReport = "share-extension.json"
+}
+
+enum LAB002Limit {
+    static let controlDocument = 16 * 1024
+    static let fixedState = 1024
+    static let sessionReport = 16 * 1024
+    static let roleReport = 128 * 1024
+    static let signedExport = 512 * 1024
+}

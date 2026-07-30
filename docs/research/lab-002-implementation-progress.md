@@ -83,6 +83,21 @@ installation, device observation, or device-backend work.
   passed the frozen fixture-product test. The complete Rust gate, formatting,
   Clippy with warnings denied, schema contracts, and base-relative diff check
   pass. The final all-change Codex CR found no actionable issue.
+- 2C.2 now has one main-app-only fixed storage implementation with owner-only
+  directories/files, no-follow bounded reads, an exclusive coordinator lock,
+  descriptor/entry identity checks, no-replacement inbox publication,
+  quarantine/restore/consume transitions, exact canonical counter records,
+  checked monotonic counter commits, complete file protection, and backup
+  exclusion. The extension compiles only the fixed names/limits.
+- The generic App and Share Extension entitlements expand to the same generic
+  App Group in Debug and Release. Six Simulator storage tests pass for
+  duplicate/oversized/symlink import, current/expired/malformed discard,
+  quarantine residue, counter skip, consumption, and canonical state. The
+  final focused 2C.2 Codex CR has no remaining actionable P1/P2.
+- The earlier four-field counter shape existed only in an unpushed,
+  uninstalled branch-local draft. It is rejected rather than migrated because
+  accepting bytes outside the frozen three-field schema would create trusted
+  monotonic state from an invalid format; no released build wrote that draft.
 
 ## Completed 2B gates
 
@@ -143,7 +158,7 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | Order | Work item | Status | Exit gate |
 |---:|---|---|---|
 | 2C.1 | Freeze target-private API and storage boundaries | `done` | The bilingual device implementation contract freezes fixed relative names, state transitions, zero-argument observer entries, test-only dependency injection, and the prohibition on host/App-Group access or caller-selected path/target/range inputs |
-| 2C.2 | Implement fixed inbox and durable state coordinator | `in progress` | Serialized Import/Start/Discard, no-follow regular-file checks, lock/quarantine identity checks, bounded canonical records, checked counter commit, exclusive atomic writes, and fail-closed residue handling compile for App and Extension |
-| 2C.3 | Implement enrollment state and device-only key boundary | `planned` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment |
+| 2C.2 | Implement fixed inbox and durable state coordinator | `done` | Main-app-only Import/Start/Discard, fixed App Group production lookup, no-follow bounded reads, lock/quarantine identity checks, exact counter commits, atomic writes, protection/backup policy, 6 Simulator tests, Debug/Release builds, and focused Codex CR pass with no remaining P1/P2 |
+| 2C.3 | Implement enrollment state and device-only key boundary | `in progress` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment |
 | 2C.4 | Implement session lifecycle and three zero-argument observers | `planned` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters |
 | 2C.5 | Implement signed export, receipt, and cleanup boundaries | `planned` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |

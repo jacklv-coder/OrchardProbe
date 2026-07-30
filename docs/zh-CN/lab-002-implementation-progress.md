@@ -65,6 +65,17 @@
 - 最终 2B.4 门禁重新构建了精确 Debug/Release Simulator 产物，并通过冻结的产物
   Fixture 测试。完整 Rust 门禁、格式化、Clippy 警告即错误、Schema 契约及相对基线
   Diff 检查均通过；最终全变更 Codex CR 未发现可执行问题。
+- 2C.2 已加入一套仅 Main App 可见的固定存储实现：Owner-only 目录/文件、No-follow
+  有界读取、排他 Coordinator Lock、Descriptor/目录项身份检查、Inbox 无替换发布、
+  Quarantine/Restore/Consume 状态迁移、精确规范 Counter 记录、检查后的单调 Counter
+  提交、Complete File Protection 与禁止备份。Extension 只编译固定名称和上限。
+- App 与 Share Extension 的通用 Entitlement 在 Debug/Release 中展开为同一个通用
+  App Group。6 项 Simulator 存储测试覆盖重复/超限/Symlink Import、当前/过期/畸形
+  Discard、Quarantine 残留、Counter 跳号、消费和规范状态；最终 2C.2 专项 Codex CR
+  没有剩余可执行 P1/P2。
+- 早期四字段 Counter 形态只存在于未 Push、未安装的分支本地草稿中。实现明确拒绝而
+  不迁移该格式，因为接受冻结三字段 Schema 之外的字节会把无效格式转成受信任的单调
+  状态；没有已发布构建写入过该草稿。
 
 ## 已完成的 2B 门禁
 
@@ -114,7 +125,7 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 顺序 | 工作项 | 状态 | 退出门禁 |
 |---:|---|---|---|
 | 2C.1 | 冻结 Target 私有 API 与存储边界 | `完成` | 中英双语设备端实现契约已冻结固定相对名称、状态迁移、零参数 Observer 入口、仅测试依赖注入，以及 Host 禁止访问 App Group、调用者不得选择 Path/Target/Range 的边界 |
-| 2C.2 | 实现固定 Inbox 与持久状态协调器 | `进行中` | 串行 Import/Start/Discard、No-follow 普通文件检查、Lock/Quarantine 身份检查、有界规范记录、Counter 检查提交、排他原子写和失败关闭残留处理可供 App/Extension 编译 |
-| 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `planned` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment |
+| 2C.2 | 实现固定 Inbox 与持久状态协调器 | `完成` | 仅 Main App 的 Import/Start/Discard、固定 App Group 生产定位、No-follow 有界读取、Lock/Quarantine 身份检查、精确 Counter 提交、原子写、Protection/Backup 策略、6 项 Simulator 测试、Debug/Release Build 和专项 Codex CR 均通过且没有剩余 P1/P2 |
+| 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `进行中` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment |
 | 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `planned` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address |
 | 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `planned` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
