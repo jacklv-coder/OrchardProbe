@@ -1,6 +1,6 @@
 # LAB-002 固定区间自观测 Oracle 设计状态
 
-状态：**无设备设计，尚未实现或真机验证**
+状态：**无设备设计已实现并通过 Simulator 验证；尚未签名或真机验证**
 
 跟踪 Issue：[#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 

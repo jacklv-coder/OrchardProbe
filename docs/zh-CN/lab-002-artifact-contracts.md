@@ -1,6 +1,6 @@
 # LAB-002 闭合工件契约
 
-状态：**检查点 2B 分支本地契约**
+状态：**检查点 2B 已在 `main` 完成**
 
 本文解释
 [`schemas/lab002/lab-002-artifacts-v1.schema.json`](../../schemas/lab002/lab-002-artifacts-v1.schema.json)

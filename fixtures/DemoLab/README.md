@@ -57,8 +57,8 @@ quarantined pre-observation recovery path. Runtime caller-controlled
 overrides are available only through the Debug test initializer.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
-The branch-local LAB-002 app/extension capability, fixed-container, and state
-machine boundary is documented in the
+The merged LAB-002 checkpoint-2 app/extension capability, fixed-container, and
+state-machine boundary is documented in the
 [device implementation contract](../../docs/research/lab-002-device-implementation.md).
 
 ## Device workflow

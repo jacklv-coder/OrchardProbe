@@ -1,6 +1,6 @@
 # LAB-002 fixed-range self-observation oracle design
 
-Status: **Device-free design; not implemented or device-verified**
+Status: **Device-free design implemented and Simulator-verified; not signed or device-verified**
 
 Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 

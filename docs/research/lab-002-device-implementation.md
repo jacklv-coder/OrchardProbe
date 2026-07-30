@@ -1,16 +1,15 @@
 # LAB-002 device implementation contract
 
-Status: **checkpoint 2C branch-local contract**
+Status: **checkpoint 2C completed on `main`**
 
-This document freezes the internal DemoLab boundary before the device-side
-implementation is added. It is subordinate to the reviewed
+This document records the frozen internal DemoLab boundary implemented by
+checkpoint 2. It is subordinate to the reviewed
 [LAB-002 oracle design](lab-002-oracle-design.md). A conflict is resolved in
 favor of that design and fails the implementation gate.
 
 Nothing here authorizes a signed archive, TestFlight upload, installation, or
-physical-device observation. Checkpoint 2C implementation and testing must use
-temporary containers, synthetic keys, and unsigned Simulator builds until its
-device-free gate is complete.
+physical-device observation. Checkpoint 2C implementation and verification used
+temporary containers, synthetic keys, and unsigned Simulator builds.
 
 ## Public capability boundary
 

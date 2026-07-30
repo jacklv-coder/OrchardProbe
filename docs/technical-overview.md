@@ -232,8 +232,10 @@ falling back to a broader primitive.
 The project currently has no approved backend. LAB-001 completed with a bounded
 No-Go for the stock internal-TestFlight tuple because exact installed lineage,
 initial protection, and plaintext ranges were not independently observable
-within its approved boundary. LAB-002 is the active research step evaluating a first-party
-DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
+within its approved boundary. LAB-002 completed its device-free design and
+implementation checkpoints through PR #59 and is now blocked at checkpoint 3
+pending separate authorization for an exact signed version/build. It evaluates
+a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
 the recorded build. Before device observation, a reviewed design/build manifest
 must freeze the exact DemoLab source commit/build identity, a non-empty exact
@@ -254,11 +256,11 @@ exports to the same physical device, app installation, hardware model, and iOS
 version/build. Raw stable device identifiers never leave the device. Inbox
 operations are serialized and consume only an atomically quarantined,
 descriptor-matched record. The host/helper never accesses the shared
-container. The design permits only the bounded Issue #55
-implementation; it does not establish the oracle or authorize a signed build,
-TestFlight upload, or device observation. LAB-002 remains unimplemented and
-unverified, and DEVICE-001 remains blocked until LAB-002 completes with a Go
-result.
+container. The merged device-free implementation is limited to the bounded
+Issue #55 design and synthetic/Simulator verification. It does not establish
+the protected oracle or authorize a signed build, TestFlight upload, or device
+observation. LAB-002 remains device-unverified, and DEVICE-001 remains blocked
+until LAB-002 completes with a Go result.
 
 ### 6. Bounded host/helper session
 
@@ -406,7 +408,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 research over the complete three-executable installed-slice inventory and its pre-observation frozen exact-range set is active but not implemented or verified |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory, but checkpoint 3 is authorization-blocked and no signed-build/device verification or Go result exists |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |

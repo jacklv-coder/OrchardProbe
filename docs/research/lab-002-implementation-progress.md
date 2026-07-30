@@ -1,23 +1,23 @@
 # LAB-002 implementation progress ledger
 
-Status: **Checkpoint 2 active in PR #59 final remote verification**
+Status: **Checkpoint 2 complete on `main`**
 
-This is the working ledger for checkpoint 2 of
-[LAB-002](lab-002-oracle-design.md). It records implementation progress without
-claiming that unmerged work exists on `main`. The authoritative checkpoint
-remains `planned` in [the execution plan](../../EXECUTION_PLAN.md) until one
-complete implementation PR passes Codex CR, required CI, and merge review.
+This is the completed ledger for checkpoint 2 of
+[LAB-002](lab-002-oracle-design.md). Merged PR #59 passed the required local
+gates, remote CI, review-thread closure, and pre-merge Codex CR, so the
+authoritative checkpoint is now `done` in
+[the execution plan](../../EXECUTION_PLAN.md).
 
 No row in this ledger authorizes a signed build, TestFlight upload, app
 installation, device observation, or device-backend work.
 
-| Order | Substep | Branch-local status | Completion evidence / next gate |
+| Order | Substep | Status | Completion evidence / next gate |
 |---:|---|---|---|
 | 2A | Closed protocol foundation and fixed Mach-O range | `done` | Domain-separated build/target/device bindings, bounded canonical JSON, Ed25519 authorization envelopes, two-run comparison, role-specific `__TEXT,__oprobe`, a fail-closed parser, fixture-only CI inspection, adversarial tests, and Codex CR are complete with no remaining P1/P2 |
 | 2B | Closed schemas and complete host artifact chain | `done` | All 18 wire forms, the exact enrollment/run/two-run verifier chain, adversarial fixtures, the complete local gate, and final Codex CR pass with no remaining P1/P2 |
 | 2C | DemoLab state coordinator and zero-argument observers | `done` | The documented 2C.1–2C.5 sequence is complete; no caller-selected target, range, path, PID, or address |
 | 2D | Synthetic and Simulator verification | `done` | The documented 2D.1–2D.4 matrix now covers the two-run lifecycle, all three roles, every built Simulator slice, negative state/crash/replay boundaries, and explicit Simulator `inconclusive` semantics |
-| 2E | Documentation, final CR, CI, PR, and merge | `active` | PR #59 passed its first CI run; production authorization, the usable device workflow, signed-archive capability injection, the interruption/durability review fixes, all local gates, and the final pre-push CR are complete; push, remote CI/review, the pre-merge CR, and merge remain |
+| 2E | Documentation, final CR, CI, PR, and merge | `done` | PR #59 was pushed over SSH, all required remote CI passed, all three review threads were resolved with evidence, the complete base-relative pre-merge Codex CR found no actionable defects, and squash commit `26737cb` is on `main` |
 
 ## Current verified facts
 
@@ -65,8 +65,8 @@ installation, device observation, or device-backend work.
   atomic publication with an end-to-end regression. The Simulator suite now
   contains 65 tests. The
   dual-architecture fixture build, complete Rust/schema gate, and Fastlane
-  unsigned-fixture lane also pass. Merge remains blocked until the post-fix
-  gates and Codex re-review, remote CI, and PR review are clean.
+  unsigned-fixture lane also pass. The post-fix gates, Codex re-review, remote
+  CI, review-thread closure, and merge all completed successfully.
 - The final focused 2A Codex CR found no actionable P1/P2 after reviewing
   segment overlap, classic/chained fixups, chained import names, dynamic
   relocation tables, section bounds, and the non-public CLI boundary.
@@ -306,7 +306,7 @@ The 2B.3d CR additionally distinguished the random challenge value inside the
 signed core from the SHA-256 of the complete challenge envelope. Both must be
 fresh across runs, as must the one-time acknowledgement ID.
 
-## Active 2C execution plan
+## Completed 2C execution plan
 
 2C remains device-free. Its implementation and tests use temporary local
 containers, synthetic keys, and Simulator builds only. It does not authorize a
@@ -339,7 +339,7 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.5c | Require explicit confirmation and clean only matching reports | `done` | Cleanup is impossible before export or on `false`; two exact snapshot revalidations reject mutation, one confirmed cleanup removes the fixed report subtree once and preserves key/state/counter |
 | 2C.5d | Run focused implementation gates and Codex CR | `done` | 43 Simulator tests, Debug/Release builds, Rust/schema gates, diff checks, docs, and focused Codex CR pass with no remaining actionable P1/P2 |
 
-## Active 2D verification plan
+## Completed 2D verification plan
 
 2D remains device-free and must not turn unsigned Simulator behavior into a
 physical-device, protection, plaintext, or decryption claim. The positive
@@ -354,7 +354,7 @@ evidence as `inconclusive`.
 | 2D.3 | Join XCTest, built-product inventory, and Host verification in CI | `done` | DemoLab CI selects an available iPhone Simulator, runs all 45 Swift tests, builds Debug/Release dual-slice products, verifies all three roles and all 12 role/configuration/slice intervals, and runs the 26-test closed Host chain; matching Host and runtime regressions keep Xcode 26 chained starts bounded by the file-backed segment prefix without confusing trailing zero-fill VM pages for serialized fixup pages |
 | 2D.4 | Run complete local gates and Codex CR | `done` | Debug/Release dual-slice builds, 45 Simulator tests, all 12 product intervals, 5 CLI unit + 17 CLI integration + 171 Core + 1 product fixture + 9 Schema tests, formatting, Clippy, YAML/diff checks, bilingual docs, and final Codex CR pass with no remaining actionable P1/P2 |
 
-## Active 2E completion plan
+## Completed 2E plan
 
 2E closes checkpoint 2 as one reviewed unit. It does not authorize or perform
 a signed archive, TestFlight upload, app installation, or physical-device
@@ -366,4 +366,4 @@ observation.
 | 2E.2 | Expose the fixed device workflow | `done` | One linear SwiftUI flow imports the signed JSON, selects enrollment or run from verified metadata, displays and durably recovers the complete device-selection fingerprint with its receipt, invokes the fixed app/framework/share roles, exports only through the system share sheet, recovers interrupted authorization publication, exposes a discard path for enrollment and run key/binding/counter prerequisite mismatches, and requires explicit receipt confirmation before fixed-report cleanup |
 | 2E.3 | Bind signed-archive capabilities and update runbooks | `done` | The archive lane now requires validated local App Group and pinned-public-key inputs, injects both into the generated signed build, and the exact operator flow is documented in English and Chinese |
 | 2E.4 | Repeat local gates and Codex CR | `done` | All 65 Simulator tests, including terminal relaunch, temporary-session publication, strict/skew-window recovery, persisted-enrollment proof, target-manifest, experiment, enrollment-binding, and weak-key regressions, pass; Debug/Release dual-slice builds, all 12 product intervals, the complete Rust/schema suite, formatting, Clippy, Ruby syntax, diff checks, and the Fastlane unsigned fixture lane pass; the final pre-push Codex CR found no actionable P1/P2 |
-| 2E.5 | Push, repeat remote CI/review, and merge | `active` | Push only the reviewed commit over SSH, require all checks and review threads to be clean, run the pre-merge Codex CR, squash-merge PR #59, and fast-forward local `main`; Issue #55 remains open for checkpoints 3–5 |
+| 2E.5 | Push, repeat remote CI/review, and merge | `done` | The reviewed commit was pushed over SSH; Repository quality, Rust, and DemoLab Build CI passed; all three review threads were resolved; the complete base-relative pre-merge Codex CR found no actionable defects; PR #59 was squash-merged as `26737cb`; Issue #55 remains open for checkpoints 3–5 |

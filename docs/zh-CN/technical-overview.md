@@ -194,7 +194,8 @@ Version、可执行文件清单、架构与 Slice、Mach-O UUID 和代码签名�
 
 项目目前没有已批准后端。LAB-001 已对公开、非越狱的内部 TestFlight 精确组合得到
 有界 No-Go：在批准边界内无法独立观察精确已安装 Lineage、初始保护和明文范围。
-LAB-002 是当前 active 研究步骤，用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
+LAB-002 已通过 PR #59 完成无设备设计与实现检查点，当前在检查点 3 等待精确签名
+Version/Build 的另行授权。它用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；
 设备观察前，已评审的设计/构建清单必须冻结精确 DemoLab 源码 Commit/Build 身份、
 每个 Slice 的非空精确区间集合，以及每个区间独立生成的预期明文 Oracle 产物/Hash，
@@ -209,9 +210,9 @@ LAB-002 是当前 active 研究步骤，用于评估仅限首方 DemoLab 的受�
 同一台物理设备、同一 App 安装、硬件型号和 iOS Version/Build，原始稳定设备标识
 永不离开设备。Inbox 操作串行化，且只消费原子隔离、Descriptor 身份匹配的 Record。
 Host/Helper 永远不能访问共享容器。
-Issue #55 边界内的实现不建立 Oracle，也不授权签名 Build、TestFlight 上传或
-设备观察。LAB-002 尚未实现或验证，且只有取得 Go 结果后才能解除 DEVICE-001 的
-阻塞。
+已合并的无设备实现只覆盖 Issue #55 的有界设计与合成/Simulator 验证，不建立受
+保护 Oracle，也不授权签名 Build、TestFlight 上传或设备观察。LAB-002 尚未完成
+真机验证，且只有取得 Go 结果后才能解除 DEVICE-001 的阻塞。
 
 ### 6. 有界 Host/Helper Session
 
@@ -343,7 +344,7 @@ Rust Host 负责政策、解析、资源记账、重建、验证、打包、脱�
 | 版本化 Manifest/Capability/Error Schema | 已实现 |
 | 首方 DemoLab Simulator Fixture | 已实现 |
 | 有界协议规范 | 设计已接受；未实现 |
-| 受保护首方 Oracle | LAB-001 得到有界 No-Go；覆盖三个可执行文件完整安装 Slice 清单和观察前冻结区间集的 LAB-002 研究已激活，但尚未实现或验证 |
+| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现，但检查点 3 仍因缺少授权受阻，尚无签名 Build/真机验证或 Go 结果 |
 | 设备发现与 Transport | 未实现 |
 | 设备 Helper 与 Backend | 未实现 |
 | 确定性未签名分析 IPA 打包 | Unix 库内已从保留的私有工作树实现；尚无 CLI 或产物发布 |
