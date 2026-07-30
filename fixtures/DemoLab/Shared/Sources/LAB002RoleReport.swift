@@ -8,6 +8,11 @@ private enum LAB002RoleReportOutcome: String {
     case inconclusive
 }
 
+private enum LAB002RoleSessionState: String {
+    case collecting
+    case complete
+}
+
 private struct LAB002RoleSession: Equatable {
     static let schema = "orchardprobe.lab002.session-report.v1"
     static let profile = "orchardprobe.demolab.lab002.observation.v1"
@@ -28,9 +33,11 @@ private struct LAB002RoleSession: Equatable {
     let sessionID: String
     let runCounter: String
     let createdAt: Int64
+    let completedAt: Int64?
     let sourceCommit: String
     let marketingVersion: String
     let buildNumber: String
+    let state: LAB002RoleSessionState
     let canonicalBytes: Data
 
     init(canonicalBytes: Data) throws {
@@ -42,8 +49,8 @@ private struct LAB002RoleSession: Equatable {
               object["schema"] as? String == Self.schema,
               object["profile"] as? String == Self.profile,
               object["authorization_policy_version"] as? String == Self.policy,
-              object["state"] as? String == "collecting",
-              object["completed_at"] is NSNull,
+              let stateValue = object["state"] as? String,
+              let state = LAB002RoleSessionState(rawValue: stateValue),
               let observerRevision =
                 object["observer_revision"] as? String,
               let buildBindingSHA256 =
@@ -115,6 +122,27 @@ private struct LAB002RoleSession: Equatable {
         else {
             throw LAB002ObserverReason.staleOrConflictingSession
         }
+        let completedAt: Int64?
+        if object["completed_at"] is NSNull {
+            completedAt = nil
+        } else {
+            guard let value = LAB002RoleJSON.integer(
+                object["completed_at"]
+            ) else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            completedAt = value
+        }
+        guard (state == .collecting && completedAt == nil)
+                || (state == .complete
+                    && completedAt.map {
+                        LAB002RoleJSON.safeTime($0)
+                            && $0 >= createdAt
+                            && $0 <= authorizationNotAfter + 120
+                    } == true)
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
         self.observerRevision = observerRevision
         self.buildBindingSHA256 = buildBindingSHA256
         self.collectionID = collectionID
@@ -132,14 +160,17 @@ private struct LAB002RoleSession: Equatable {
         self.sessionID = sessionID
         self.runCounter = runCounter
         self.createdAt = createdAt
+        self.completedAt = completedAt
         self.sourceCommit = sourceCommit
         self.marketingVersion = marketingVersion
         self.buildNumber = buildNumber
+        self.state = state
         self.canonicalBytes = canonicalBytes
     }
 
     func completedCanonicalBytes(at completedAt: Int64) throws -> Data {
-        guard LAB002RoleJSON.safeTime(completedAt),
+        guard state == .collecting,
+              LAB002RoleJSON.safeTime(completedAt),
               completedAt >= createdAt,
               authorizationNotAfter.addingReportingOverflow(120).overflow
                 == false,
@@ -838,6 +869,28 @@ enum LAB002SessionCompletionOutcome: Equatable {
     case committedDurabilityUncertain
 }
 
+struct LAB002EvidenceDocument: Equatable {
+    let logicalFilename: String
+    let canonicalBytes: Data
+}
+
+struct LAB002CompletedSessionSnapshot: Equatable {
+    let collectionID: String
+    let sessionID: String
+    let runOrdinal: UInt8
+    let runCounter: String
+    let challengeSHA256: String
+    let buildBindingSHA256: String
+    let enrollmentPublicKey: String
+    let deviceInstallationBindingSHA256: String
+    let documents: [LAB002EvidenceDocument]
+}
+
+enum LAB002CleanupOutcome: Equatable {
+    case cleaned
+    case cleanedDurabilityUncertain
+}
+
 private final class LAB002RoleReportStore {
     private static let renameExclusive = UInt32(0x0000_0004)
     private static let renameNoFollowAny = UInt32(0x0000_0010)
@@ -908,6 +961,26 @@ private final class LAB002RoleReportStore {
         }
     }
 
+    func completedSnapshot(
+        fixedBundle: Bundle
+    ) throws -> LAB002CompletedSessionSnapshot {
+        try withLock {
+            try completedSnapshotLocked(fixedBundle: fixedBundle)
+        }
+    }
+
+    func cleanupCompletedSession(
+        fixedBundle: Bundle,
+        expectedSnapshot: LAB002CompletedSessionSnapshot
+    ) throws -> LAB002CleanupOutcome {
+        try withLock {
+            try cleanupCompletedSessionLocked(
+                fixedBundle: fixedBundle,
+                expectedSnapshot: expectedSnapshot
+            )
+        }
+    }
+
 #if DEBUG
     func publishForTesting(
         observation: LAB002LocalRoleObservation,
@@ -956,6 +1029,29 @@ private final class LAB002RoleReportStore {
                 fixedBundle: nil,
                 completedAt: completedAt,
                 afterReplacement: afterReplacement
+            )
+        }
+    }
+
+    func completedSnapshotForTesting()
+        throws -> LAB002CompletedSessionSnapshot
+    {
+        try withLock {
+            try completedSnapshotLocked(fixedBundle: nil)
+        }
+    }
+
+    func cleanupCompletedSessionForTesting(
+        expectedSnapshot: LAB002CompletedSessionSnapshot,
+        beforeDeletion: (() throws -> Void)? = nil,
+        afterDeletion: (() throws -> Void)? = nil
+    ) throws -> LAB002CleanupOutcome {
+        try withLock {
+            try cleanupCompletedSessionLocked(
+                fixedBundle: nil,
+                expectedSnapshot: expectedSnapshot,
+                beforeDeletion: beforeDeletion,
+                afterDeletion: afterDeletion
             )
         }
     }
@@ -1017,6 +1113,9 @@ private final class LAB002RoleReportStore {
         }
 
         let session = try readSession()
+        guard session.state == .collecting else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
         if let fixedBundle {
             try validateBundle(fixedBundle, matches: session)
         }
@@ -1069,6 +1168,9 @@ private final class LAB002RoleReportStore {
         let session = try LAB002RoleSession(
             canonicalBytes: sessionRead.bytes
         )
+        guard session.state == .collecting else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
         if let fixedBundle {
             try validateBundle(fixedBundle, matches: session)
         }
@@ -1106,6 +1208,153 @@ private final class LAB002RoleReportStore {
             expectedReports: reportIdentities,
             afterReplacement: afterReplacement
         )
+    }
+
+    private func completedSnapshotLocked(
+        fixedBundle: Bundle?
+    ) throws -> LAB002CompletedSessionSnapshot {
+        try validateOpenChain()
+        let expectedNames = Set([
+            LAB002FixedName.session,
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+        ])
+        guard try listEntries() == expectedNames else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let sessionRead = try readBoundedWithIdentity(
+            name: LAB002FixedName.session,
+            maximum: LAB002Limit.sessionReport
+        )
+        let session = try LAB002RoleSession(
+            canonicalBytes: sessionRead.bytes
+        )
+        guard session.state == .complete,
+              let completedAt = session.completedAt
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        if let fixedBundle {
+            try validateBundle(fixedBundle, matches: session)
+        }
+
+        var lastMapped = session.createdAt
+        var reportIdentities = [LAB002RoleReportIdentity]()
+        var documents = [
+            LAB002EvidenceDocument(
+                logicalFilename: LAB002FixedName.session,
+                canonicalBytes: sessionRead.bytes
+            ),
+        ]
+        for role in [LAB002Role.mainApp, .framework, .shareExtension] {
+            let reportRead = try readReportWithIdentity(
+                name: role.reportName
+            )
+            let report = reportRead.report
+            guard report.role == role,
+                  try report.matches(session),
+                  report.diskInspectionCompletedAt >= lastMapped,
+                  report.mappedHashCompletedAt <= completedAt
+            else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            lastMapped = report.mappedHashCompletedAt
+            reportIdentities.append(
+                LAB002RoleReportIdentity(
+                    name: role.reportName,
+                    identity: reportRead.identity,
+                    canonicalBytes: report.canonicalBytes
+                )
+            )
+            documents.append(
+                LAB002EvidenceDocument(
+                    logicalFilename: role.reportName,
+                    canonicalBytes: report.canonicalBytes
+                )
+            )
+        }
+        guard try sessionMatches(
+            identity: sessionRead.identity,
+            canonicalBytes: sessionRead.bytes
+        ),
+        try reportsMatch(reportIdentities)
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return LAB002CompletedSessionSnapshot(
+            collectionID: session.collectionID,
+            sessionID: session.sessionID,
+            runOrdinal: session.runOrdinal,
+            runCounter: session.runCounter,
+            challengeSHA256: session.challengeSHA256,
+            buildBindingSHA256: session.buildBindingSHA256,
+            enrollmentPublicKey: session.enrollmentPublicKey,
+            deviceInstallationBindingSHA256:
+                session.deviceInstallationBindingSHA256,
+            documents: documents
+        )
+    }
+
+    private func cleanupCompletedSessionLocked(
+        fixedBundle: Bundle?,
+        expectedSnapshot: LAB002CompletedSessionSnapshot,
+        beforeDeletion: (() throws -> Void)? = nil,
+        afterDeletion: (() throws -> Void)? = nil
+    ) throws -> LAB002CleanupOutcome {
+        guard try completedSnapshotLocked(fixedBundle: fixedBundle)
+            == expectedSnapshot
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        try beforeDeletion?()
+        guard try completedSnapshotLocked(fixedBundle: fixedBundle)
+            == expectedSnapshot
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+
+        var deletionCommitted = false
+        for name in [
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+            LAB002FixedName.session,
+        ] {
+            let result = name.withCString {
+                unlinkat(current.rawValue, $0, 0)
+            }
+            guard result == 0 else {
+                if deletionCommitted {
+                    return .cleanedDurabilityUncertain
+                }
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            deletionCommitted = true
+        }
+        do {
+            try afterDeletion?()
+            guard fsync(current.rawValue) == 0 else {
+                return .cleanedDurabilityUncertain
+            }
+            let currentIdentity = try Self.identity(current)
+            guard try Self.entryIdentity(
+                parent: reports,
+                name: LAB002FixedName.currentReports
+            ) == currentIdentity
+            else {
+                return .cleanedDurabilityUncertain
+            }
+        } catch {
+            return .cleanedDurabilityUncertain
+        }
+        let removed = LAB002FixedName.currentReports.withCString {
+            unlinkat(reports.rawValue, $0, AT_REMOVEDIR)
+        }
+        guard removed == 0, fsync(reports.rawValue) == 0 else {
+            return .cleanedDurabilityUncertain
+        }
+        return .cleaned
     }
 
     private func validateOpenChain() throws {
@@ -1681,6 +1930,45 @@ enum LAB002RoleReportSessionCompleter {
     }
 }
 
+enum LAB002RoleReportEvidenceStore {
+    static func completedSnapshot(
+        fixedBundle: Bundle
+    ) throws -> LAB002CompletedSessionSnapshot {
+        try LAB002RoleReportStore(
+            containerURL: productionContainerURL(fixedBundle: fixedBundle)
+        ).completedSnapshot(fixedBundle: fixedBundle)
+    }
+
+    static func cleanupCompletedSession(
+        fixedBundle: Bundle,
+        expectedSnapshot: LAB002CompletedSessionSnapshot
+    ) throws -> LAB002CleanupOutcome {
+        try LAB002RoleReportStore(
+            containerURL: productionContainerURL(fixedBundle: fixedBundle)
+        ).cleanupCompletedSession(
+            fixedBundle: fixedBundle,
+            expectedSnapshot: expectedSnapshot
+        )
+    }
+
+    private static func productionContainerURL(
+        fixedBundle: Bundle
+    ) throws -> URL {
+        guard let identifier = fixedBundle.object(
+            forInfoDictionaryKey: "LAB002AppGroupIdentifier"
+        ) as? String,
+        identifier.hasPrefix("group."),
+        identifier.utf8.count <= 255,
+        let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: identifier
+        )
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return containerURL
+    }
+}
+
 #if DEBUG
 enum LAB002RoleReportTestHarness {
     static func publish(
@@ -1728,6 +2016,29 @@ enum LAB002RoleReportTestHarness {
         ).completeSessionForTesting(
             completedAt: completedAt,
             afterReplacement: afterReplacement
+        )
+    }
+
+    static func completedSnapshot(
+        testContainerURL: URL
+    ) throws -> LAB002CompletedSessionSnapshot {
+        try LAB002RoleReportStore(
+            containerURL: testContainerURL
+        ).completedSnapshotForTesting()
+    }
+
+    static func cleanupCompletedSession(
+        testContainerURL: URL,
+        expectedSnapshot: LAB002CompletedSessionSnapshot,
+        beforeDeletion: (() throws -> Void)? = nil,
+        afterDeletion: (() throws -> Void)? = nil
+    ) throws -> LAB002CleanupOutcome {
+        try LAB002RoleReportStore(
+            containerURL: testContainerURL
+        ).cleanupCompletedSessionForTesting(
+            expectedSnapshot: expectedSnapshot,
+            beforeDeletion: beforeDeletion,
+            afterDeletion: afterDeletion
         )
     }
 }

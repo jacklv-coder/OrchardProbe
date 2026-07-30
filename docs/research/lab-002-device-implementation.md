@@ -164,6 +164,52 @@ returns `committedDurabilityUncertain` instead of a retryable error. Missing,
 repeated, completed, temporary, late, replaced, or conflicting pre-commit state
 is unchanged and fails closed.
 
+### Signed receipt, export, and cleanup
+
+Checkpoint 2C.5 closes both device-signed egress artifacts under the frozen
+Host/Core schemas. Confirm Enrollment first requires the verified
+authorization to contain the exact acknowledgement digest, policy, challenge,
+experiment, device-selection nonce, and expected environment. The runtime
+environment must match before the installation state is created. Receipt
+creation also requires the runtime clock to be inside the signed inclusive
+`not_before` through `not_after` interval itself: the wider device-ingress
+clock-skew tolerance cannot produce a receipt that the Host would reject. The
+resulting canonical enrollment-receipt core is framed as the frozen receipt
+domain, 4-byte big-endian length, and exact core bytes, then signed by the
+device-only Ed25519 enrollment key. The returned full 64-hex device-selection
+fingerprint binds the authorization-envelope digest, enrollment public key,
+installation binding, and device-selection nonce. The fixed authorization is
+deleted only after the receipt has been constructed successfully.
+
+Export first obtains an exact completed snapshot under the coordinator lock; a
+collecting session may be completed once, but malformed or conflicting state
+cannot be converted into exportable evidence. The snapshot contains exactly
+`session.json`, `main-app.json`, `framework.json`, and
+`share-extension.json` in that order. Each entry retains its exact canonical
+document and SHA-256. The canonical export core is framed with its distinct
+frozen export domain and signed by the same enrollment key. Both signed
+artifacts have fixed `.json` names and are held in memory behind an
+`NSItemProvider`; production egress is a system `UIActivityViewController`, not
+an arbitrary output URL, filesystem path, network request, pasteboard, or
+caller-supplied filename.
+
+The actor retains the first constructed export and returns identical bytes on
+repeat presentation within that coordinator lifetime. A new coordinator must
+not reconstruct an export from a session already marked complete: termination
+after completion but before confirmed receipt is therefore a fail-closed
+No-Go, not an opportunity to produce different signed bytes. Cleanup requires
+a separate explicit `true` confirmation, the retained export, and two fresh
+exact completed-snapshot validations under the same lock. It unlinks only the
+four fixed report files, flushes that directory, removes only the empty
+`reports/current` directory, and flushes `reports`. The first successful unlink
+is the cleanup commit point; a later unlink, flush, identity check, or
+directory removal failure returns `cleanedDurabilityUncertain` and cannot be
+retried as if nothing happened. Enrollment key/state, installation nonce, run
+counter, inbox, root, and coordinator lock are never cleanup targets. A crash,
+partial receipt, signature mismatch, missing required export, or uncertain
+cleanup makes that exact controlled experiment No-Go; cleanup cannot reset it
+into a passing retry.
+
 ## Fixed production container
 
 Production code obtains the container only from

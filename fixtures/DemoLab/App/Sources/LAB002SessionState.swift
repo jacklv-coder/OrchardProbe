@@ -32,7 +32,7 @@ struct LAB002SessionEnvironment: Equatable {
         self.iosBuild = iosBuild
     }
 
-    fileprivate var jsonObject: [String: Any] {
+    var jsonObject: [String: Any] {
         [
             "hardware_model": hardwareModel,
             "ios_build": iosBuild,

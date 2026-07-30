@@ -15,7 +15,7 @@ installation, device observation, or device-backend work.
 |---:|---|---|---|
 | 2A | Closed protocol foundation and fixed Mach-O range | `done` | Domain-separated build/target/device bindings, bounded canonical JSON, Ed25519 authorization envelopes, two-run comparison, role-specific `__TEXT,__oprobe`, a fail-closed parser, fixture-only CI inspection, adversarial tests, and Codex CR are complete with no remaining P1/P2 |
 | 2B | Closed schemas and complete host artifact chain | `done` | All 18 wire forms, the exact enrollment/run/two-run verifier chain, adversarial fixtures, the complete local gate, and final Codex CR pass with no remaining P1/P2 |
-| 2C | DemoLab state coordinator and zero-argument observers | `in progress` | Execute the documented 2C.1–2C.5 sequence below; no caller-selected target, range, path, PID, or address |
+| 2C | DemoLab state coordinator and zero-argument observers | `done` | The documented 2C.1–2C.5 sequence is complete; no caller-selected target, range, path, PID, or address |
 | 2D | Synthetic and Simulator verification | `planned` | Exercise all three roles, all emitted slices, state transitions, negative fixtures, crash/replay boundaries, and explicit Simulator `inconclusive` semantics |
 | 2E | Documentation, final CR, CI, PR, and merge | `planned` | Update bilingual architecture/user runbooks and compatibility template; resolve every P1/P2, pass all required checks, review the PR, then merge |
 
@@ -200,6 +200,22 @@ installation, device observation, or device-backend work.
   unchanged. Thirty-nine
   Simulator tests, Debug/Release Simulator builds, Rust/schema gates, and
   focused CR pass with no remaining actionable P1/P2.
+- 2C.5 now constructs the exact signed enrollment receipt only after the
+  authenticated authorization, build, environment, device-only key, nonce,
+  and installation binding agree. It returns the full physical-selection
+  fingerprint and exposes the fixed receipt only through an in-memory system
+  share item. A completed run is revalidated into one immutable four-document
+  snapshot in session/main/framework/share order; every canonical document
+  digest and the distinct export-domain Ed25519 signature match the frozen
+  Host schema. The actor retains identical export bytes until a separate
+  explicit confirmation. Cleanup revalidates the exact snapshot twice, removes
+  only the fixed completed report subtree, preserves the enrollment key,
+  installation nonce, and counter, and returns a non-retryable uncertain
+  outcome after its first deletion commit. Forty-three Simulator tests cover the
+  signatures, fixed names/order, repeat export, explicit confirmation,
+  mutation rejection, post-commit identity-failure mapping, cleanup-once
+  semantics, and preserved state. Final Debug/Release, Rust/schema, diff, and
+  focused CR gates pass with no remaining actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -263,7 +279,7 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.2 | Implement fixed inbox and durable state coordinator | `done` | Main-app-only Import/Start/Discard, fixed App Group production lookup, no-follow bounded reads, lock/quarantine identity checks, exact counter commits, atomic writes, protection/backup policy, 6 Simulator tests, Debug/Release builds, and focused Codex CR pass with no remaining P1/P2 |
 | 2C.3 | Implement enrollment state and device-only key boundary | `done` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, authenticated same-envelope interruption recovery, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment; 11 Simulator tests, Debug/Release builds, and focused Codex CR pass |
 | 2C.4 | Implement session lifecycle and three zero-argument observers | `done` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters; 39 Simulator tests, Debug/Release builds, and focused CR pass |
-| 2C.5 | Implement signed export, receipt, and cleanup boundaries | `in progress` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |
+| 2C.5 | Implement signed export, receipt, and cleanup boundaries | `done` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |
 
 ### 2C.4 execution order
 
@@ -274,3 +290,12 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.4c1 | Assemble the three target-private zero-argument observations | `done` | Fixed bundle/anchor and `dladdr` binding, bounded installed signature identity, active mapped-header/range/VM binding, exact disk/mapped digests, 30 Simulator tests, Release build, and focused CR pass without production selector input |
 | 2C.4c2 | Encode and publish the three fixed role reports | `done` | Exact canonical reports bind the immutable session, publish exclusively in main/framework/share order, reject duplicate/stale/conflicting/oversized/out-of-order state, and pass 33 Simulator tests, Release build, and focused CR with no remaining actionable P1/P2 |
 | 2C.4d | Close the session and run focused gates | `done` | Exact absolute authorization deadline and ordering/completion transitions, explicit non-retryable post-rename uncertainty, retained session/report identity and canonical-byte revalidation, negative Simulator fixtures, 39 Simulator tests, Rust/schema gates, Debug/Release builds, docs, and focused Codex CR pass with no remaining actionable P1/P2 |
+
+### 2C.5 execution order
+
+| Order | Work item | Status | Exit gate |
+|---:|---|---|---|
+| 2C.5a | Construct the signed enrollment receipt and physical-selection fingerprint | `done` | Exact verified authorization/environment facts, device-only key, nonce, build and installation binding close the frozen receipt schema/domain; fixed-name memory-only share artifact and signature/fingerprint tests pass |
+| 2C.5b | Construct and retain the signed four-document session export | `done` | One exact completed snapshot retains the four canonical documents and digests in fixed order, signs the frozen export domain, rejects key/schema/order substitutions, and repeats identical retained bytes |
+| 2C.5c | Require explicit confirmation and clean only matching reports | `done` | Cleanup is impossible before export or on `false`; two exact snapshot revalidations reject mutation, one confirmed cleanup removes the fixed report subtree once and preserves key/state/counter |
+| 2C.5d | Run focused implementation gates and Codex CR | `done` | 43 Simulator tests, Debug/Release builds, Rust/schema gates, diff checks, docs, and focused Codex CR pass with no remaining actionable P1/P2 |

@@ -132,6 +132,40 @@ Flush、No-follow 原子替换和目录 Flush，只把 `session.json` 改写为�
 复核失败返回 `committedDurabilityUncertain`，不能伪装成可重试错误。缺失、重复、
 已完成、临时、超时、被替换或冲突的提交前状态都保持不变并失败关闭。
 
+### 签名 Receipt、Export 与 Cleanup
+
+检查点 2C.5 按冻结的 Host/Core Schema 闭合两种设备签名出口工件。Confirm
+Enrollment 首先要求已验证 Authorization 提供精确的 Acknowledgement Digest、
+Policy、Challenge、Experiment、Device-selection Nonce 与预期 Environment；运行时
+Environment 必须先完全匹配，才能创建 Installation State。构造 Receipt 还要求运行
+时时钟本身位于签名的闭区间 `not_before` 到 `not_after` 内；设备入口允许的较宽时钟
+偏差不能生成一个 Host 必然拒绝的 Receipt。随后把规范 Enrollment Receipt Core 按
+冻结 Receipt Domain、4 字节大端长度和精确 Core 字节进行分帧，并由 Device-only
+Ed25519 Enrollment Key 签名。返回的完整 64 位 Hex Device-selection Fingerprint
+绑定 Authorization-envelope Digest、Enrollment Public Key、Installation Binding
+和 Device-selection Nonce。只有成功构造 Receipt 后才删除固定 Authorization。
+
+Export 会先在 Coordinator Lock 下取得精确的 Completed Snapshot；Collecting
+Session 最多可完成一次，但畸形或冲突状态不能转换为可导出证据。Snapshot 按固定顺序
+精确包含 `session.json`、`main-app.json`、`framework.json` 与
+`share-extension.json`，每个 Entry 保留精确规范文档及其 SHA-256。规范 Export Core
+使用不同的冻结 Export Domain 分帧，再由同一 Enrollment Key 签名。两种签名工件都
+使用固定 `.json` 文件名，并只以内存 `NSItemProvider` 保存；生产出口是系统
+`UIActivityViewController`，而不是任意输出 URL、文件系统 Path、网络请求、
+Pasteboard 或调用者提供的 Filename。
+
+Actor 会在同一个 Coordinator 生命周期内保留首次构造的 Export，重复展示返回完全
+相同的字节。新的 Coordinator 不得从已经标记为 Complete 的 Session 重建 Export；
+因此在完成后、确认收到前终止进程会失败关闭为 No-Go，不能借此生成另一份签名字节。
+Cleanup 必须同时具备单独且明确的 `true` 确认、已保留 Export，并在同一把 Lock 下
+两次重新验证完全相同的 Completed Snapshot。它只 Unlink 四个固定报告文件，Flush
+该目录，只移除已空的 `reports/current`，再 Flush `reports`。首次成功 Unlink 是
+Cleanup 提交点；其后的 Unlink、Flush、身份检查或目录移除失败返回
+`cleanedDurabilityUncertain`，不能假装从未执行后再重试。Enrollment Key/State、
+Installation Nonce、Run Counter、Inbox、Root 与 Coordinator Lock 都永远不是
+Cleanup 目标。Crash、部分 Receipt、签名不匹配、缺失必需 Export 或不确定 Cleanup
+都会使该轮受控实验成为 No-Go；Cleanup 不能把它重置成一次可通过的重试。
+
 ## 固定生产 Container
 
 生产代码只通过 `containerURL(forSecurityApplicationGroupIdentifier:)` 获取

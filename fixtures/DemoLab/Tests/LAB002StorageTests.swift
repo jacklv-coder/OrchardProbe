@@ -19,6 +19,9 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
             notBefore: 1_000,
             notAfter: 1_900,
             expectedRunCounter: expectedCounter,
+            enrollmentFacts: kind == .installationEnrollment
+                ? Self.enrollmentFacts()
+                : nil,
             runFacts: kind == .collectionRun
                 ? Self.runFacts(counter: expectedCounter ?? 1)
                 : nil
@@ -47,6 +50,55 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
                 String(repeating: "1", count: 64)
         )
     }
+
+    static func enrollmentFacts() -> LAB002VerifiedEnrollmentFacts {
+        LAB002VerifiedEnrollmentFacts(
+            acknowledgementSHA256: String(repeating: "b", count: 64),
+            authorizationPolicyVersion:
+                "orchardprobe.authorized-use.v1",
+            enrollmentChallenge: String(repeating: "c", count: 64),
+            experimentID: String(repeating: "d", count: 64),
+            deviceSelectionNonce: String(repeating: "e", count: 64),
+            expectedEnvironment: try! LAB002SessionEnvironment(
+                hardwareModel: "iPhone17,1",
+                iosProductVersion: "18.0",
+                iosBuild: "22A3354"
+            )
+        )
+    }
+}
+
+private func decodeTestHex(_ value: String) throws -> Data {
+    guard value.utf8.count % 2 == 0 else {
+        throw LAB002EvidenceArtifactError.invalidArtifact
+    }
+    var result = Data()
+    var index = value.startIndex
+    while index < value.endIndex {
+        let next = value.index(index, offsetBy: 2)
+        guard let byte = UInt8(value[index..<next], radix: 16) else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        result.append(byte)
+        index = next
+    }
+    return result
+}
+
+private func framedTestMessage(
+    domain: String,
+    canonicalBytes: Data
+) throws -> Data {
+    guard let length = UInt32(exactly: canonicalBytes.count) else {
+        throw LAB002EvidenceArtifactError.oversizedArtifact
+    }
+    var result = Data(domain.utf8)
+    var bigEndianLength = length.bigEndian
+    withUnsafeBytes(of: &bigEndianLength) {
+        result.append(contentsOf: $0)
+    }
+    result.append(canonicalBytes)
+    return result
 }
 
 private final class TestEnrollmentKeyStore: LAB002EnrollmentKeyStoring {
@@ -157,6 +209,49 @@ private final class TestRunRoleObserver: LAB002RunRoleObserving {
 
     func observeMainAndFramework() throws {
         callCount += 1
+    }
+}
+
+private final class TestSessionEvidenceStore: LAB002SessionEvidenceStoring {
+    let snapshot: LAB002CompletedSessionSnapshot
+    private(set) var completeCount = 0
+    private(set) var cleanupCount = 0
+    private var isCompleted = false
+
+    init(snapshot: LAB002CompletedSessionSnapshot) {
+        self.snapshot = snapshot
+    }
+
+    func complete(
+        at completedAt: Int64
+    ) throws -> LAB002SessionCompletionOutcome {
+        guard !isCompleted else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        isCompleted = true
+        completeCount += 1
+        return .committed
+    }
+
+    func completedSnapshot() throws -> LAB002CompletedSessionSnapshot {
+        guard isCompleted else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return snapshot
+    }
+
+    func cleanup(
+        expectedSnapshot: LAB002CompletedSessionSnapshot
+    ) throws -> LAB002CleanupOutcome {
+        guard expectedSnapshot == snapshot else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        guard isCompleted else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        isCompleted = false
+        cleanupCount += 1
+        return .cleaned
     }
 }
 
@@ -622,6 +717,63 @@ final class LAB002StorageTests: XCTestCase {
         XCTAssertEqual(state, continuity.state)
         XCTAssertEqual(keyStore.createCount, 1)
         XCTAssertEqual(
+            continuity.receipt.filename,
+            "device-enrollment-receipt-v1.json"
+        )
+        XCTAssertLessThanOrEqual(
+            continuity.receipt.canonicalBytes.count,
+            LAB002Limit.controlDocument
+        )
+        let receipt = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: continuity.receipt.canonicalBytes
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            receipt["schema"] as? String,
+            "orchardprobe.lab002.device-enrollment-receipt.v1"
+        )
+        XCTAssertEqual(
+            receipt["enrollment_public_key"] as? String,
+            state.enrollmentPublicKey
+        )
+        let unsignedText = try XCTUnwrap(
+            receipt["unsigned_receipt_canonical"] as? String
+        )
+        let unsignedBytes = Data(unsignedText.utf8)
+        let unsigned = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: unsignedBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            unsigned["authorization_envelope_sha256"] as? String,
+            Data(SHA256.hash(data: Data("valid".utf8))).hexLowercase
+        )
+        XCTAssertEqual(
+            unsigned["enrollment_challenge_response"] as? String,
+            String(repeating: "c", count: 64)
+        )
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: try decodeTestHex(state.enrollmentPublicKey)
+        )
+        let signature = try decodeTestHex(
+            try XCTUnwrap(receipt["signature"] as? String)
+        )
+        XCTAssertTrue(
+            publicKey.isValidSignature(
+                signature,
+                for: try framedTestMessage(
+                    domain:
+                        "orchardprobe.demolab.lab002.enrollment-receipt.v1\0",
+                    canonicalBytes: unsignedBytes
+                )
+            )
+        )
+        XCTAssertEqual(
+            continuity.deviceSelectionFingerprintSHA256.count,
+            64
+        )
+        XCTAssertEqual(
             String(decoding: try state.canonicalData(), as: UTF8.self),
             """
             {"build_binding_sha256":"\(build)","enrollment_public_key":"\(state.enrollmentPublicKey)","installation_nonce":"\(String(repeating: "62", count: 32))","profile":"orchardprobe.demolab.lab002.observation.v1","schema":"orchardprobe.lab002.installation-nonce-state.v1"}
@@ -688,6 +840,47 @@ final class LAB002StorageTests: XCTestCase {
         } catch LAB002CoordinatorError.stale {
         }
         XCTAssertEqual(expiredKeyStore.createCount, 0)
+
+        let skewOnlyRoot = temporaryRoot.appendingPathComponent(
+            "skew-only",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: skewOnlyRoot,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let skewOnlyBuild = String(repeating: "f", count: 64)
+        let skewOnlyValidator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: skewOnlyBuild
+        )
+        let skewOnlyKeyStore = TestEnrollmentKeyStore(seed: 0x64)
+        let skewOnlyCoordinator = try LAB002InboxCoordinator(
+            testContainerURL: skewOnlyRoot,
+            validator: skewOnlyValidator,
+            enrollmentKeyStore: skewOnlyKeyStore,
+            random: TestRandomBytes(byte: 0x65),
+            testRuntimeContext: TestRuntimeContext(
+                build: skewOnlyBuild,
+                now: 1_950
+            )
+        )
+        let skewOnlySource = skewOnlyRoot.appendingPathComponent(
+            "source.json"
+        )
+        try Data("valid".utf8).write(to: skewOnlySource)
+        try await skewOnlyCoordinator.importAuthorization(
+            from: skewOnlySource
+        )
+        do {
+            _ = try await skewOnlyCoordinator
+                .confirmInstallationEnrollment()
+            XCTFail("skew-only enrollment created a Host-invalid receipt")
+        } catch LAB002CoordinatorError.stale {
+        }
+        XCTAssertEqual(skewOnlyKeyStore.createCount, 0)
 
         let wrongBuildRoot = temporaryRoot.appendingPathComponent(
             "wrong-build",
@@ -991,6 +1184,132 @@ final class LAB002StorageTests: XCTestCase {
         )
     }
 
+    func testExportRequiresExplicitConfirmationAndPreservesFixedState()
+        async throws {
+        let build = String(repeating: "a", count: 64)
+        let keyStore = TestEnrollmentKeyStore(
+            seed: 0x41,
+            preloaded: true,
+            build: build
+        )
+        let signingKey = try keyStore.loadExisting(
+            buildBindingSHA256: build
+        )
+        let publicKey = signingKey.publicKeyRaw.hexLowercase
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        try storage.createInstallationState(
+            LAB002InstallationState(
+                buildBindingSHA256: build,
+                enrollmentPublicKey: publicKey,
+                installationNonce: String(repeating: "7", count: 64)
+            )
+        )
+        let documents = [
+            LAB002FixedName.session,
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+        ].map {
+            LAB002EvidenceDocument(
+                logicalFilename: $0,
+                canonicalBytes: Data("{}".utf8)
+            )
+        }
+        let snapshot = LAB002CompletedSessionSnapshot(
+            collectionID: String(repeating: "b", count: 64),
+            sessionID: String(repeating: "c", count: 64),
+            runOrdinal: 1,
+            runCounter: "0000000000000001",
+            challengeSHA256: String(repeating: "d", count: 64),
+            buildBindingSHA256: build,
+            enrollmentPublicKey: publicKey,
+            deviceInstallationBindingSHA256:
+                String(repeating: "1", count: 64),
+            documents: documents
+        )
+        let evidenceStore = TestSessionEvidenceStore(snapshot: snapshot)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: TestAuthorizationValidator(),
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x42),
+            testRuntimeContext: TestRuntimeContext(build: build),
+            testSessionEvidenceStore: evidenceStore
+        )
+
+        do {
+            _ = try await coordinator
+                .confirmExportReceivedAndCleanReports(confirmed: true)
+            XCTFail("cleanup accepted an unconstructed export")
+        } catch LAB002EvidenceArtifactError.exportNotConstructed {
+        }
+        let artifact = try await coordinator.exportLAB002Evidence()
+        XCTAssertEqual(
+            artifact.filename,
+            "lab-002-session-export-v1.json"
+        )
+        let shareProvider = artifact.systemShareItemProvider()
+        XCTAssertEqual(shareProvider.suggestedName, artifact.filename)
+        XCTAssertTrue(
+            shareProvider.hasItemConformingToTypeIdentifier("public.json")
+        )
+        let repeatedArtifact = try await coordinator.exportLAB002Evidence()
+        XCTAssertEqual(repeatedArtifact, artifact)
+        XCTAssertEqual(evidenceStore.completeCount, 1)
+        let restartedCoordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: TestAuthorizationValidator(),
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x42),
+            testRuntimeContext: TestRuntimeContext(build: build),
+            testSessionEvidenceStore: evidenceStore
+        )
+        do {
+            _ = try await restartedCoordinator.exportLAB002Evidence()
+            XCTFail("restarted coordinator accepted ambiguous completed state")
+        } catch LAB002ObserverReason.staleOrConflictingSession {
+        }
+        let signed = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: artifact.canonicalBytes)
+                as? [String: Any]
+        )
+        let unsignedText = try XCTUnwrap(
+            signed["unsigned_export_canonical"] as? String
+        )
+        let unsigned = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(unsignedText.utf8)
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(
+            (unsigned["entries"] as? [[String: Any]])?.compactMap {
+                $0["logical_filename"] as? String
+            },
+            documents.map(\.logicalFilename)
+        )
+
+        do {
+            _ = try await coordinator
+                .confirmExportReceivedAndCleanReports(confirmed: false)
+            XCTFail("cleanup accepted a false confirmation")
+        } catch LAB002EvidenceArtifactError.explicitConfirmationRequired {
+        }
+        XCTAssertEqual(evidenceStore.cleanupCount, 0)
+        let cleanupOutcome = try await coordinator
+            .confirmExportReceivedAndCleanReports(confirmed: true)
+        XCTAssertEqual(cleanupOutcome, .cleaned)
+        XCTAssertEqual(evidenceStore.cleanupCount, 1)
+        XCTAssertNotNil(try storage.readInstallationState())
+        do {
+            _ = try await coordinator
+                .confirmExportReceivedAndCleanReports(confirmed: true)
+            XCTFail("cleanup reused a consumed export")
+        } catch LAB002EvidenceArtifactError.exportNotConstructed {
+        }
+    }
+
     private func enroll(
         coordinator: LAB002InboxCoordinator,
         validator: TestAuthorizationValidator,
@@ -1002,7 +1321,8 @@ final class LAB002StorageTests: XCTestCase {
             buildBindingSHA256: build,
             notBefore: 1_000,
             notAfter: 1_900,
-            expectedRunCounter: nil
+            expectedRunCounter: nil,
+            enrollmentFacts: TestAuthorizationValidator.enrollmentFacts()
         )
         let source = temporaryRoot.appendingPathComponent("enrollment.json")
         try Data("valid".utf8).write(to: source)

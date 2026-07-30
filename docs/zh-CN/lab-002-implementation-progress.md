@@ -13,7 +13,7 @@
 |---:|---|---|---|
 | 2A | 闭合协议基础与固定 Mach-O 区间 | `完成` | Build/目标/设备的域分离绑定、有界规范 JSON、Ed25519 授权信封、两次运行比较、三个 Role 专用 `__TEXT,__oprobe`、失败关闭解析器、仅 Fixture 的 CI 检查、对抗测试和 Codex CR 均已完成，当前没有 P1/P2 |
 | 2B | 闭合 Schema 与完整 Host 工件链 | `完成` | 全部 18 种 Wire 形式、精确 Enrollment/Run/两轮验证链、对抗 Fixture、完整本地门禁和最终 Codex CR 均通过且没有剩余 P1/P2 |
-| 2C | DemoLab 状态协调器与零参数观察器 | `进行中` | 按下文 2C.1–2C.5 顺序执行；不接受调用者选择的目标、区间、路径、PID 或地址 |
+| 2C | DemoLab 状态协调器与零参数观察器 | `完成` | 下文 2C.1–2C.5 已按顺序完成；不接受调用者选择的目标、区间、路径、PID 或地址 |
 | 2D | 合成与 Simulator 验证 | `planned` | 覆盖三个 Role、全部生成 Slice、状态迁移、负向 Fixture、崩溃/重放边界，并明确 Simulator 只能得到 `inconclusive` |
 | 2E | 文档、最终 CR、CI、PR 与合并 | `planned` | 更新中英双语架构/用户 Runbook 与兼容性模板；解决全部 P1/P2，通过所有门禁，复核 PR 后合并 |
 
@@ -146,6 +146,17 @@
   被替换、冲突或同 inode/同大小但内容被改写的提交前状态保持不变。39 项 Simulator
   测试、Rust/Schema 门禁、Debug/Release Simulator Build
   与专项 CR 均通过，没有剩余可执行 P1/P2。
+- 2C.5 现在只会在已认证 Authorization、Build、Environment、Device-only Key、
+  Nonce 与 Installation Binding 全部一致后构造精确的签名 Enrollment Receipt，
+  返回完整的物理选择 Fingerprint，并且只通过内存中的系统 Share Item 暴露固定
+  Receipt。已完成 Run 会重新验证为不可变的四文档 Snapshot，严格采用
+  Session/Main/Framework/Share 顺序；每份规范文档 Digest 与独立 Export Domain 的
+  Ed25519 签名都匹配冻结 Host Schema。Actor 会保留完全相同的 Export 字节，直到
+  用户另行明确确认。Cleanup 会两次重验精确 Snapshot，只移除固定的已完成报告子树，
+  保留 Enrollment Key、Installation Nonce 与 Counter，并在首次删除提交后的故障中
+  返回不可重试的不确定结果。43 项 Simulator 测试覆盖签名、固定名称/顺序、重复
+  Export、明确确认、内容改写拒绝、提交后身份故障映射、只清理一次及状态保留。最终
+  Debug/Release、Rust/Schema、Diff 与专项 CR 门禁均通过，没有剩余可执行 P1/P2。
 
 ## 已完成的 2B 门禁
 
@@ -198,7 +209,7 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 2C.2 | 实现固定 Inbox 与持久状态协调器 | `完成` | 仅 Main App 的 Import/Start/Discard、固定 App Group 生产定位、No-follow 有界读取、Lock/Quarantine 身份检查、精确 Counter 提交、原子写、Protection/Backup 策略、6 项 Simulator 测试、Debug/Release Build 和专项 Codex CR 均通过且没有剩余 P1/P2 |
 | 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `完成` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；支持同一已认证 Envelope 的中断恢复；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment；11 项 Simulator 测试、Debug/Release Build 与专项 Codex CR 均通过 |
 | 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `完成` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address；39 项 Simulator 测试、Debug/Release Build 与专项 CR 均通过 |
-| 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `进行中` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
+| 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `完成` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
 
 ### 2C.4 执行顺序
 
@@ -209,3 +220,12 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 2C.4c1 | 组装三个 Target 私有零参数观察 | `完成` | 固定 Bundle/Anchor 与 `dladdr` 绑定、有界安装签名身份、Active Mapped Header/Range/VM 绑定、精确 Disk/Mapped Digest、30 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有选择器输入 |
 | 2C.4c2 | 编码并发布三份固定 Role Report | `完成` | 精确规范报告绑定不可变 Session，按 Main/Framework/Share 顺序排他发布，拒绝重复/过期/冲突/超限/乱序状态，并通过 33 项 Simulator 测试、Release Build 与专项 CR，最终没有剩余可执行 P1/P2 |
 | 2C.4d | 完成 Session 并执行专项门禁 | `完成` | 精确授权绝对截止时间与顺序/完成迁移、明确不可重试的提交后不确定结果、保留并复核 Session/Report 文件身份与规范字节、负向 Simulator Fixture、39 项 Simulator 测试、Rust/Schema 门禁、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余可执行 P1/P2 |
+
+### 2C.5 执行顺序
+
+| 顺序 | 工作项 | 状态 | 退出门禁 |
+|---:|---|---|---|
+| 2C.5a | 构造签名 Enrollment Receipt 与物理选择 Fingerprint | `完成` | 精确的已验证 Authorization/Environment Facts、Device-only Key、Nonce、Build 与 Installation Binding 闭合冻结 Receipt Schema/Domain；固定名称、仅内存 Share 工件及签名/Fingerprint 测试通过 |
+| 2C.5b | 构造并保留签名四文档 Session Export | `完成` | 一份精确 Completed Snapshot 按固定顺序保留四份规范文档及 Digest，使用冻结 Export Domain 签名，拒绝 Key/Schema/Order 替换，并在重复调用时返回完全相同字节 |
+| 2C.5c | 要求明确确认且只清理匹配报告 | `完成` | Export 之前或传入 `false` 时不能 Cleanup；两次精确 Snapshot 复核拒绝内容改写，一次确认只清理一次固定报告子树并保留 Key/State/Counter |
+| 2C.5d | 执行专项实现门禁与 Codex CR | `完成` | 43 项 Simulator 测试、Debug/Release Build、Rust/Schema 门禁、Diff 检查、文档及专项 Codex CR 均通过且没有剩余可执行 P1/P2 |

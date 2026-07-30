@@ -15,6 +15,7 @@ struct LAB002AuthorizationMetadata {
     let notBefore: Int64
     let notAfter: Int64
     let expectedRunCounter: UInt64?
+    let enrollmentFacts: LAB002VerifiedEnrollmentFacts?
     let runFacts: LAB002VerifiedRunFacts?
 
     init(
@@ -23,6 +24,7 @@ struct LAB002AuthorizationMetadata {
         notBefore: Int64,
         notAfter: Int64,
         expectedRunCounter: UInt64?,
+        enrollmentFacts: LAB002VerifiedEnrollmentFacts? = nil,
         runFacts: LAB002VerifiedRunFacts? = nil
     ) {
         self.kind = kind
@@ -30,8 +32,18 @@ struct LAB002AuthorizationMetadata {
         self.notBefore = notBefore
         self.notAfter = notAfter
         self.expectedRunCounter = expectedRunCounter
+        self.enrollmentFacts = enrollmentFacts
         self.runFacts = runFacts
     }
+}
+
+struct LAB002VerifiedEnrollmentFacts {
+    let acknowledgementSHA256: String
+    let authorizationPolicyVersion: String
+    let enrollmentChallenge: String
+    let experimentID: String
+    let deviceSelectionNonce: String
+    let expectedEnvironment: LAB002SessionEnvironment
 }
 
 struct LAB002VerifiedRunFacts {
@@ -247,6 +259,10 @@ actor LAB002InboxCoordinator {
     private let runtimeContext: any LAB002RuntimeContextProviding
     private let random: any LAB002RandomBytesGenerating
     private let runRoleObserver: any LAB002RunRoleObserving
+    private let sessionEvidenceStore: any LAB002SessionEvidenceStoring
+    private var completedSessionThisCoordinator:
+        LAB002CompletedSessionSnapshot?
+    private var constructedSessionExport: LAB002ConstructedSessionExport?
 
     init(validator: LAB002AuthorizationValidating) throws {
         let fixedStorage = try LAB002FixedStorage.production()
@@ -258,6 +274,7 @@ actor LAB002InboxCoordinator {
         runtimeContext = try LAB002ProductionRuntimeContext()
         random = LAB002SystemRandomBytes()
         runRoleObserver = LAB002ProductionRunRoleObserver()
+        sessionEvidenceStore = LAB002ProductionSessionEvidenceStore()
     }
 
     #if DEBUG
@@ -268,7 +285,9 @@ actor LAB002InboxCoordinator {
         random: any LAB002RandomBytesGenerating,
         testRuntimeContext: any LAB002RuntimeContextProviding,
         testRunRoleObserver: any LAB002RunRoleObserving =
-            LAB002NoopRunRoleObserver()
+            LAB002NoopRunRoleObserver(),
+        testSessionEvidenceStore:
+            (any LAB002SessionEvidenceStoring)? = nil
     ) throws {
         let fixedStorage = try LAB002FixedStorage(
             testContainerURL: testContainerURL
@@ -283,6 +302,10 @@ actor LAB002InboxCoordinator {
         runtimeContext = testRuntimeContext
         self.random = random
         runRoleObserver = testRunRoleObserver
+        sessionEvidenceStore = testSessionEvidenceStore
+            ?? LAB002TestSessionEvidenceStore(
+                containerURL: testContainerURL
+            )
     }
     #endif
 
@@ -421,13 +444,15 @@ actor LAB002InboxCoordinator {
         throws -> LAB002SessionCompletionOutcome
     {
         let completedAt = try runtimeContext.currentUnixTime()
-        return try LAB002RoleReportSessionCompleter.complete(
-            fixedBundle: .main,
-            completedAt: completedAt
-        )
+        let outcome = try sessionEvidenceStore.complete(at: completedAt)
+        if outcome == .committed {
+            completedSessionThisCoordinator =
+                try sessionEvidenceStore.completedSnapshot()
+        }
+        return outcome
     }
 
-    func confirmInstallationEnrollment() throws -> LAB002EnrollmentContinuity {
+    func confirmInstallationEnrollment() throws -> LAB002EnrollmentCompletion {
         try storage.withCoordinatorLock {
             let hasQuarantinedAuthorization =
                 try storage.hasQuarantinedAuthorization()
@@ -442,13 +467,23 @@ actor LAB002InboxCoordinator {
             let now = try runtimeContext.currentUnixTime()
             let buildBindingSHA256 = runtimeContext.buildBindingSHA256
             guard metadata.kind == .installationEnrollment,
-                  metadata.expectedRunCounter == nil
+                  metadata.expectedRunCounter == nil,
+                  let enrollmentFacts = metadata.enrollmentFacts
             else {
                 throw LAB002CoordinatorError.wrongOperation
             }
             try validateWindow(metadata, now: now)
+            guard now >= metadata.notBefore,
+                  now <= metadata.notAfter
+            else {
+                throw LAB002CoordinatorError.stale
+            }
             guard metadata.buildBindingSHA256 == buildBindingSHA256 else {
                 throw LAB002CoordinatorError.wrongBuild
+            }
+            let environment = try runtimeContext.currentEnvironment()
+            guard environment == enrollmentFacts.expectedEnvironment else {
+                throw LAB002CoordinatorError.invalidRuntimeContext
             }
             let continuity: LAB002EnrollmentContinuity
             if pending.resumedAfterPersistence,
@@ -462,9 +497,79 @@ actor LAB002InboxCoordinator {
                     buildBindingSHA256: buildBindingSHA256
                 )
             }
+            let installationBinding = try runtimeContext
+                .deviceInstallationBinding(state: continuity.state)
+            let receipt = try LAB002EvidenceArtifactBuilder
+                .enrollmentReceipt(
+                    authorizationEnvelope: quarantined.bytes,
+                    facts: enrollmentFacts,
+                    continuity: continuity,
+                    deviceInstallationBindingSHA256:
+                        installationBinding,
+                    environment: environment,
+                    createdAt: now
+                )
             try storage.deleteAuthorization(quarantined)
-            return continuity
+            return LAB002EnrollmentCompletion(
+                state: continuity.state,
+                receipt: receipt.artifact,
+                deviceSelectionFingerprintSHA256:
+                    receipt.deviceSelectionFingerprintSHA256
+            )
         }
+    }
+
+    func exportLAB002Evidence() throws -> LAB002ShareArtifact {
+        if let constructedSessionExport {
+            return constructedSessionExport.artifact
+        }
+        let snapshot: LAB002CompletedSessionSnapshot
+        if let completedSessionThisCoordinator {
+            let current = try sessionEvidenceStore.completedSnapshot()
+            guard current == completedSessionThisCoordinator else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            snapshot = current
+        } else {
+            let completedAt = try runtimeContext.currentUnixTime()
+            let outcome = try sessionEvidenceStore.complete(at: completedAt)
+            guard outcome == .committed else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            snapshot = try sessionEvidenceStore.completedSnapshot()
+            completedSessionThisCoordinator = snapshot
+        }
+        let continuity = try enrollment.loadForRun(
+            buildBindingSHA256: snapshot.buildBindingSHA256
+        )
+        guard continuity.state.enrollmentPublicKey
+                == snapshot.enrollmentPublicKey
+        else {
+            throw LAB002EnrollmentError.keyMismatch
+        }
+        let constructed = try LAB002EvidenceArtifactBuilder.sessionExport(
+            snapshot: snapshot,
+            signingKey: continuity.signingKey
+        )
+        constructedSessionExport = constructed
+        return constructed.artifact
+    }
+
+    func confirmExportReceivedAndCleanReports(
+        confirmed: Bool
+    ) throws -> LAB002CleanupOutcome {
+        guard confirmed else {
+            throw LAB002EvidenceArtifactError.explicitConfirmationRequired
+        }
+        guard let constructedSessionExport else {
+            throw LAB002EvidenceArtifactError.exportNotConstructed
+        }
+        let outcome = try sessionEvidenceStore.cleanup(
+            expectedSnapshot: constructedSessionExport.snapshot
+        )
+        completedSessionThisCoordinator = nil
+        self.constructedSessionExport = nil
+        return outcome
     }
 
     func discardStaleAuthorization() throws -> LAB002DiscardReason {
