@@ -69,9 +69,16 @@ decryption support.
 ## Current gate
 
 `LAB-002` checkpoint 2 is complete on `main` through merged PR #59, while
-Issue #55 remains open for checkpoints 3–5. The next ordered checkpoint is
-checkpoint 3, and it remains `blocked` until separate explicit authorization
-names the exact new version/build. The
+Issue #55 remains open for checkpoints 3–5. On 2026-07-31 the operator
+explicitly accepted the immediately preceding bounded proposal for first-party
+DemoLab `1.0 (3)`: create the signed candidate and frozen pre-upload oracle,
+without TestFlight upload, installation, or device observation. Checkpoint 3
+is therefore `active` when activation
+[PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61) is on `main`.
+Its ordered work is
+tracked in the
+[checkpoint-3 progress ledger](docs/research/lab-002-checkpoint-3-progress.md).
+The
 [device-free design](docs/research/lab-002-oracle-design.md) fixes the
 first-party DemoLab self-observation boundary, three-role/all-slice inventory,
 role-specific authorized-target identity, fixed code range, independent
@@ -80,12 +87,14 @@ Go/No-Go rules. It also requires a fresh host-signed, policy-versioned
 authorized-use envelope before installation and each run, then uses a device-
 local enrollment key/receipt to bind both signed run exports to the same
 physical device, app installation, hardware model, and iOS version/build.
-Any later implementation may proceed only inside that reviewed design. The design does
-not establish a protected oracle or authorize a signed build, TestFlight
-upload, device observation, or device-backend work. Any exact new signed
-version/build still
-requires separate explicit authorization, and its reviewed design/build
-manifest must be frozen before observation. `DEVICE-001` remains blocked and
+Any later implementation may proceed only inside that reviewed design. The
+design alone does not establish a protected oracle or authorize a signed
+build, TestFlight upload, device observation, or device-backend work. The
+2026-07-31 authorization above satisfies the signed-candidate/oracle gate only
+for DemoLab `1.0 (3)`. Any different source, version/build, manifest, signing
+tuple, upload, installation, or observation requires separate explicit
+authorization. Its reviewed design/build manifest must be frozen before
+observation. `DEVICE-001` remains blocked and
 inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
@@ -100,7 +109,7 @@ containing PR is on `main`.
 |---:|---|---|---|
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
 | 2 | Device-free implementation and synthetic/Simulator verification | `done` | Merged [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; all required CI, review threads, and pre-merge Codex CR were clean |
-| 3 | Exact signed DemoLab build and pre-upload oracle | `blocked` | Requires checkpoint 2 plus separate explicit authorization naming the exact version/build |
+| 3 | Exact signed DemoLab build and pre-upload oracle | `active` | Activation [PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 2 is complete, and the 2026-07-31 authorization is limited to DemoLab `1.0 (3)`, its signed candidate, and frozen pre-upload oracle, with no upload, installation, or device observation |
 | 4 | Installation enrollment and two clean device observations | `blocked` | Requires checkpoint 3, fresh per-operation authorization, the selected owned iPhone, and the reviewed two-run procedure |
 | 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
 
@@ -238,7 +247,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `blocked` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2 is complete through PR #59; checkpoint 3 is blocked pending separate explicit authorization naming the exact signed version/build. The complete inventory is the app, DemoFramework, and DemoShareExtension executables plus every installed architecture/slice in the recorded build. Before device observation, freeze the exact DemoLab source commit/build identity, a non-empty exact mapped-code-range set for every inventory slice, and an independent expected-plaintext oracle artifact/hash for every range, all bound to that same commit/build. Independently bind every installed inventory item/slice to that build, prove its initial installed state is protected, and prove the same mapped ranges become plaintext matching the frozen oracle; no post-observation omission or reclassification is allowed, otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); final: — |
+| 13 | `LAB-002` | `active` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2 is complete through PR #59; checkpoint 3 is authorized only for the exact DemoLab `1.0 (3)` signed candidate and frozen pre-upload oracle, without upload, installation, or device observation. The complete inventory is the app, DemoFramework, and DemoShareExtension executables plus every installed architecture/slice in the recorded build. Before device observation, freeze the exact DemoLab source commit/build identity, a non-empty exact mapped-code-range set for every inventory slice, and an independent expected-plaintext oracle artifact/hash for every range, all bound to that same commit/build. Independently bind every installed inventory item/slice to that build, prove its initial installed state is protected, and prove the same mapped ranges become plaintext matching the frozen oracle; no post-observation omission or reclassification is allowed, otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Initial: [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57); checkpoint 3: [#61](https://github.com/jacklv-coder/OrchardProbe/pull/61) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); final: — |
 | 14 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
@@ -249,8 +258,8 @@ and required-check history, so merge SHAs are not duplicated in this table.
 
 ## What this plan does not claim
 
-`LAB-002` is blocked at checkpoint 3 pending exact-build authorization. Its
-device-free checkpoint 2 implementation is complete, but neither it nor later
+`LAB-002` checkpoint 3 is active only for DemoLab `1.0 (3)` candidate/oracle
+work. Its device-free checkpoint 2 implementation is complete, but neither it nor later
 blocked or planned rows establish a product capability. In particular, the repository does not yet provide a protected
 oracle, device backend, working decryption, device/build matching, Mach-O
 reconstruction, caller-visible IPA publication, the `oprobe decrypt` command,
