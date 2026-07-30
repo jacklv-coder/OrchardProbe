@@ -3,6 +3,10 @@ import SwiftUI
 
 @main
 struct DemoLabApp: App {
+    init() {
+        oprobe_main_anchor()
+    }
+
     var body: some Scene {
         WindowGroup {
             DemoLabView()

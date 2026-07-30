@@ -9,12 +9,14 @@ publish.workspace = true
 
 [dependencies]
 crc32fast.workspace = true
+ed25519-dalek.workspace = true
 plist.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
+unicode-normalization.workspace = true
 zip.workspace = true
 
 [target.'cfg(unix)'.dependencies]

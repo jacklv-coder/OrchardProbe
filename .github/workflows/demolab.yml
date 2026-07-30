@@ -35,60 +35,64 @@ jobs:
             --spec "$generated_dir/project.yml" \
             --project "$generated_dir"
 
-      - name: Build DemoLab for the iOS Simulator
+      - name: Build DemoLab Debug and Release for the iOS Simulator
         shell: bash
         run: |
           generated_dir="$RUNNER_TEMP/fixtures/DemoLab"
-          xcodebuild \
-            -project "$generated_dir/DemoLab.xcodeproj" \
-            -scheme DemoLab \
-            -configuration Debug \
-            -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$generated_dir/DerivedData" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            build
+          for configuration in Debug Release; do
+            xcodebuild \
+              -project "$generated_dir/DemoLab.xcodeproj" \
+              -scheme DemoLab \
+              -configuration "$configuration" \
+              -sdk iphonesimulator \
+              -destination 'generic/platform=iOS Simulator' \
+              -derivedDataPath "$generated_dir/DerivedData" \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              build
+          done
 
       - name: Verify fixture products
         shell: bash
         run: |
           set -euo pipefail
-          products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/Debug-iphonesimulator"
-          app="$products/DemoLab.app"
-          app_binary="$app/DemoLab"
-          built_framework="$products/DemoFramework.framework"
-          framework="$app/Frameworks/DemoFramework.framework"
-          extension="$app/PlugIns/DemoShareExtension.appex"
+          for configuration in Debug Release; do
+            products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/${configuration}-iphonesimulator"
+            app="$products/DemoLab.app"
+            app_binary="$app/DemoLab"
+            built_framework="$products/DemoFramework.framework"
+            framework="$app/Frameworks/DemoFramework.framework"
+            extension="$app/PlugIns/DemoShareExtension.appex"
 
-          test -x "$app_binary"
-          test -x "$framework/DemoFramework"
-          test -x "$extension/DemoShareExtension"
-          test -f "$app/Assets.car"
-          test -f "$app/AppIcon60x60@2x.png"
+            test -x "$app_binary"
+            test -x "$framework/DemoFramework"
+            test -x "$extension/DemoShareExtension"
+            test -f "$app/Assets.car"
+            test -f "$app/AppIcon60x60@2x.png"
 
-          otool -hv "$app_binary" >/dev/null
-          otool -hv "$framework/DemoFramework" >/dev/null
-          otool -hv "$extension/DemoShareExtension" >/dev/null
-          otool -L "$app_binary" | grep -Fq '@rpath/DemoFramework.framework/DemoFramework'
+            otool -hv "$app_binary" >/dev/null
+            otool -hv "$framework/DemoFramework" >/dev/null
+            otool -hv "$extension/DemoShareExtension" >/dev/null
+            otool -L "$app_binary" | grep -Fq '@rpath/DemoFramework.framework/DemoFramework'
 
-          test -f "$built_framework/Headers/DemoFramework.h"
-          test -f "$built_framework/Headers/DLDemoMessage.h"
-          test -f "$built_framework/Modules/module.modulemap"
+            test -f "$built_framework/Headers/DemoFramework.h"
+            test -f "$built_framework/Headers/DLDemoMessage.h"
+            test -f "$built_framework/Modules/module.modulemap"
 
-          test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = \
-            'com.example.orchardprobe.demolab'
-          test "$(plutil -extract CFBundleIdentifier raw "$framework/Info.plist")" = \
-            'com.example.orchardprobe.demolab.framework'
-          test "$(plutil -extract CFBundleIdentifier raw "$extension/Info.plist")" = \
-            'com.example.orchardprobe.demolab.share'
-          test "$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")" = '1.0'
-          test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = '1'
-          test "$(plutil -extract ITSAppUsesNonExemptEncryption raw "$app/Info.plist")" = 'false'
-          test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw "$extension/Info.plist")" = \
-            'com.apple.share-services'
-          test "$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$extension/Info.plist")" = \
-            'DemoShareExtension.ShareViewController'
+            test "$(plutil -extract CFBundleIdentifier raw "$app/Info.plist")" = \
+              'com.example.orchardprobe.demolab'
+            test "$(plutil -extract CFBundleIdentifier raw "$framework/Info.plist")" = \
+              'com.example.orchardprobe.demolab.framework'
+            test "$(plutil -extract CFBundleIdentifier raw "$extension/Info.plist")" = \
+              'com.example.orchardprobe.demolab.share'
+            test "$(plutil -extract CFBundleShortVersionString raw "$app/Info.plist")" = '1.0'
+            test "$(plutil -extract CFBundleVersion raw "$app/Info.plist")" = '1'
+            test "$(plutil -extract ITSAppUsesNonExemptEncryption raw "$app/Info.plist")" = 'false'
+            test "$(plutil -extract NSExtension.NSExtensionPointIdentifier raw "$extension/Info.plist")" = \
+              'com.apple.share-services'
+            test "$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$extension/Info.plist")" = \
+              'DemoShareExtension.ShareViewController'
+          done
 
       - name: Install pinned Rust toolchain
         shell: bash
@@ -100,26 +104,32 @@ jobs:
           set -euo pipefail
           cargo build --locked -p orchardprobe-cli
 
-          products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/Debug-iphonesimulator"
           inspector="target/debug/oprobe"
-          binaries=(
-            "$products/DemoLab.app/DemoLab"
-            "$products/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
-            "$products/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
-          )
+          for configuration in Debug Release; do
+            products="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products/${configuration}-iphonesimulator"
+            binaries=(
+              "$products/DemoLab.app/DemoLab"
+              "$products/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
+              "$products/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+            )
 
-          for binary in "${binaries[@]}"; do
-            report="$("$inspector" inspect "$binary" --json)"
-            jq --arg expected_input "$binary" -e '
-              .schema_version == 1 and
-              .command == "inspect" and
-              .input_path == $expected_input and
-              .evidence_level == "metadata" and
-              .plaintext_proven == false and
-              .notice == "Mach-O encryption metadata does not prove plaintext" and
-              (.report.slices | length > 0) and
-              all(.report.slices[];
-                .encryption_state == "not_declared" and
-                .plaintext_status == "not_proven")
-            ' <<<"$report" >/dev/null
+            for binary in "${binaries[@]}"; do
+              report="$("$inspector" inspect "$binary" --json)"
+              jq --arg expected_input "$binary" -e '
+                .schema_version == 1 and
+                .command == "inspect" and
+                .input_path == $expected_input and
+                .evidence_level == "metadata" and
+                .plaintext_proven == false and
+                .notice == "Mach-O encryption metadata does not prove plaintext" and
+                (.report.slices | length > 0) and
+                all(.report.slices[];
+                  .encryption_state == "not_declared" and
+                  .plaintext_status == "not_proven")
+              ' <<<"$report" >/dev/null
+            done
           done
+
+          ORCHARDPROBE_LAB002_PRODUCTS_ROOT="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products" \
+            cargo test --locked -p orchardprobe-core --test lab002_fixture \
+              -- --exact simulator_products_have_frozen_lab002_sections

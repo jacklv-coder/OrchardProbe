@@ -3,6 +3,7 @@ import UIKit
 final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
+        oprobe_share_anchor()
 
         view.backgroundColor = .systemBackground
 

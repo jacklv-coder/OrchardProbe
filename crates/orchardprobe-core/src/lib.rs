@@ -15,6 +15,7 @@ pub mod ipa_manifest;
 pub mod ipa_materialize;
 #[cfg(unix)]
 pub mod ipa_package;
+pub mod lab002;
 pub mod macho;
 pub mod wire;
 

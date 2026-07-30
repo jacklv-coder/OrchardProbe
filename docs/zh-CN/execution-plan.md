@@ -86,6 +86,11 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 | 4 | 安装 Enrollment 与两次干净真机观察 | `blocked` | 需要检查点 3、每次操作的全新授权、所选自有 iPhone 和已评审两轮流程 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 
+检查点 2 的细分进度记录在
+[LAB-002 实现进度台账](lab-002-implementation-progress.md)。其中的分支本地状态仅用于
+开发跟踪；只有完整的检查点 2 PR 通过 CR、CI 并合并后才成为权威状态。2A–2E
+任一子步骤都不会单独授权签名构建、TestFlight 上传或设备观察。
+
 激活 PR 与工作流准备 PR 均已合并，Issue #9 已记录无需账号的证据审计和首次签名候选
 构建。已合并的可参数化、由操作员显式控制的 DemoLab Archive/证据/上传流程使用
 带锁的随机构建暂存、排他发布和绑定证据的命名 `.ipa` Apple 上传；Gym 导出
