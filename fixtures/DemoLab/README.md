@@ -15,6 +15,9 @@ Fastlane lane overrides them from local environment variables for one
 first-party signed build; no Apple team or registered identifier is committed.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
+The branch-local LAB-002 app/extension capability, fixed-container, and state
+machine boundary is documented in the
+[device implementation contract](../../docs/research/lab-002-device-implementation.md).
 
 ## Safety boundary
 

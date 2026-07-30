@@ -113,8 +113,8 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 
 | 顺序 | 工作项 | 状态 | 退出门禁 |
 |---:|---|---|---|
-| 2C.1 | 冻结 Target 私有 API 与存储边界 | `进行中` | 记录固定相对名称、状态迁移、零参数公开入口、可注入的测试 Root/Clock/Random，以及 Host 禁止访问 App Group、调用者不得选择 Path/Target/Range 的边界 |
-| 2C.2 | 实现固定 Inbox 与持久状态协调器 | `planned` | 串行 Import/Start/Discard、No-follow 普通文件检查、Lock/Quarantine 身份检查、有界规范记录、Counter 检查提交、排他原子写和失败关闭残留处理可供 App/Extension 编译 |
+| 2C.1 | 冻结 Target 私有 API 与存储边界 | `完成` | 中英双语设备端实现契约已冻结固定相对名称、状态迁移、零参数 Observer 入口、仅测试依赖注入，以及 Host 禁止访问 App Group、调用者不得选择 Path/Target/Range 的边界 |
+| 2C.2 | 实现固定 Inbox 与持久状态协调器 | `进行中` | 串行 Import/Start/Discard、No-follow 普通文件检查、Lock/Quarantine 身份检查、有界规范记录、Counter 检查提交、排他原子写和失败关闭残留处理可供 App/Extension 编译 |
 | 2C.3 | 实现 Enrollment 状态与 Device-only Key 边界 | `planned` | 只有安装动作能创建合成/Keychain Key，精确绑定 Key/Nonce/Build；生产属性为 ThisDeviceOnly 且不可同步；丢失/重置/不匹配均拒绝，Run 路径不能创建或修复 Enrollment |
 | 2C.4 | 实现 Session 生命周期与三个零参数 Observer | `planned` | Main App、Framework、Share Extension 只观察各自编译固定的自身 Target/Range，按固定顺序只发布一次并绑定不可变 Session 事实；公开入口不接受 Path/Target/Range/PID/Address |
 | 2C.5 | 实现签名 Export、Receipt 与 Cleanup 边界 | `planned` | 固定四文档 Export 与 Enrollment Receipt 使用登记 Key 签名且只能走系统 Share Sheet；Cleanup 必须匹配已完成 Export，不能重置固定状态/Key；专项门禁与 Codex CR 没有剩余 P1/P2 |
