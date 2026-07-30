@@ -1,5 +1,6 @@
 import CryptoKit
 import Darwin
+import DemoFramework
 import Foundation
 import UIKit
 
@@ -64,6 +65,23 @@ protocol LAB002RuntimeContextProviding {
         state: LAB002InstallationState
     ) throws -> String
 }
+
+protocol LAB002RunRoleObserving {
+    func observeMainAndFramework() throws
+}
+
+private struct LAB002ProductionRunRoleObserver: LAB002RunRoleObserving {
+    func observeMainAndFramework() throws {
+        try observeCurrentMainExecutable()
+        try observeCurrentFrameworkImage()
+    }
+}
+
+#if DEBUG
+struct LAB002NoopRunRoleObserver: LAB002RunRoleObserving {
+    func observeMainAndFramework() throws {}
+}
+#endif
 
 enum LAB002CoordinatorError: Error {
     case wrongOperation
@@ -228,6 +246,7 @@ actor LAB002InboxCoordinator {
     private let enrollment: LAB002EnrollmentStateCoordinator
     private let runtimeContext: any LAB002RuntimeContextProviding
     private let random: any LAB002RandomBytesGenerating
+    private let runRoleObserver: any LAB002RunRoleObserving
 
     init(validator: LAB002AuthorizationValidating) throws {
         let fixedStorage = try LAB002FixedStorage.production()
@@ -238,6 +257,7 @@ actor LAB002InboxCoordinator {
         )
         runtimeContext = try LAB002ProductionRuntimeContext()
         random = LAB002SystemRandomBytes()
+        runRoleObserver = LAB002ProductionRunRoleObserver()
     }
 
     #if DEBUG
@@ -246,7 +266,9 @@ actor LAB002InboxCoordinator {
         validator: LAB002AuthorizationValidating,
         enrollmentKeyStore: any LAB002EnrollmentKeyStoring,
         random: any LAB002RandomBytesGenerating,
-        testRuntimeContext: any LAB002RuntimeContextProviding
+        testRuntimeContext: any LAB002RuntimeContextProviding,
+        testRunRoleObserver: any LAB002RunRoleObserving =
+            LAB002NoopRunRoleObserver()
     ) throws {
         let fixedStorage = try LAB002FixedStorage(
             testContainerURL: testContainerURL
@@ -260,6 +282,7 @@ actor LAB002InboxCoordinator {
         )
         runtimeContext = testRuntimeContext
         self.random = random
+        runRoleObserver = testRunRoleObserver
     }
     #endif
 
@@ -275,7 +298,7 @@ actor LAB002InboxCoordinator {
     }
 
     func startCleanRun() throws -> LAB002ConsumedRunAuthorization {
-        try storage.withCoordinatorLock {
+        let consumed = try storage.withCoordinatorLock {
             let pending = try storage.quarantineRunAuthorization()
             let quarantined = pending.quarantined
             let metadata = try validator.validate(quarantined.bytes)
@@ -342,6 +365,7 @@ actor LAB002InboxCoordinator {
                 authorizationEnvelopeSHA256: Data(
                     SHA256.hash(data: quarantined.bytes)
                 ).hexLowercase,
+                authorizationNotAfter: metadata.notAfter,
                 deviceEnrollmentBindingSHA256:
                     runFacts.deviceEnrollmentBindingSHA256,
                 enrollmentPublicKey: runFacts.enrollmentPublicKey,
@@ -389,6 +413,18 @@ actor LAB002InboxCoordinator {
                 metadata: metadata
             )
         }
+        try runRoleObserver.observeMainAndFramework()
+        return consumed
+    }
+
+    func completeRunAfterShareExtension()
+        throws -> LAB002SessionCompletionOutcome
+    {
+        let completedAt = try runtimeContext.currentUnixTime()
+        return try LAB002RoleReportSessionCompleter.complete(
+            fixedBundle: .main,
+            completedAt: completedAt
+        )
     }
 
     func confirmInstallationEnrollment() throws -> LAB002EnrollmentContinuity {

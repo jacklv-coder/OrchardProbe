@@ -186,6 +186,20 @@ installation, device observation, or device-backend work.
   signature or plaintext success. Thirty-three Simulator tests and a Release
   Simulator build pass. Focused CR found and closed one file-metadata
   durability gap; the final diff has no remaining actionable P1/P2.
+- 2C.4d now wires Start to the fixed main/framework runner after durable
+  authorization consumption, wires the Share Extension to its own fixed
+  observer, and atomically completes only an exact three-report session.
+  Completion revalidates the inode chain, canonical session/report bindings,
+  fixed role order, nondecreasing phases, the persisted signed absolute
+  authorization deadline, and the retained session/report identities and exact
+  canonical byte strings through the `session.json` replacement. The rename is
+  the explicit commit point, and
+  post-commit durability/check failures return a non-retryable uncertain
+  outcome. Missing, duplicate, completed, temporary, late, replaced,
+  conflicting, or same-inode/same-size mutated pre-commit state remains
+  unchanged. Thirty-nine
+  Simulator tests, Debug/Release Simulator builds, Rust/schema gates, and
+  focused CR pass with no remaining actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -248,8 +262,8 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.1 | Freeze target-private API and storage boundaries | `done` | The bilingual device implementation contract freezes fixed relative names, state transitions, zero-argument observer entries, test-only dependency injection, and the prohibition on host/App-Group access or caller-selected path/target/range inputs |
 | 2C.2 | Implement fixed inbox and durable state coordinator | `done` | Main-app-only Import/Start/Discard, fixed App Group production lookup, no-follow bounded reads, lock/quarantine identity checks, exact counter commits, atomic writes, protection/backup policy, 6 Simulator tests, Debug/Release builds, and focused Codex CR pass with no remaining P1/P2 |
 | 2C.3 | Implement enrollment state and device-only key boundary | `done` | Installation-only synthetic/Keychain key creation, exact key/nonce/build binding, ThisDeviceOnly/non-synchronizable production attributes, authenticated same-envelope interruption recovery, and loss/reset/mismatch rejection; run paths cannot create or repair enrollment; 11 Simulator tests, Debug/Release builds, and focused Codex CR pass |
-| 2C.4 | Implement session lifecycle and three zero-argument observers | `in progress` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters |
-| 2C.5 | Implement signed export, receipt, and cleanup boundaries | `planned` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |
+| 2C.4 | Implement session lifecycle and three zero-argument observers | `done` | Main App, Framework, and Share Extension observe only their compiled self target/range, publish once in fixed order, bind immutable session facts, and fail closed without public path/target/range/PID/address parameters; 39 Simulator tests, Debug/Release builds, and focused CR pass |
+| 2C.5 | Implement signed export, receipt, and cleanup boundaries | `in progress` | Fixed four-document export and enrollment receipt are signed and share-sheet-only; cleanup requires a verified completed export and cannot reset fixed state/key; focused gates and Codex CR have no remaining P1/P2 |
 
 ### 2C.4 execution order
 
@@ -259,4 +273,4 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.4b | Implement the target-private Mach-O observer core | `done` | Stable no-follow descriptor reads, bounded thin/FAT parsing, exact fixed-section/encryption/fixup evidence, mapped-header/anchor binding, 28 Simulator tests, Release build, and focused CR pass without a production caller-selected input |
 | 2C.4c1 | Assemble the three target-private zero-argument observations | `done` | Fixed bundle/anchor and `dladdr` binding, bounded installed signature identity, active mapped-header/range/VM binding, exact disk/mapped digests, 30 Simulator tests, Release build, and focused CR pass without production selector input |
 | 2C.4c2 | Encode and publish the three fixed role reports | `done` | Exact canonical reports bind the immutable session, publish exclusively in main/framework/share order, reject duplicate/stale/conflicting/oversized/out-of-order state, and pass 33 Simulator tests, Release build, and focused CR with no remaining actionable P1/P2 |
-| 2C.4d | Close the session and run focused gates | `in progress` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |
+| 2C.4d | Close the session and run focused gates | `done` | Exact absolute authorization deadline and ordering/completion transitions, explicit non-retryable post-rename uncertainty, retained session/report identity and canonical-byte revalidation, negative Simulator fixtures, 39 Simulator tests, Rust/schema gates, Debug/Release builds, docs, and focused Codex CR pass with no remaining actionable P1/P2 |

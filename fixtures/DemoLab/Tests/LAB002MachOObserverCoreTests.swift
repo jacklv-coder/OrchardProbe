@@ -329,6 +329,353 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
                 .duplicateRoleReport
             )
         }
+        XCTAssertEqual(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_500
+            ),
+            .committed
+        )
+        let completedSession = try XCTUnwrap(storage.readSession())
+        XCTAssertEqual(completedSession.state, .complete)
+        XCTAssertEqual(completedSession.completedAt, 1_500)
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_501
+            )
+        )
+    }
+
+    func testSessionCompletionRequiresAllRolesAndBoundedTime() throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_500
+            )
+        )
+        XCTAssertEqual(try storage.readSession()?.state, .collecting)
+
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+        for invalidTime in [1_399, 2_021] {
+            XCTAssertThrowsError(
+                try LAB002RoleReportTestHarness.completeSession(
+                    testContainerURL: container,
+                    completedAt: Int64(invalidTime)
+                )
+            )
+            XCTAssertEqual(try storage.readSession()?.state, .collecting)
+        }
+    }
+
+    func testSessionCompletionRejectsReplacedRoleReport() throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let current = container
+            .appendingPathComponent(LAB002FixedName.root)
+            .appendingPathComponent(LAB002FixedName.reports)
+            .appendingPathComponent(LAB002FixedName.currentReports)
+        let report = current.appendingPathComponent(
+            LAB002FixedName.frameworkReport
+        )
+        let displaced = current.appendingPathComponent(
+            "framework.displaced"
+        )
+        let bytes = try Data(contentsOf: report)
+
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_500,
+                beforeReplacement: {
+                    try FileManager.default.moveItem(
+                        at: report,
+                        to: displaced
+                    )
+                    guard FileManager.default.createFile(
+                        atPath: report.path,
+                        contents: bytes,
+                        attributes: [.posixPermissions: 0o600]
+                    ) else {
+                        throw LAB002ObserverReason.staleOrConflictingSession
+                    }
+                    try FileManager.default.removeItem(at: displaced)
+                }
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .staleOrConflictingSession
+            )
+        }
+        XCTAssertEqual(try storage.readSession()?.state, .collecting)
+    }
+
+    func testSessionCompletionRejectsInPlaceSameSizeRoleReportMutation()
+        throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let report = storage.reportsURL
+            .appendingPathComponent(
+                LAB002FixedName.currentReports,
+                isDirectory: true
+            )
+            .appendingPathComponent(LAB002FixedName.frameworkReport)
+        let originalIdentity = try FileManager.default.attributesOfItem(
+            atPath: report.path
+        )[.systemFileNumber] as? NSNumber
+
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_500,
+                beforeReplacement: {
+                    var bytes = try Data(contentsOf: report)
+                    let marker = Data("\"mapped_sha256\":\"".utf8)
+                    let range = try XCTUnwrap(bytes.range(of: marker))
+                    let digestStart = range.upperBound
+                    bytes[digestStart] =
+                        bytes[digestStart] == UInt8(ascii: "a")
+                            ? UInt8(ascii: "b")
+                            : UInt8(ascii: "a")
+                    let handle = try FileHandle(forWritingTo: report)
+                    defer { try? handle.close() }
+                    try handle.seek(toOffset: 0)
+                    try handle.write(contentsOf: bytes)
+                    try handle.synchronize()
+                }
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .staleOrConflictingSession
+            )
+        }
+        let currentIdentity = try FileManager.default.attributesOfItem(
+            atPath: report.path
+        )[.systemFileNumber] as? NSNumber
+        XCTAssertEqual(currentIdentity, originalIdentity)
+        XCTAssertEqual(try storage.readSession()?.state, .collecting)
+    }
+
+    func testSessionCompletionRejectsInPlaceSameSizeSessionMutation()
+        throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let session = storage.reportsURL
+            .appendingPathComponent(
+                LAB002FixedName.currentReports,
+                isDirectory: true
+            )
+            .appendingPathComponent(LAB002FixedName.session)
+        let originalIdentity = try FileManager.default.attributesOfItem(
+            atPath: session.path
+        )[.systemFileNumber] as? NSNumber
+
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.completeSession(
+                testContainerURL: container,
+                completedAt: 1_500,
+                beforeReplacement: {
+                    var bytes = try Data(contentsOf: session)
+                    let marker = Data("\"challenge_sha256\":\"".utf8)
+                    let range = try XCTUnwrap(bytes.range(of: marker))
+                    let digestStart = range.upperBound
+                    bytes[digestStart] =
+                        bytes[digestStart] == UInt8(ascii: "a")
+                            ? UInt8(ascii: "b")
+                            : UInt8(ascii: "a")
+                    let handle = try FileHandle(forWritingTo: session)
+                    defer { try? handle.close() }
+                    try handle.seek(toOffset: 0)
+                    try handle.write(contentsOf: bytes)
+                    try handle.synchronize()
+                }
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .staleOrConflictingSession
+            )
+        }
+        let currentIdentity = try FileManager.default.attributesOfItem(
+            atPath: session.path
+        )[.systemFileNumber] as? NSNumber
+        XCTAssertEqual(currentIdentity, originalIdentity)
+        XCTAssertEqual(try storage.readSession()?.state, .collecting)
+    }
+
+    func testSessionCompletionReportsUncertainAfterCommitPoint() throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let frameworkReport = storage.reportsURL
+            .appendingPathComponent(
+                LAB002FixedName.currentReports,
+                isDirectory: true
+            )
+            .appendingPathComponent(LAB002FixedName.frameworkReport)
+        let outcome = try LAB002RoleReportTestHarness.completeSession(
+            testContainerURL: container,
+            completedAt: 1_500,
+            afterReplacement: {
+                try FileManager.default.removeItem(at: frameworkReport)
+            }
+        )
+
+        XCTAssertEqual(outcome, .committedDurabilityUncertain)
+        let completedSession = try XCTUnwrap(storage.readSession())
+        XCTAssertEqual(completedSession.state, .complete)
+        XCTAssertEqual(completedSession.completedAt, 1_500)
+    }
+
+    func testSessionCompletionReportsUncertainForPostCommitSessionMutation()
+        throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let session = storage.reportsURL
+            .appendingPathComponent(
+                LAB002FixedName.currentReports,
+                isDirectory: true
+            )
+            .appendingPathComponent(LAB002FixedName.session)
+        let outcome = try LAB002RoleReportTestHarness.completeSession(
+            testContainerURL: container,
+            completedAt: 1_500,
+            afterReplacement: {
+                var bytes = try Data(contentsOf: session)
+                let marker = Data("\"challenge_sha256\":\"".utf8)
+                let range = try XCTUnwrap(bytes.range(of: marker))
+                let digestStart = range.upperBound
+                bytes[digestStart] =
+                    bytes[digestStart] == UInt8(ascii: "a")
+                        ? UInt8(ascii: "b")
+                        : UInt8(ascii: "a")
+                let handle = try FileHandle(forWritingTo: session)
+                defer { try? handle.close() }
+                try handle.seek(toOffset: 0)
+                try handle.write(contentsOf: bytes)
+                try handle.synchronize()
+            }
+        )
+
+        XCTAssertEqual(outcome, .committedDurabilityUncertain)
+        let completedSession = try XCTUnwrap(storage.readSession())
+        XCTAssertEqual(completedSession.state, .complete)
+        XCTAssertEqual(completedSession.completedAt, 1_500)
     }
 
     func testRoleReportPublisherRejectsOutOfOrderAndUnexpectedState()
@@ -471,6 +818,7 @@ private func makeRoleSessionReport() throws -> LAB002SessionReport {
         challengeSHA256: String(repeating: "c", count: 64),
         acknowledgementSHA256: String(repeating: "d", count: 64),
         authorizationEnvelopeSHA256: String(repeating: "e", count: 64),
+        authorizationNotAfter: 1_900,
         deviceEnrollmentBindingSHA256:
             String(repeating: "f", count: 64),
         enrollmentPublicKey: String(repeating: "1", count: 64),

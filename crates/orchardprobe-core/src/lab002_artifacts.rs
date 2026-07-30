@@ -1413,6 +1413,7 @@ pub struct SessionReport {
     pub authorization_policy_version: String,
     pub acknowledgement_sha256: String,
     pub authorization_envelope_sha256: String,
+    pub authorization_not_after: i64,
     pub device_enrollment_binding_sha256: String,
     pub enrollment_public_key: String,
     pub device_installation_binding_sha256: String,
@@ -1445,8 +1446,24 @@ impl ClosedArtifact for SessionReport {
         validate_version_fields(&self.marketing_version, &self.build_number)?;
         validate_run_counter(self.run_ordinal, &self.run_counter)?;
         validate_unix_time("created_at", self.created_at)?;
+        validate_unix_time("authorization_not_after", self.authorization_not_after)?;
+        let authorization_latest =
+            self.authorization_not_after
+                .checked_add(120)
+                .ok_or(Lab002Error::InvalidEvidence(
+                    "session authorization skew window overflows",
+                ))?;
         if let Some(completed_at) = self.completed_at {
             validate_unix_time("completed_at", completed_at)?;
+        }
+        if self.created_at > authorization_latest
+            || self
+                .completed_at
+                .is_some_and(|completed_at| completed_at > authorization_latest)
+        {
+            return Err(Lab002Error::InvalidEvidence(
+                "session lies outside its authorization window",
+            ));
         }
         for (field, value) in [
             ("build_binding_sha256", &self.build_binding_sha256),
@@ -1547,6 +1564,7 @@ pub struct RoleReport {
     pub authorization_policy_version: String,
     pub acknowledgement_sha256: String,
     pub authorization_envelope_sha256: String,
+    pub authorization_not_after: i64,
     pub device_enrollment_binding_sha256: String,
     pub enrollment_public_key: String,
     pub device_installation_binding_sha256: String,
@@ -1588,6 +1606,13 @@ impl ClosedArtifact for RoleReport {
         validate_version_fields(&self.marketing_version, &self.build_number)?;
         validate_observer(&self.observer_revision)?;
         validate_run_counter(self.run_ordinal, &self.run_counter)?;
+        validate_unix_time("authorization_not_after", self.authorization_not_after)?;
+        let authorization_latest =
+            self.authorization_not_after
+                .checked_add(120)
+                .ok_or(Lab002Error::InvalidEvidence(
+                    "role authorization skew window overflows",
+                ))?;
         for phase in &self.phases {
             validate_unix_time("phase.completed_at", phase.completed_at)?;
         }
@@ -1601,6 +1626,7 @@ impl ClosedArtifact for RoleReport {
             || self.phases[0].phase != PhaseKind::DiskInspection
             || self.phases[1].phase != PhaseKind::MappedHash
             || self.phases[1].completed_at < self.phases[0].completed_at
+            || self.phases[1].completed_at > authorization_latest
             || self.reasons.len() > 8
             || matches!(self.outcome, Outcome::Pass) != self.reasons.is_empty()
         {

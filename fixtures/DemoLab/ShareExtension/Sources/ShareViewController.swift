@@ -4,6 +4,9 @@ final class ShareViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         oprobe_share_anchor()
+        let observationResult: Result<Void, Error> = Result {
+            try observeCurrentShareExecutable()
+        }
 
         view.backgroundColor = .systemBackground
 
@@ -16,7 +19,14 @@ final class ShareViewController: UIViewController {
         let detailLabel = UILabel()
         detailLabel.translatesAutoresizingMaskIntoConstraints = false
         detailLabel.font = .preferredFont(forTextStyle: .body)
-        detailLabel.text = "This fixture only confirms that an app extension is embedded."
+        switch observationResult {
+        case .success:
+            detailLabel.text =
+                "The fixed LAB-002 share-extension report was published."
+        case .failure:
+            detailLabel.text =
+                "No valid collecting LAB-002 session was available."
+        }
         detailLabel.textAlignment = .center
         detailLabel.textColor = .secondaryLabel
         detailLabel.numberOfLines = 0

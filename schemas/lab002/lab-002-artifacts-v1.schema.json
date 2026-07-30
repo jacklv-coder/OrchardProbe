@@ -1208,6 +1208,7 @@
         "authorization_policy_version",
         "acknowledgement_sha256",
         "authorization_envelope_sha256",
+        "authorization_not_after",
         "device_enrollment_binding_sha256",
         "enrollment_public_key",
         "device_installation_binding_sha256",
@@ -1254,6 +1255,9 @@
         },
         "authorization_envelope_sha256": {
           "$ref": "#/$defs/sha256"
+        },
+        "authorization_not_after": {
+          "$ref": "#/$defs/unixTime"
         },
         "device_enrollment_binding_sha256": {
           "$ref": "#/$defs/sha256"
@@ -1581,6 +1585,7 @@
         "authorization_policy_version",
         "acknowledgement_sha256",
         "authorization_envelope_sha256",
+        "authorization_not_after",
         "device_enrollment_binding_sha256",
         "enrollment_public_key",
         "device_installation_binding_sha256",
@@ -1638,6 +1643,9 @@
         },
         "authorization_envelope_sha256": {
           "$ref": "#/$defs/sha256"
+        },
+        "authorization_not_after": {
+          "$ref": "#/$defs/unixTime"
         },
         "device_enrollment_binding_sha256": {
           "$ref": "#/$defs/sha256"

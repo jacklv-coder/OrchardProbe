@@ -102,14 +102,35 @@ Slice，不能把一个 Active Mapped Digest 冒充为未加载 FAT Slice 的证
 Coordinator Lock 后，它会重新验证全部目录和 Lock Inode，拒绝任何未知项或临时项，
 重新规范解析 Session 与所有前序报告，并要求 Phase Time 不倒退。发布前允许的文件
 集合只能依次是：仅 Session；Session 加 Main；Session 加 Main 与 Framework。
-每份不超过 32 KiB 的 Role Report 先写入固定 Owner-only 临时名称，Flush、设置完整
-保护并排除备份，然后无覆盖 Rename，最后 Flush 目录。重复、过期、冲突、超限、
-乱序、被替换或格式错误的状态全部失败关闭。
+每份不超过 32 KiB 的 Role Report 先写入固定 Owner-only 临时名称，执行数据
+Flush、设置完整保护并排除备份、再执行元数据后 Flush，然后无覆盖 Rename，最后
+Flush 目录。重复、过期、冲突、超限、乱序、被替换或格式错误的状态全部失败关闭。
 
 设备端永远不会收到冻结的 Plaintext Oracle。当前有界签名 Parser 会刻意输出
 `not_checked`，因此本地发布报告明确为 `inconclusive` 并携带
 `signature_invalid_or_unchecked`；它不是明文成功或签名成功声明。精确 Oracle
 比较仍由 Export 后的 Host 完成。
+
+### 闭合 Run 接线与完成迁移
+
+检查点 2C.4d 在不增加 Selector 的前提下接通生命周期。Start 持久提交 Counter 和
+不可变 Collecting Session 并释放 Coordinator Lock 后，一个固定生产 Runner 依次
+调用 Main App Observer 与 Framework Observer。任何失败都会把已消费 Run 保留为
+不完整证据，Start 不能静默重试。Share Extension 的固定 View 加载时只调用自己的
+零参数 Observer；发布失败时仅显示没有有效 Collecting Session。
+
+Main App 为后续 2C.5 UI 提供一个内部零参数完成动作。它重新打开编译期 App Group，
+取得同一个 Coordinator Lock，重验 Descriptor 链，并要求目录精确包含 Collecting
+Session 与三份规范 Role Report。它按 Main/Framework/Share 顺序重新解析并绑定全部
+报告，要求 Phase Time 不倒退且不晚于 Session 持久保存的签名
+`authorization_not_after + 120` 绝对截止时间，保留每份已验证报告的文件身份与
+规范字节串，并在替换前复核 Collecting Session 与全部三份报告的文件身份和精确
+规范字节，替换后以同样方式复核 Completed Session 与全部三份报告。然后通过
+Owner-only 临时文件、数据与元数据
+Flush、No-follow 原子替换和目录 Flush，只把 `session.json` 改写为规范 `complete`
+记录。Rename 是明确提交点：此前失败会抛错且不声称完成；此后的目录 Flush 或身份
+复核失败返回 `committedDurabilityUncertain`，不能伪装成可重试错误。缺失、重复、
+已完成、临时、超时、被替换或冲突的提交前状态都保持不变并失败关闭。
 
 ## 固定生产 Container
 

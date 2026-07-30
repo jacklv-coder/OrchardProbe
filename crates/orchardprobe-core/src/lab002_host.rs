@@ -626,6 +626,7 @@ pub fn verify_run_chain(
         || session.authorization_policy_version != core.authorization_policy_version
         || session.acknowledgement_sha256 != acknowledgement_sha256
         || session.authorization_envelope_sha256 != envelope_sha256
+        || session.authorization_not_after != core.not_after
         || session.device_enrollment_binding_sha256 != enrollment.device_enrollment_binding_sha256
         || session.enrollment_public_key != enrollment.enrollment_public_key
         || session.device_installation_binding_sha256
@@ -660,6 +661,7 @@ pub fn verify_run_chain(
             || report.authorization_policy_version != session.authorization_policy_version
             || report.acknowledgement_sha256 != session.acknowledgement_sha256
             || report.authorization_envelope_sha256 != session.authorization_envelope_sha256
+            || report.authorization_not_after != session.authorization_not_after
             || report.device_enrollment_binding_sha256 != session.device_enrollment_binding_sha256
             || report.enrollment_public_key != session.enrollment_public_key
             || report.device_installation_binding_sha256
@@ -1201,6 +1203,7 @@ mod tests {
             authorization_policy_version: super::super::AUTHORIZATION_POLICY_VERSION.into(),
             acknowledgement_sha256: acknowledgement_sha256.into(),
             authorization_envelope_sha256: challenge_sha256.into(),
+            authorization_not_after: spec.not_before + 900,
             device_enrollment_binding_sha256: enrollment.device_enrollment_binding_sha256.clone(),
             enrollment_public_key: enrollment.enrollment_public_key.clone(),
             device_installation_binding_sha256: enrollment
@@ -1235,6 +1238,7 @@ mod tests {
             authorization_policy_version: session.authorization_policy_version.clone(),
             acknowledgement_sha256: session.acknowledgement_sha256.clone(),
             authorization_envelope_sha256: session.authorization_envelope_sha256.clone(),
+            authorization_not_after: session.authorization_not_after,
             device_enrollment_binding_sha256: session.device_enrollment_binding_sha256.clone(),
             enrollment_public_key: session.enrollment_public_key.clone(),
             device_installation_binding_sha256: session.device_installation_binding_sha256.clone(),
@@ -1902,6 +1906,39 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_rejects_session_authorization_deadline_substitution() {
+        let enrollment = enrollment_fixture();
+        let chain = owned_run_chain(&enrollment);
+        let signed = SignedSessionExport::from_canonical_bytes(&chain.export).unwrap();
+        let mut export = UnsignedSessionExport::from_canonical_bytes(
+            signed.unsigned_export_canonical.as_bytes(),
+        )
+        .unwrap();
+        let mut session =
+            SessionReport::from_canonical_bytes(export.entries[0].canonical_document.as_bytes())
+                .unwrap();
+        session.authorization_not_after -= 1;
+        let session_bytes = session.to_canonical_bytes().unwrap();
+        export.entries[0].sha256 = sha256_hex(&session_bytes);
+        export.entries[0].canonical_document = String::from_utf8(session_bytes).unwrap();
+        let substituted_export = sign_session_export(&SigningKey::from_bytes(&[0x82; 32]), &export)
+            .unwrap()
+            .to_canonical_bytes()
+            .unwrap();
+
+        assert!(
+            verify_run_chain(
+                &enrollment,
+                RunArtifactBytes {
+                    signed_session_export: &substituted_export,
+                    ..chain.files()
+                }
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
     fn run_chain_rejects_a_window_before_enrollment_completed() {
         let mut enrollment = enrollment_fixture();
         let chain = owned_run_chain(&enrollment);
@@ -2015,13 +2052,11 @@ mod tests {
         assert_eq!(decoded_core, core);
 
         let other_key = SigningKey::from_bytes(&[0x32; 32]);
-        assert!(
-            verify_authorized_operation::<
-                AuthorizationAcknowledgement,
-                InstallationEnrollmentCore,
-            >(&envelope, &public_key_hex(&other_key))
-            .is_err()
-        );
+        assert!(verify_authorized_operation::<
+            AuthorizationAcknowledgement,
+            InstallationEnrollmentCore,
+        >(&envelope, &public_key_hex(&other_key))
+        .is_err());
 
         let mut substituted = envelope;
         substituted.operation_core_canonical = installation_core()
@@ -2032,13 +2067,11 @@ mod tests {
         substituted.operation_core_canonical = substituted
             .operation_core_canonical
             .replace(&digest(0x06), &digest(0x16));
-        assert!(
-            verify_authorized_operation::<
-                AuthorizationAcknowledgement,
-                InstallationEnrollmentCore,
-            >(&substituted, &public_key)
-            .is_err()
-        );
+        assert!(verify_authorized_operation::<
+            AuthorizationAcknowledgement,
+            InstallationEnrollmentCore,
+        >(&substituted, &public_key)
+        .is_err());
     }
 
     #[test]
@@ -2133,13 +2166,11 @@ mod tests {
         };
         let envelope =
             sign_authorized_operation(&signing_key, &acknowledgement, &run_core).unwrap();
-        assert!(
-            verify_authorized_operation::<
-                AuthorizationAcknowledgement,
-                InstallationEnrollmentCore,
-            >(&envelope, &public_key_hex(&signing_key))
-            .is_err()
-        );
+        assert!(verify_authorized_operation::<
+            AuthorizationAcknowledgement,
+            InstallationEnrollmentCore,
+        >(&envelope, &public_key_hex(&signing_key))
+        .is_err());
     }
 
     #[test]

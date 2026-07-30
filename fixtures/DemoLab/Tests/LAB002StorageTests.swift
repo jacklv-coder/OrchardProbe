@@ -152,6 +152,14 @@ private final class TestRuntimeContext: LAB002RuntimeContextProviding {
     }
 }
 
+private final class TestRunRoleObserver: LAB002RunRoleObserving {
+    private(set) var callCount = 0
+
+    func observeMainAndFramework() throws {
+        callCount += 1
+    }
+}
+
 final class LAB002StorageTests: XCTestCase {
     private var temporaryRoot: URL!
 
@@ -203,12 +211,14 @@ final class LAB002StorageTests: XCTestCase {
     func testStartCommitsCounterAndConsumesAuthorization() async throws {
         let build = String(repeating: "a", count: 64)
         let validator = TestAuthorizationValidator(expectedCounter: 1, build: build)
+        let runRoleObserver = TestRunRoleObserver()
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
             validator: validator,
             enrollmentKeyStore: TestEnrollmentKeyStore(),
             random: TestRandomBytes(byte: 0x51),
-            testRuntimeContext: TestRuntimeContext(build: build)
+            testRuntimeContext: TestRuntimeContext(build: build),
+            testRunRoleObserver: runRoleObserver
         )
         try await enroll(
             coordinator: coordinator,
@@ -221,6 +231,7 @@ final class LAB002StorageTests: XCTestCase {
 
         let consumed = try await coordinator.startCleanRun()
         XCTAssertEqual(consumed.canonicalBytes, Data("valid".utf8))
+        XCTAssertEqual(runRoleObserver.callCount, 1)
 
         let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
         XCTAssertEqual(try storage.readCounter()?.counter, 1)
@@ -872,7 +883,7 @@ final class LAB002StorageTests: XCTestCase {
         XCTAssertEqual(
             String(decoding: canonical, as: UTF8.self),
             """
-            {"acknowledgement_sha256":"\(String(repeating: "b", count: 64))","authorization_envelope_sha256":"\(String(repeating: "c", count: 64))","authorization_policy_version":"orchardprobe.authorized-use.v1","build_binding_sha256":"\(String(repeating: "a", count: 64))","build_number":"1","challenge_sha256":"\(String(repeating: "d", count: 64))","collection_id":"\(String(repeating: "e", count: 64))","completed_at":null,"created_at":1500,"device_enrollment_binding_sha256":"\(String(repeating: "f", count: 64))","device_installation_binding_sha256":"\(String(repeating: "1", count: 64))","enrollment_public_key":"\(String(repeating: "2", count: 64))","environment":{"hardware_model":"iPhone17,1","ios_build":"22A3354","ios_product_version":"18.0"},"marketing_version":"1.0","observer_revision":"lab002-observer-v1","profile":"orchardprobe.demolab.lab002.observation.v1","run_counter":"0000000000000001","run_ordinal":1,"schema":"orchardprobe.lab002.session-report.v1","session_id":"\(String(repeating: "3", count: 64))","source_commit":"\(String(repeating: "4", count: 40))","state":"collecting"}
+            {"acknowledgement_sha256":"\(String(repeating: "b", count: 64))","authorization_envelope_sha256":"\(String(repeating: "c", count: 64))","authorization_not_after":1900,"authorization_policy_version":"orchardprobe.authorized-use.v1","build_binding_sha256":"\(String(repeating: "a", count: 64))","build_number":"1","challenge_sha256":"\(String(repeating: "d", count: 64))","collection_id":"\(String(repeating: "e", count: 64))","completed_at":null,"created_at":1500,"device_enrollment_binding_sha256":"\(String(repeating: "f", count: 64))","device_installation_binding_sha256":"\(String(repeating: "1", count: 64))","enrollment_public_key":"\(String(repeating: "2", count: 64))","environment":{"hardware_model":"iPhone17,1","ios_build":"22A3354","ios_product_version":"18.0"},"marketing_version":"1.0","observer_revision":"lab002-observer-v1","profile":"orchardprobe.demolab.lab002.observation.v1","run_counter":"0000000000000001","run_ordinal":1,"schema":"orchardprobe.lab002.session-report.v1","session_id":"\(String(repeating: "3", count: 64))","source_commit":"\(String(repeating: "4", count: 40))","state":"collecting"}
             """
         )
         XCTAssertEqual(
@@ -1018,6 +1029,7 @@ final class LAB002StorageTests: XCTestCase {
             challengeSHA256: String(repeating: "d", count: 64),
             acknowledgementSHA256: String(repeating: "b", count: 64),
             authorizationEnvelopeSHA256: String(repeating: "c", count: 64),
+            authorizationNotAfter: 1_900,
             deviceEnrollmentBindingSHA256: String(repeating: "f", count: 64),
             enrollmentPublicKey: String(repeating: "2", count: 64),
             deviceInstallationBindingSHA256: String(repeating: "1", count: 64),

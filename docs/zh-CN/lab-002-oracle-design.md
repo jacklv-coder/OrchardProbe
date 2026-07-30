@@ -221,6 +221,9 @@ Host Challenge，创建绑定 Collection ID、Run Ordinal 和 Challenge Hash 的
 256-bit Session，写主程序报告，调用 Framework 的零参数自观测，然后提示维护者
 显式打开 Share Extension。Challenge 缺失、格式错误、过期、已消费或 Build
 Binding 不符时不得创建 Session，也不能影响已有报告。
+Session 还持久绑定签名 Challenge 中精确的 `authorization_not_after`；完成动作
+只接受不晚于该绝对时间加 120 秒固定时钟偏差的设备时间，不能按 Session 创建时间
+另算一个相对窗口。
 
 单调 Counter 不保存在会被清理的报告目录，而来自 App Group 内固定的
 `state/run-counter-v1.json`。该封闭记录最大 1 KiB，只含 Schema、同一 Build

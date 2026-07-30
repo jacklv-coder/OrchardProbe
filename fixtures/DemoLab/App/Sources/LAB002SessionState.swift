@@ -96,6 +96,7 @@ struct LAB002SessionReport: Equatable {
     let challengeSHA256: String
     let acknowledgementSHA256: String
     let authorizationEnvelopeSHA256: String
+    let authorizationNotAfter: Int64
     let deviceEnrollmentBindingSHA256: String
     let enrollmentPublicKey: String
     let deviceInstallationBindingSHA256: String
@@ -117,6 +118,7 @@ struct LAB002SessionReport: Equatable {
         challengeSHA256: String,
         acknowledgementSHA256: String,
         authorizationEnvelopeSHA256: String,
+        authorizationNotAfter: Int64,
         deviceEnrollmentBindingSHA256: String,
         enrollmentPublicKey: String,
         deviceInstallationBindingSHA256: String,
@@ -130,6 +132,7 @@ struct LAB002SessionReport: Equatable {
         buildNumber: String,
         state: LAB002SessionStatus
     ) throws {
+        let latest = authorizationNotAfter.addingReportingOverflow(120)
         let digests = [
             buildBindingSHA256,
             collectionID,
@@ -147,6 +150,9 @@ struct LAB002SessionReport: Equatable {
               LAB002SessionEnvironment.isVersion(marketingVersion),
               LAB002SessionEnvironment.isVersion(buildNumber),
               Self.isSafeTime(createdAt),
+              Self.isSafeTime(authorizationNotAfter),
+              !latest.overflow,
+              createdAt <= latest.partialValue,
               runOrdinal == 1 || runOrdinal == 2,
               runCounter == String(
                   format: "%016llx",
@@ -155,7 +161,9 @@ struct LAB002SessionReport: Equatable {
               (state == .collecting && completedAt == nil)
                 || (state != .collecting
                     && completedAt.map {
-                        Self.isSafeTime($0) && $0 >= createdAt
+                        Self.isSafeTime($0)
+                            && $0 >= createdAt
+                            && $0 <= latest.partialValue
                     } == true)
         else {
             throw LAB002SessionError.invalidRecord
@@ -167,6 +175,7 @@ struct LAB002SessionReport: Equatable {
         self.challengeSHA256 = challengeSHA256
         self.acknowledgementSHA256 = acknowledgementSHA256
         self.authorizationEnvelopeSHA256 = authorizationEnvelopeSHA256
+        self.authorizationNotAfter = authorizationNotAfter
         self.deviceEnrollmentBindingSHA256 = deviceEnrollmentBindingSHA256
         self.enrollmentPublicKey = enrollmentPublicKey
         self.deviceInstallationBindingSHA256 = deviceInstallationBindingSHA256
@@ -186,7 +195,7 @@ struct LAB002SessionReport: Equatable {
               let object = try JSONSerialization.jsonObject(
                   with: canonicalBytes
               ) as? [String: Any],
-              object.count == 22,
+              object.count == 23,
               object["schema"] as? String == Self.schema,
               object["profile"] as? String == Self.profile,
               object["authorization_policy_version"] as? String == Self.policy,
@@ -198,6 +207,9 @@ struct LAB002SessionReport: Equatable {
               let challenge = object["challenge_sha256"] as? String,
               let acknowledgement = object["acknowledgement_sha256"] as? String,
               let envelope = object["authorization_envelope_sha256"] as? String,
+              let authorizationNotAfter = Self.integer(
+                  object["authorization_not_after"]
+              ),
               let enrollmentBinding =
                 object["device_enrollment_binding_sha256"] as? String,
               let publicKey = object["enrollment_public_key"] as? String,
@@ -236,6 +248,7 @@ struct LAB002SessionReport: Equatable {
             challengeSHA256: challenge,
             acknowledgementSHA256: acknowledgement,
             authorizationEnvelopeSHA256: envelope,
+            authorizationNotAfter: authorizationNotAfter,
             deviceEnrollmentBindingSHA256: enrollmentBinding,
             enrollmentPublicKey: publicKey,
             deviceInstallationBindingSHA256: installationBinding,
@@ -262,6 +275,7 @@ struct LAB002SessionReport: Equatable {
         let object: [String: Any] = [
             "acknowledgement_sha256": acknowledgementSHA256,
             "authorization_envelope_sha256": authorizationEnvelopeSHA256,
+            "authorization_not_after": authorizationNotAfter,
             "authorization_policy_version": Self.policy,
             "build_binding_sha256": buildBindingSHA256,
             "build_number": buildNumber,

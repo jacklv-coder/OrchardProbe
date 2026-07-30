@@ -122,15 +122,47 @@ temporary entry, reparses the session and every preceding report canonically,
 and requires nondecreasing phase times. The allowed pre-publication sets are
 exactly session; session plus main; and session plus main plus framework.
 Each 32 KiB role report is written to its fixed owner-only temporary name,
-flushed, protected, excluded from backup, and renamed without replacement
-before the directory is flushed. Duplicate, stale, conflicting, oversized,
-out-of-order, replaced, or malformed state fails closed.
+flushed, protected, excluded from backup, flushed again after metadata changes,
+and renamed without replacement before the directory is flushed. Duplicate,
+stale, conflicting, oversized, out-of-order, replaced, or malformed state
+fails closed.
 
 The device never receives the frozen plaintext oracle. The current bounded
 signature parser deliberately emits `not_checked`, so these locally published
 reports are `inconclusive` with
 `signature_invalid_or_unchecked`; they are not plaintext or successful
 signature claims. Exact oracle comparison remains Host work after export.
+
+### Closed run wiring and completion
+
+Checkpoint 2C.4d connects the lifecycle without adding a selector. After Start
+has durably committed the counter and immutable collecting session, and after
+the coordinator lock is released, one fixed production runner invokes the
+main-app observer followed by the framework observer. A failure leaves the
+already-consumed run as incomplete evidence; Start cannot silently retry it.
+The Share Extension invokes only its own zero-argument observer when its fixed
+view loads and reports that no valid collecting session exists when publication
+fails.
+
+The main app has one internal zero-argument completion operation for the later
+2C.5 UI. It reopens the compiled App Group, takes the same coordinator lock,
+revalidates the descriptor chain, and requires the directory to contain exactly
+the collecting session plus the three canonical role reports. It reparses and
+binds every report in main/framework/share order, requires nondecreasing phase
+times no later than the session's persisted signed
+`authorization_not_after + 120` absolute deadline, retains each validated
+report identity and canonical byte string, and revalidates the collecting
+session plus all three reports by identity and exact canonical bytes
+immediately before replacement. It revalidates the completed session and all
+three reports the same way after replacement. It then replaces only
+`session.json` with a
+canonical `complete` record using an owner-only temporary file, data and
+metadata flushes, no-follow atomic replacement, and a directory flush. The
+rename is the explicit commit point: all failures before it throw without
+claiming completion; a directory-flush or identity-check failure after it
+returns `committedDurabilityUncertain` instead of a retryable error. Missing,
+repeated, completed, temporary, late, replaced, or conflicting pre-commit state
+is unchanged and fails closed.
 
 ## Fixed production container
 

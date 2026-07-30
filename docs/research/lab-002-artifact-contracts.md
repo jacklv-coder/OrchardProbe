@@ -65,6 +65,11 @@ acknowledgement and operation core rather than parsed copies.
   requires counter `0000000000000002` and a non-null prior binding. That
   ordinal/counter relationship is closed in the challenge, intent, unsigned
   export, session report, role report, and collection binding.
+- The session and role reports persist the exact signed
+  `authorization_not_after`. Device observation/completion and the Host
+  verifier reject phase or completion times later than that absolute value
+  plus the fixed 120-second clock skew; no relative deadline is derived from
+  session creation time.
 
 JSON Schema establishes shape, closed vocabulary, ordering, and scalar bounds.
 Checkpoint 2B.2 must still enforce cross-artifact equality, exact 900-second

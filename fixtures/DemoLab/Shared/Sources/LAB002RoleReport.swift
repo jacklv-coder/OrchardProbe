@@ -20,6 +20,7 @@ private struct LAB002RoleSession: Equatable {
     let challengeSHA256: String
     let acknowledgementSHA256: String
     let authorizationEnvelopeSHA256: String
+    let authorizationNotAfter: Int64
     let deviceEnrollmentBindingSHA256: String
     let enrollmentPublicKey: String
     let deviceInstallationBindingSHA256: String
@@ -37,7 +38,7 @@ private struct LAB002RoleSession: Equatable {
               let object = try JSONSerialization.jsonObject(
                   with: canonicalBytes
               ) as? [String: Any],
-              object.count == 22,
+              object.count == 23,
               object["schema"] as? String == Self.schema,
               object["profile"] as? String == Self.profile,
               object["authorization_policy_version"] as? String == Self.policy,
@@ -57,6 +58,9 @@ private struct LAB002RoleSession: Equatable {
                 object["acknowledgement_sha256"] as? String,
               let authorizationEnvelopeSHA256 =
                 object["authorization_envelope_sha256"] as? String,
+              let authorizationNotAfter = LAB002RoleJSON.integer(
+                  object["authorization_not_after"]
+              ),
               let deviceEnrollmentBindingSHA256 =
                 object["device_enrollment_binding_sha256"] as? String,
               let enrollmentPublicKey =
@@ -98,6 +102,10 @@ private struct LAB002RoleSession: Equatable {
               LAB002RoleJSON.version(marketingVersion),
               LAB002RoleJSON.version(buildNumber),
               LAB002RoleJSON.safeTime(createdAt),
+              LAB002RoleJSON.safeTime(authorizationNotAfter),
+              authorizationNotAfter.addingReportingOverflow(120).overflow
+                == false,
+              createdAt <= authorizationNotAfter + 120,
               runOrdinal == 1 || runOrdinal == 2,
               runCounter == String(
                   format: "%016llx",
@@ -114,6 +122,7 @@ private struct LAB002RoleSession: Equatable {
         self.challengeSHA256 = challengeSHA256
         self.acknowledgementSHA256 = acknowledgementSHA256
         self.authorizationEnvelopeSHA256 = authorizationEnvelopeSHA256
+        self.authorizationNotAfter = authorizationNotAfter
         self.deviceEnrollmentBindingSHA256 =
             deviceEnrollmentBindingSHA256
         self.enrollmentPublicKey = enrollmentPublicKey
@@ -127,6 +136,45 @@ private struct LAB002RoleSession: Equatable {
         self.marketingVersion = marketingVersion
         self.buildNumber = buildNumber
         self.canonicalBytes = canonicalBytes
+    }
+
+    func completedCanonicalBytes(at completedAt: Int64) throws -> Data {
+        guard LAB002RoleJSON.safeTime(completedAt),
+              completedAt >= createdAt,
+              authorizationNotAfter.addingReportingOverflow(120).overflow
+                == false,
+              completedAt <= authorizationNotAfter + 120
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return try LAB002RoleJSON.canonical([
+            "acknowledgement_sha256": acknowledgementSHA256,
+            "authorization_envelope_sha256":
+                authorizationEnvelopeSHA256,
+            "authorization_policy_version": Self.policy,
+            "authorization_not_after": authorizationNotAfter,
+            "build_binding_sha256": buildBindingSHA256,
+            "build_number": buildNumber,
+            "challenge_sha256": challengeSHA256,
+            "collection_id": collectionID,
+            "completed_at": completedAt,
+            "created_at": createdAt,
+            "device_enrollment_binding_sha256":
+                deviceEnrollmentBindingSHA256,
+            "device_installation_binding_sha256":
+                deviceInstallationBindingSHA256,
+            "enrollment_public_key": enrollmentPublicKey,
+            "environment": environment,
+            "marketing_version": marketingVersion,
+            "observer_revision": observerRevision,
+            "profile": Self.profile,
+            "run_counter": runCounter,
+            "run_ordinal": Int64(runOrdinal),
+            "schema": Self.schema,
+            "session_id": sessionID,
+            "source_commit": sourceCommit,
+            "state": "complete",
+        ])
     }
 }
 
@@ -149,10 +197,11 @@ struct LAB002RoleReport: Equatable {
               observation.diskInspectionCompletedAt >= session.createdAt,
               observation.mappedHashCompletedAt
                 >= observation.diskInspectionCompletedAt,
-              session.createdAt.addingReportingOverflow(1_140).overflow
+              session.authorizationNotAfter
+                .addingReportingOverflow(120).overflow
                 == false,
               observation.mappedHashCompletedAt
-                <= session.createdAt + 1_140
+                <= session.authorizationNotAfter + 120
         else {
             throw LAB002ObserverReason.unexpectedInstalledSlice
         }
@@ -239,6 +288,7 @@ struct LAB002RoleReport: Equatable {
             "active_slice_ordinal": Int64(active.ordinal),
             "authorization_envelope_sha256":
                 session.authorizationEnvelopeSHA256,
+            "authorization_not_after": session.authorizationNotAfter,
             "authorization_policy_version": LAB002RoleSession.policy,
             "build_binding_sha256": session.buildBindingSHA256,
             "build_number": session.buildNumber,
@@ -294,7 +344,7 @@ struct LAB002RoleReport: Equatable {
               let object = try JSONSerialization.jsonObject(
                   with: canonicalBytes
               ) as? [String: Any],
-              object.count == 33,
+              object.count == 34,
               object["schema"] as? String == Self.schema,
               object["profile"] as? String == LAB002RoleSession.profile,
               object["authorization_policy_version"] as? String
@@ -310,6 +360,12 @@ struct LAB002RoleReport: Equatable {
                 object["acknowledgement_sha256"] as? String,
               let envelope =
                 object["authorization_envelope_sha256"] as? String,
+              let authorizationNotAfter = LAB002RoleJSON.integer(
+                  object["authorization_not_after"]
+              ),
+              LAB002RoleJSON.safeTime(authorizationNotAfter),
+              authorizationNotAfter.addingReportingOverflow(120).overflow
+                == false,
               let enrollmentBinding =
                 object["device_enrollment_binding_sha256"] as? String,
               let enrollmentPublicKey =
@@ -379,6 +435,7 @@ struct LAB002RoleReport: Equatable {
               LAB002RoleJSON.validSignature(signature),
               let phases = object["phases"] as? [[String: Any]],
               let phaseTimes = LAB002RoleJSON.phaseTimes(phases),
+              phaseTimes.mapped <= authorizationNotAfter + 120,
               let sliceObjects = object["slices"] as? [[String: Any]],
               let slices = LAB002RoleJSON.validSlices(
                   sliceObjects,
@@ -428,6 +485,8 @@ struct LAB002RoleReport: Equatable {
                 == session.acknowledgementSHA256
             && object["authorization_envelope_sha256"] as? String
                 == session.authorizationEnvelopeSHA256
+            && LAB002RoleJSON.integer(object["authorization_not_after"])
+                == session.authorizationNotAfter
             && object["device_enrollment_binding_sha256"] as? String
                 == session.deviceEnrollmentBindingSHA256
             && object["enrollment_public_key"] as? String
@@ -768,6 +827,17 @@ private struct LAB002RoleFileIdentity: Equatable {
     }
 }
 
+private struct LAB002RoleReportIdentity {
+    let name: String
+    let identity: LAB002RoleFileIdentity
+    let canonicalBytes: Data
+}
+
+enum LAB002SessionCompletionOutcome: Equatable {
+    case committed
+    case committedDurabilityUncertain
+}
+
 private final class LAB002RoleReportStore {
     private static let renameExclusive = UInt32(0x0000_0004)
     private static let renameNoFollowAny = UInt32(0x0000_0010)
@@ -826,6 +896,18 @@ private final class LAB002RoleReportStore {
         }
     }
 
+    func completeSession(
+        fixedBundle: Bundle,
+        completedAt: Int64
+    ) throws -> LAB002SessionCompletionOutcome {
+        try withLock {
+            try completeSessionLocked(
+                fixedBundle: fixedBundle,
+                completedAt: completedAt
+            )
+        }
+    }
+
 #if DEBUG
     func publishForTesting(
         observation: LAB002LocalRoleObservation,
@@ -836,6 +918,44 @@ private final class LAB002RoleReportStore {
                 observation: observation,
                 fixedBundle: nil,
                 fixedRole: fixedRole
+            )
+        }
+    }
+
+    func completeSessionForTesting(
+        completedAt: Int64
+    ) throws -> LAB002SessionCompletionOutcome {
+        try withLock {
+            try completeSessionLocked(
+                fixedBundle: nil,
+                completedAt: completedAt,
+                beforeReplacement: nil
+            )
+        }
+    }
+
+    func completeSessionForTesting(
+        completedAt: Int64,
+        beforeReplacement: @escaping () throws -> Void
+    ) throws -> LAB002SessionCompletionOutcome {
+        try withLock {
+            try completeSessionLocked(
+                fixedBundle: nil,
+                completedAt: completedAt,
+                beforeReplacement: beforeReplacement
+            )
+        }
+    }
+
+    func completeSessionForTesting(
+        completedAt: Int64,
+        afterReplacement: @escaping () throws -> Void
+    ) throws -> LAB002SessionCompletionOutcome {
+        try withLock {
+            try completeSessionLocked(
+                fixedBundle: nil,
+                completedAt: completedAt,
+                afterReplacement: afterReplacement
             )
         }
     }
@@ -926,6 +1046,90 @@ private final class LAB002RoleReportStore {
         try writeExclusive(report)
     }
 
+    private func completeSessionLocked(
+        fixedBundle: Bundle?,
+        completedAt: Int64,
+        beforeReplacement: (() throws -> Void)? = nil,
+        afterReplacement: (() throws -> Void)? = nil
+    ) throws -> LAB002SessionCompletionOutcome {
+        try validateOpenChain()
+        let expectedNames = Set([
+            LAB002FixedName.session,
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+        ])
+        guard try listEntries() == expectedNames else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let sessionRead = try readBoundedWithIdentity(
+            name: LAB002FixedName.session,
+            maximum: LAB002Limit.sessionReport
+        )
+        let session = try LAB002RoleSession(
+            canonicalBytes: sessionRead.bytes
+        )
+        if let fixedBundle {
+            try validateBundle(fixedBundle, matches: session)
+        }
+        var lastMapped = session.createdAt
+        var reportIdentities = [LAB002RoleReportIdentity]()
+        for role in [LAB002Role.mainApp, .framework, .shareExtension] {
+            let reportRead = try readReportWithIdentity(
+                name: role.reportName
+            )
+            let report = reportRead.report
+            guard report.role == role,
+                  try report.matches(session),
+                  report.diskInspectionCompletedAt >= lastMapped,
+                  report.mappedHashCompletedAt <= completedAt
+            else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            lastMapped = report.mappedHashCompletedAt
+            reportIdentities.append(
+                LAB002RoleReportIdentity(
+                    name: role.reportName,
+                    identity: reportRead.identity,
+                    canonicalBytes: report.canonicalBytes
+                )
+            )
+        }
+        guard completedAt >= lastMapped else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        try beforeReplacement?()
+        return try replaceSession(
+            bytes: session.completedCanonicalBytes(at: completedAt),
+            expectedIdentity: sessionRead.identity,
+            expectedCanonicalBytes: sessionRead.bytes,
+            expectedReports: reportIdentities,
+            afterReplacement: afterReplacement
+        )
+    }
+
+    private func validateOpenChain() throws {
+        guard try Self.entryIdentity(
+            parent: container,
+            name: LAB002FixedName.root
+        ) == Self.identity(root),
+        try Self.entryIdentity(
+            parent: root,
+            name: LAB002FixedName.reports
+        ) == Self.identity(reports),
+        try Self.entryIdentity(
+            parent: reports,
+            name: LAB002FixedName.currentReports
+        ) == Self.identity(current),
+        try Self.entryIdentity(
+            parent: root,
+            name: LAB002FixedName.lock
+        ) == Self.identity(lock)
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+    }
+
     private func validateBundle(
         _ bundle: Bundle,
         matches session: LAB002RoleSession
@@ -960,15 +1164,36 @@ private final class LAB002RoleReportStore {
     }
 
     private func readReport(name: String) throws -> LAB002RoleReport {
-        try LAB002RoleReport(
-            canonicalBytes: readBounded(
-                name: name,
-                maximum: LAB002Limit.roleReport
-            )
+        try readReportWithIdentity(name: name).report
+    }
+
+    private func readReportWithIdentity(
+        name: String
+    ) throws -> (
+        report: LAB002RoleReport,
+        identity: LAB002RoleFileIdentity
+    ) {
+        let read = try readBoundedWithIdentity(
+            name: name,
+            maximum: LAB002Limit.roleReport
+        )
+        return (
+            try LAB002RoleReport(canonicalBytes: read.bytes),
+            read.identity
         )
     }
 
     private func readBounded(name: String, maximum: Int) throws -> Data {
+        try readBoundedWithIdentity(
+            name: name,
+            maximum: maximum
+        ).bytes
+    }
+
+    private func readBoundedWithIdentity(
+        name: String,
+        maximum: Int
+    ) throws -> (bytes: Data, identity: LAB002RoleFileIdentity) {
         let descriptor = try Self.openRegular(parent: current, name: name)
         let before = try Self.identity(descriptor)
         guard before.isRegularOwnerOnly,
@@ -1005,7 +1230,7 @@ private final class LAB002RoleReportStore {
         else {
             throw LAB002ObserverReason.reportLimitExceeded
         }
-        return Data(bytes.prefix(count))
+        return (Data(bytes.prefix(count)), before)
     }
 
     private func listEntries() throws -> Set<String> {
@@ -1019,6 +1244,7 @@ private final class LAB002RoleReportStore {
         defer {
             closedir(stream)
         }
+        rewinddir(stream)
         var names = Set<String>()
         while let entry = readdir(stream) {
             let name = withUnsafePointer(to: &entry.pointee.d_name) {
@@ -1134,6 +1360,172 @@ private final class LAB002RoleReportStore {
         else {
             throw LAB002ObserverReason.staleOrConflictingSession
         }
+    }
+
+    private func replaceSession(
+        bytes: Data,
+        expectedIdentity: LAB002RoleFileIdentity,
+        expectedCanonicalBytes: Data,
+        expectedReports: [LAB002RoleReportIdentity],
+        afterReplacement: (() throws -> Void)?
+    ) throws -> LAB002SessionCompletionOutcome {
+        guard bytes.count <= LAB002Limit.sessionReport,
+              try sessionMatches(
+                  identity: expectedIdentity,
+                  canonicalBytes: expectedCanonicalBytes
+              ),
+              try reportsMatch(expectedReports),
+              try Self.entryIdentity(
+                  parent: current,
+                  name: LAB002FixedName.sessionTemporary
+              ) == nil,
+              try listEntries() == Set([
+                  LAB002FixedName.session,
+                  LAB002FixedName.mainAppReport,
+                  LAB002FixedName.frameworkReport,
+                  LAB002FixedName.shareExtensionReport,
+              ])
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let raw = LAB002FixedName.sessionTemporary.withCString {
+            openat(
+                current.rawValue,
+                $0,
+                O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+                0o600
+            )
+        }
+        guard raw >= 0 else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let descriptor = LAB002RoleDescriptor(raw)
+        try bytes.withUnsafeBytes { buffer in
+            var offset = 0
+            while offset < buffer.count {
+                let result = Darwin.write(
+                    descriptor.rawValue,
+                    buffer.baseAddress!.advanced(by: offset),
+                    buffer.count - offset
+                )
+                if result < 0, errno == EINTR {
+                    continue
+                }
+                guard result > 0 else {
+                    throw LAB002ObserverReason.staleOrConflictingSession
+                }
+                offset += result
+            }
+        }
+        guard fsync(descriptor.rawValue) == 0 else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let temporaryURL = currentURL.appendingPathComponent(
+            LAB002FixedName.sessionTemporary
+        )
+        do {
+            try FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: temporaryURL.path
+            )
+            var protectedURL = temporaryURL
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try protectedURL.setResourceValues(values)
+        } catch {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        guard fsync(descriptor.rawValue) == 0 else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let temporaryIdentity = try Self.identity(descriptor)
+        guard temporaryIdentity.isRegularOwnerOnly,
+              try Self.entryIdentity(
+                  parent: current,
+                  name: LAB002FixedName.sessionTemporary
+              ) == temporaryIdentity,
+              try sessionMatches(
+                  identity: expectedIdentity,
+                  canonicalBytes: expectedCanonicalBytes
+              ),
+              try reportsMatch(expectedReports)
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let result = LAB002FixedName.sessionTemporary.withCString { source in
+            LAB002FixedName.session.withCString { destination in
+                renameatx_np(
+                    current.rawValue,
+                    source,
+                    current.rawValue,
+                    destination,
+                    Self.renameNoFollowAny
+                )
+            }
+        }
+        guard result == 0 else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        do {
+            try afterReplacement?()
+        } catch {
+            return .committedDurabilityUncertain
+        }
+        guard fsync(current.rawValue) == 0 else {
+            return .committedDurabilityUncertain
+        }
+        do {
+            guard try sessionMatches(
+                identity: temporaryIdentity,
+                canonicalBytes: bytes
+            ),
+            try reportsMatch(expectedReports)
+            else {
+                return .committedDurabilityUncertain
+            }
+        } catch {
+            return .committedDurabilityUncertain
+        }
+        return .committed
+    }
+
+    private func sessionMatches(
+        identity: LAB002RoleFileIdentity,
+        canonicalBytes: Data
+    ) throws -> Bool {
+        let currentSession = try readBoundedWithIdentity(
+            name: LAB002FixedName.session,
+            maximum: LAB002Limit.sessionReport
+        )
+        return currentSession.identity == identity
+            && currentSession.bytes == canonicalBytes
+    }
+
+    private func reportsMatch(
+        _ expectedReports: [LAB002RoleReportIdentity]
+    ) throws -> Bool {
+        let expectedNames = Set([
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+        ])
+        guard expectedReports.count == expectedNames.count,
+              Set(expectedReports.map(\.name)) == expectedNames
+        else {
+            return false
+        }
+        for report in expectedReports {
+            let currentReport = try readBoundedWithIdentity(
+                name: report.name,
+                maximum: LAB002Limit.roleReport
+            )
+            guard currentReport.identity == report.identity,
+                  currentReport.bytes == report.canonicalBytes
+            else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func openDirectory(
@@ -1264,6 +1656,31 @@ enum LAB002RoleReportPublisher {
     }
 }
 
+enum LAB002RoleReportSessionCompleter {
+    static func complete(
+        fixedBundle: Bundle,
+        completedAt: Int64
+    ) throws -> LAB002SessionCompletionOutcome {
+        guard let identifier = fixedBundle.object(
+            forInfoDictionaryKey: "LAB002AppGroupIdentifier"
+        ) as? String,
+        identifier.hasPrefix("group."),
+        identifier.utf8.count <= 255,
+        let containerURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: identifier
+        )
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return try LAB002RoleReportStore(
+            containerURL: containerURL
+        ).completeSession(
+            fixedBundle: fixedBundle,
+            completedAt: completedAt
+        )
+    }
+}
+
 #if DEBUG
 enum LAB002RoleReportTestHarness {
     static func publish(
@@ -1276,6 +1693,41 @@ enum LAB002RoleReportTestHarness {
         ).publishForTesting(
             observation: observation,
             fixedRole: fixedRole
+        )
+    }
+
+    static func completeSession(
+        testContainerURL: URL,
+        completedAt: Int64
+    ) throws -> LAB002SessionCompletionOutcome {
+        try LAB002RoleReportStore(
+            containerURL: testContainerURL
+        ).completeSessionForTesting(completedAt: completedAt)
+    }
+
+    static func completeSession(
+        testContainerURL: URL,
+        completedAt: Int64,
+        beforeReplacement: @escaping () throws -> Void
+    ) throws -> LAB002SessionCompletionOutcome {
+        try LAB002RoleReportStore(
+            containerURL: testContainerURL
+        ).completeSessionForTesting(
+            completedAt: completedAt,
+            beforeReplacement: beforeReplacement
+        )
+    }
+
+    static func completeSession(
+        testContainerURL: URL,
+        completedAt: Int64,
+        afterReplacement: @escaping () throws -> Void
+    ) throws -> LAB002SessionCompletionOutcome {
+        try LAB002RoleReportStore(
+            containerURL: testContainerURL
+        ).completeSessionForTesting(
+            completedAt: completedAt,
+            afterReplacement: afterReplacement
         )
     }
 }

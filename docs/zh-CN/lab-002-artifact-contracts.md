@@ -59,6 +59,10 @@ Bundle 是自包含的 Draft 2020-12 JSON Schema。每个允许的顶层工件�
   使用 `0000000000000002` 且 Prior Binding 非空。Challenge、Intent、未签名
   Export、Session Report、Role Report 与 Collection Binding 都闭合该
   Ordinal/Counter 关系。
+- Session Report 与 Role Report 都持久保存签名授权中的精确
+  `authorization_not_after`。设备观察/完成动作与 Host Verifier 都拒绝晚于该绝对
+  时间加固定 120 秒时钟偏差的 Phase 或完成时间，不能从 Session 创建时间推导
+  相对截止时间。
 
 JSON Schema 只负责形状、闭合词汇、顺序和标量边界。检查点 2B.2 仍必须验证跨工件
 字段一致性、精确 900 秒窗口、规范字节相等、Digest 重算、Ed25519 域与签名、新鲜度、
