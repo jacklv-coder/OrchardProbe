@@ -499,7 +499,8 @@ collection-challenge SHA-256, authorization policy version and acknowledgement
 SHA-256, authorization-envelope SHA-256, device-enrollment-binding SHA-256 and
 public key, `device_installation_binding_sha256`, sanitized hardware model and
 iOS version/build, a random 256-bit lowercase-hex session ID, monotonically
-increasing run counter, whole-second creation time, source commit,
+increasing run counter, the exact signed `authorization_not_after`,
+whole-second creation time, source commit,
 version/build, and state `collecting`, `complete`, or `failed`.
 
 The counter is allocated from a separate fixed

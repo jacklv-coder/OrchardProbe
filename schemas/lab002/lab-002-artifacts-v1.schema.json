@@ -1,0 +1,2613 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/jacklv-coder/OrchardProbe/main/schemas/lab002/lab-002-artifacts-v1.schema.json",
+  "title": "OrchardProbe LAB-002 closed artifact contracts",
+  "description": "Closed, bounded contracts for the repository-owned DemoLab LAB-002 host/device artifact chain. These schemas do not authorize caller-selected targets, paths, ranges, processes, addresses, or device access.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/authorizedTargetManifest"
+    },
+    {
+      "$ref": "#/$defs/authorizedUseAcknowledgement"
+    },
+    {
+      "$ref": "#/$defs/installationEnrollmentCore"
+    },
+    {
+      "$ref": "#/$defs/collectionChallengeCore"
+    },
+    {
+      "$ref": "#/$defs/authorizedOperationEnvelope"
+    },
+    {
+      "$ref": "#/$defs/signedEnrollmentReceipt"
+    },
+    {
+      "$ref": "#/$defs/deviceSelectionConfirmation"
+    },
+    {
+      "$ref": "#/$defs/deviceEnrollmentBinding"
+    },
+    {
+      "$ref": "#/$defs/runCounterState"
+    },
+    {
+      "$ref": "#/$defs/installationNonceState"
+    },
+    {
+      "$ref": "#/$defs/labOracle"
+    },
+    {
+      "$ref": "#/$defs/collectionIntent"
+    },
+    {
+      "$ref": "#/$defs/signedSessionExport"
+    },
+    {
+      "$ref": "#/$defs/sessionReport"
+    },
+    {
+      "$ref": "#/$defs/roleReport"
+    },
+    {
+      "$ref": "#/$defs/collectionBinding"
+    }
+  ],
+  "$defs": {
+    "profile": {
+      "const": "orchardprobe.demolab.lab002.observation.v1"
+    },
+    "policyVersion": {
+      "const": "orchardprobe.authorized-use.v1"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "sha256OrNull": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/sha256"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "uuidHex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "counter": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "runOrdinalCounterRules": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 1
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_counter": {
+                "const": "0000000000000001"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 2
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_counter": {
+                "const": "0000000000000002"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "expectedRunCounterRules": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 1
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expected_run_counter": {
+                "const": "0000000000000001"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 2
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expected_run_counter": {
+                "const": "0000000000000002"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bindingCounterRules": {
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 1
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "signed_run_counter": {
+                "const": "0000000000000001"
+              },
+              "collected_run_counter": {
+                "const": "0000000000000001"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 2
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "signed_run_counter": {
+                "const": "0000000000000002"
+              },
+              "collected_run_counter": {
+                "const": "0000000000000002"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "executableOffset": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 104857600
+    },
+    "executableSize": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 104857600
+    },
+    "unixTime": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32,
+      "pattern": "^[0-9]+(?:\\.[0-9]+){0,3}$"
+    },
+    "appleBuild": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 32,
+      "pattern": "^[0-9]+[A-Z][0-9A-Za-z]+$"
+    },
+    "observerRevision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hardware_model",
+        "ios_product_version",
+        "ios_build"
+      ],
+      "properties": {
+        "hardware_model": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "pattern": "^iPhone[0-9]+,[0-9]+$"
+        },
+        "ios_product_version": {
+          "$ref": "#/$defs/version"
+        },
+        "ios_build": {
+          "$ref": "#/$defs/appleBuild"
+        }
+      }
+    },
+    "toolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "xcode_version",
+        "xcode_build",
+        "iphoneos_sdk_version",
+        "iphoneos_sdk_build",
+        "xcodegen_version",
+        "xcodegen_architecture",
+        "xcodegen_executable_sha256",
+        "fastlane_version",
+        "gemfile_lock_sha256"
+      ],
+      "properties": {
+        "xcode_version": {
+          "$ref": "#/$defs/version"
+        },
+        "xcode_build": {
+          "$ref": "#/$defs/appleBuild"
+        },
+        "iphoneos_sdk_version": {
+          "$ref": "#/$defs/version"
+        },
+        "iphoneos_sdk_build": {
+          "$ref": "#/$defs/appleBuild"
+        },
+        "xcodegen_version": {
+          "$ref": "#/$defs/version"
+        },
+        "xcodegen_architecture": {
+          "enum": [
+            "arm64",
+            "x86_64"
+          ]
+        },
+        "xcodegen_executable_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "fastlane_version": {
+          "$ref": "#/$defs/version"
+        },
+        "gemfile_lock_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "dataCategories": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "authorization_control_metadata"
+        },
+        {
+          "const": "sanitized_device_environment"
+        },
+        {
+          "const": "code_signature_metadata"
+        },
+        {
+          "const": "fixed_range_sha256"
+        },
+        {
+          "const": "closed_outcomes"
+        }
+      ],
+      "items": false,
+      "minItems": 5,
+      "maxItems": 5
+    },
+    "installActions": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "install_exact_build"
+        },
+        {
+          "const": "import_installation_enrollment"
+        },
+        {
+          "const": "confirm_device_enrollment"
+        },
+        {
+          "const": "export_enrollment_receipt"
+        }
+      ],
+      "items": false,
+      "minItems": 4,
+      "maxItems": 4
+    },
+    "runActions": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "import_collection_challenge"
+        },
+        {
+          "const": "start_clean_run"
+        },
+        {
+          "const": "observe_main_app"
+        },
+        {
+          "const": "observe_framework"
+        },
+        {
+          "const": "invoke_share_extension"
+        },
+        {
+          "const": "export_session_evidence"
+        },
+        {
+          "const": "confirm_export_received"
+        },
+        {
+          "const": "cleanup_report_subtree"
+        }
+      ],
+      "items": false,
+      "minItems": 8,
+      "maxItems": 8
+    },
+    "bundleIdentifier": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]*(?:\\.[A-Za-z0-9][A-Za-z0-9-]*)+$"
+    },
+    "teamIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{10}$"
+    },
+    "requiredEntitlement": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "presence"
+          ],
+          "properties": {
+            "presence": {
+              "const": "required_absent"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "presence",
+            "value"
+          ],
+          "properties": {
+            "presence": {
+              "const": "present"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^[A-Za-z0-9.-]+$"
+            }
+          }
+        }
+      ]
+    },
+    "requiredAppGroups": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "presence"
+          ],
+          "properties": {
+            "presence": {
+              "const": "required_absent"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "presence",
+            "values"
+          ],
+          "properties": {
+            "presence": {
+              "const": "present"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 7,
+                "maxLength": 255,
+                "pattern": "^group\\.[A-Za-z0-9][A-Za-z0-9-]*(?:\\.[A-Za-z0-9][A-Za-z0-9-]*)+$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "authorizedTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "bundle_id",
+        "code_directory_identifier",
+        "code_directory_team_identifier",
+        "application_identifier",
+        "developer_team_identifier",
+        "application_groups"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "main_app",
+            "framework",
+            "share_extension"
+          ]
+        },
+        "bundle_id": {
+          "$ref": "#/$defs/bundleIdentifier"
+        },
+        "code_directory_identifier": {
+          "$ref": "#/$defs/bundleIdentifier"
+        },
+        "code_directory_team_identifier": {
+          "$ref": "#/$defs/teamIdentifier"
+        },
+        "application_identifier": {
+          "$ref": "#/$defs/requiredEntitlement"
+        },
+        "developer_team_identifier": {
+          "$ref": "#/$defs/requiredEntitlement"
+        },
+        "application_groups": {
+          "$ref": "#/$defs/requiredAppGroups"
+        }
+      }
+    },
+    "authorizedTargetMain": {
+      "$ref": "#/$defs/authorizedTarget",
+      "properties": {
+        "role": {
+          "const": "main_app"
+        }
+      }
+    },
+    "authorizedTargetFramework": {
+      "$ref": "#/$defs/authorizedTarget",
+      "properties": {
+        "role": {
+          "const": "framework"
+        }
+      }
+    },
+    "authorizedTargetShareExtension": {
+      "$ref": "#/$defs/authorizedTarget",
+      "properties": {
+        "role": {
+          "const": "share_extension"
+        }
+      }
+    },
+    "authorizedTargetManifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "identity_nonce",
+        "authorization_public_key",
+        "authorization_key_id",
+        "targets"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.authorized-targets.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "identity_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_key_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "targets": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/authorizedTargetMain"
+            },
+            {
+              "$ref": "#/$defs/authorizedTargetFramework"
+            },
+            {
+              "$ref": "#/$defs/authorizedTargetShareExtension"
+            }
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "authorizedUseAcknowledgement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "authorization_policy_version",
+        "acknowledgement_id",
+        "experiment_id",
+        "operation",
+        "build_binding_sha256",
+        "authorized_target_manifest_sha256",
+        "technique_profile",
+        "run_ordinal",
+        "data_categories",
+        "retention_profile",
+        "authorized_actions",
+        "device_selection_nonce",
+        "expected_environment",
+        "expected_enrollment_binding_sha256",
+        "acknowledged_at",
+        "not_before",
+        "not_after",
+        "confirmed",
+        "owns_or_explicitly_authorized_target",
+        "within_authorized_scope",
+        "understands_legal_limits",
+        "will_protect_output_and_not_resign_install_or_redistribute"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.authorized-use-ack.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "acknowledgement_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "experiment_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "operation": {
+          "enum": [
+            "install_and_enroll_exact_build",
+            "collect_fixed_range_run"
+          ]
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorized_target_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "technique_profile": {
+          "const": "first_party_fixed_range_disk_and_mapped_sha256"
+        },
+        "run_ordinal": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 2
+        },
+        "data_categories": {
+          "$ref": "#/$defs/dataCategories"
+        },
+        "retention_profile": {
+          "const": "owner_only_lab002_experiment_v1"
+        },
+        "authorized_actions": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/installActions"
+            },
+            {
+              "$ref": "#/$defs/runActions"
+            }
+          ]
+        },
+        "device_selection_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_environment": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/environment"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "expected_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256OrNull"
+        },
+        "acknowledged_at": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "not_before": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "not_after": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "confirmed": {
+          "const": true
+        },
+        "owns_or_explicitly_authorized_target": {
+          "const": true
+        },
+        "within_authorized_scope": {
+          "const": true
+        },
+        "understands_legal_limits": {
+          "const": true
+        },
+        "will_protect_output_and_not_resign_install_or_redistribute": {
+          "const": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "install_and_enroll_exact_build"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_ordinal": {
+                "type": "null"
+              },
+              "authorized_actions": {
+                "$ref": "#/$defs/installActions"
+              },
+              "expected_environment": {
+                "$ref": "#/$defs/environment"
+              },
+              "expected_enrollment_binding_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "collect_fixed_range_run"
+              }
+            },
+            "required": [
+              "operation"
+            ]
+          },
+          "then": {
+            "properties": {
+              "run_ordinal": {
+                "enum": [
+                  1,
+                  2
+                ]
+              },
+              "authorized_actions": {
+                "$ref": "#/$defs/runActions"
+              },
+              "expected_environment": {
+                "type": "null"
+              },
+              "expected_enrollment_binding_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "installationEnrollmentCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "operation",
+        "experiment_id",
+        "enrollment_challenge",
+        "build_binding_sha256",
+        "authorized_target_manifest_sha256",
+        "authorization_policy_version",
+        "device_selection_nonce",
+        "expected_environment",
+        "not_before",
+        "not_after"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.installation-enrollment-core.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "operation": {
+          "const": "install_and_enroll_exact_build"
+        },
+        "experiment_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_challenge": {
+          "$ref": "#/$defs/sha256"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorized_target_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "device_selection_nonce": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "not_before": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "not_after": {
+          "$ref": "#/$defs/unixTime"
+        }
+      }
+    },
+    "collectionChallengeCore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "operation",
+        "challenge",
+        "collection_id",
+        "run_ordinal",
+        "expected_run_counter",
+        "build_binding_sha256",
+        "authorization_policy_version",
+        "expected_enrollment_binding_sha256",
+        "enrollment_public_key",
+        "expected_device_installation_binding_sha256",
+        "not_before",
+        "not_after"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.collection-challenge-core.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "operation": {
+          "const": "collect_fixed_range_run"
+        },
+        "challenge": {
+          "$ref": "#/$defs/sha256"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "expected_run_counter": {
+          "enum": [
+            "0000000000000001",
+            "0000000000000002"
+          ]
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "expected_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "not_before": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "not_after": {
+          "$ref": "#/$defs/unixTime"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/expectedRunCounterRules"
+        }
+      ]
+    },
+    "authorizedOperationEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "authorization_key_id",
+        "acknowledgement_canonical",
+        "operation_core_canonical",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.authorized-operation-envelope.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "authorization_key_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "acknowledgement_canonical": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 6144
+        },
+        "operation_core_canonical": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 6144
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "unsignedEnrollmentReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "authorization_envelope_sha256",
+        "acknowledgement_sha256",
+        "authorization_policy_version",
+        "enrollment_challenge_response",
+        "experiment_id",
+        "build_binding_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "environment",
+        "created_at"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.device-enrollment-receipt-core.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "enrollment_challenge_response": {
+          "$ref": "#/$defs/sha256"
+        },
+        "experiment_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "created_at": {
+          "$ref": "#/$defs/unixTime"
+        }
+      }
+    },
+    "signedEnrollmentReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "unsigned_receipt_canonical",
+        "enrollment_public_key",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.device-enrollment-receipt.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "unsigned_receipt_canonical": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 12288
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "deviceSelectionConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "experiment_id",
+        "authorization_envelope_sha256",
+        "receipt_sha256",
+        "device_selection_fingerprint_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "confirmed_at",
+        "confirmed"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.device-selection-confirmation.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "experiment_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_selection_fingerprint_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "confirmed_at": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "confirmed": {
+          "const": true
+        }
+      }
+    },
+    "deviceEnrollmentBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "experiment_id",
+        "installation_acknowledgement_sha256",
+        "authorization_envelope_sha256",
+        "receipt_sha256",
+        "selection_confirmation_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "environment",
+        "completed_at"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.device-enrollment-binding.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "experiment_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "installation_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "receipt_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "selection_confirmation_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/unixTime"
+        }
+      }
+    },
+    "runCounterState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "build_binding_sha256",
+        "counter"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.run-counter-state.v1"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "counter": {
+          "$ref": "#/$defs/counter"
+        }
+      }
+    },
+    "installationNonceState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "build_binding_sha256",
+        "enrollment_public_key",
+        "installation_nonce"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.installation-nonce-state.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "installation_nonce": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "sessionReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "observer_revision",
+        "build_binding_sha256",
+        "collection_id",
+        "run_ordinal",
+        "challenge_sha256",
+        "authorization_policy_version",
+        "acknowledgement_sha256",
+        "authorization_envelope_sha256",
+        "authorization_not_after",
+        "device_enrollment_binding_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "environment",
+        "session_id",
+        "run_counter",
+        "created_at",
+        "completed_at",
+        "source_commit",
+        "marketing_version",
+        "build_number",
+        "state"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.session-report.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "observer_revision": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "challenge_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_not_after": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "device_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "session_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_counter": {
+          "$ref": "#/$defs/counter"
+        },
+        "created_at": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "completed_at": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/unixTime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_commit": {
+          "$ref": "#/$defs/sourceCommit"
+        },
+        "marketing_version": {
+          "$ref": "#/$defs/version"
+        },
+        "build_number": {
+          "$ref": "#/$defs/version"
+        },
+        "state": {
+          "enum": [
+            "collecting",
+            "complete",
+            "failed"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/runOrdinalCounterRules"
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "collecting"
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          "then": {
+            "properties": {
+              "completed_at": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "completed_at": {
+                "$ref": "#/$defs/unixTime"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "signatureEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "presence",
+        "kind",
+        "validation",
+        "validator_id",
+        "validator_revision",
+        "superblob_sha256"
+      ],
+      "properties": {
+        "presence": {
+          "enum": [
+            "present",
+            "absent"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "cms",
+            "ad_hoc",
+            "unknown",
+            "not_applicable"
+          ]
+        },
+        "validation": {
+          "enum": [
+            "valid",
+            "invalid",
+            "not_checked",
+            "not_applicable"
+          ]
+        },
+        "validator_id": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "validator_revision": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "superblob_sha256": {
+          "$ref": "#/$defs/sha256OrNull"
+        }
+      }
+    },
+    "observedSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "cpu_type",
+        "cpu_subtype",
+        "macho_uuid",
+        "slice_file_offset",
+        "slice_file_size",
+        "section_slice_offset",
+        "section_file_offset",
+        "section_vm_offset",
+        "segment_name",
+        "section_name",
+        "section_length",
+        "encryption_command",
+        "cryptoff",
+        "cryptsize",
+        "crypt_file_start",
+        "crypt_file_end",
+        "cryptid",
+        "encryption_covers_section",
+        "disk_sha256",
+        "mapped_sha256"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "cpu_type": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "cpu_subtype": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "macho_uuid": {
+          "$ref": "#/$defs/uuidHex"
+        },
+        "slice_file_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "slice_file_size": {
+          "$ref": "#/$defs/executableSize"
+        },
+        "section_slice_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "section_file_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "section_vm_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "segment_name": {
+          "const": "__TEXT"
+        },
+        "section_name": {
+          "const": "__oprobe"
+        },
+        "section_length": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "encryption_command": {
+          "enum": [
+            "lc_encryption_info",
+            "lc_encryption_info_64"
+          ]
+        },
+        "cryptoff": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "cryptsize": {
+          "$ref": "#/$defs/executableSize"
+        },
+        "crypt_file_start": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "crypt_file_end": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "cryptid": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
+        "encryption_covers_section": {
+          "type": "boolean"
+        },
+        "disk_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "mapped_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "observedSliceOrdinal0": {
+      "$ref": "#/$defs/observedSlice",
+      "properties": {
+        "ordinal": {
+          "const": 0
+        }
+      }
+    },
+    "observedSliceOrdinal1": {
+      "$ref": "#/$defs/observedSlice",
+      "properties": {
+        "ordinal": {
+          "const": 1
+        }
+      }
+    },
+    "observedSliceOrdinal2": {
+      "$ref": "#/$defs/observedSlice",
+      "properties": {
+        "ordinal": {
+          "const": 2
+        }
+      }
+    },
+    "observedSliceOrdinal3": {
+      "$ref": "#/$defs/observedSlice",
+      "properties": {
+        "ordinal": {
+          "const": 3
+        }
+      }
+    },
+    "phaseDisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "completed_at"
+      ],
+      "properties": {
+        "phase": {
+          "const": "disk_inspection"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/unixTime"
+        }
+      }
+    },
+    "phaseMapped": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "phase",
+        "completed_at"
+      ],
+      "properties": {
+        "phase": {
+          "const": "mapped_hash"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/unixTime"
+        }
+      }
+    },
+    "reasonCode": {
+      "enum": [
+        "identity_mismatch",
+        "signature_invalid_or_unchecked",
+        "inventory_mismatch",
+        "missing_or_duplicate_fixed_section",
+        "fixed_section_out_of_bounds",
+        "fixed_section_has_fixups",
+        "encryption_command_invalid",
+        "encryption_does_not_cover_range",
+        "disk_digest_equals_plaintext",
+        "mapped_digest_mismatch",
+        "stale_or_conflicting_session",
+        "duplicate_role_report",
+        "unexpected_installed_slice",
+        "report_limit_exceeded"
+      ]
+    },
+    "roleReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "collection_id",
+        "session_id",
+        "run_ordinal",
+        "run_counter",
+        "challenge_sha256",
+        "authorization_policy_version",
+        "acknowledgement_sha256",
+        "authorization_envelope_sha256",
+        "authorization_not_after",
+        "device_enrollment_binding_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "environment",
+        "source_commit",
+        "marketing_version",
+        "build_number",
+        "observer_revision",
+        "build_binding_sha256",
+        "role",
+        "fixture_relative_path",
+        "target_identity_binding_sha256",
+        "installed_file_size",
+        "container_kind",
+        "active_slice_ordinal",
+        "active_cpu_type",
+        "active_cpu_subtype",
+        "active_macho_uuid",
+        "signature",
+        "phases",
+        "slices",
+        "outcome",
+        "reasons"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.role-report.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "session_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "run_counter": {
+          "$ref": "#/$defs/counter"
+        },
+        "challenge_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_not_after": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "device_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/sourceCommit"
+        },
+        "marketing_version": {
+          "$ref": "#/$defs/version"
+        },
+        "build_number": {
+          "$ref": "#/$defs/version"
+        },
+        "observer_revision": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "role": {
+          "enum": [
+            "main_app",
+            "framework",
+            "share_extension"
+          ]
+        },
+        "fixture_relative_path": {
+          "enum": [
+            "DemoLab.app/DemoLab",
+            "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+            "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+          ]
+        },
+        "target_identity_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "installed_file_size": {
+          "$ref": "#/$defs/executableSize"
+        },
+        "container_kind": {
+          "enum": [
+            "thin",
+            "fat32",
+            "fat64"
+          ]
+        },
+        "active_slice_ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "active_cpu_type": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "active_cpu_subtype": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "active_macho_uuid": {
+          "$ref": "#/$defs/uuidHex"
+        },
+        "signature": {
+          "$ref": "#/$defs/signatureEvidence"
+        },
+        "phases": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/phaseDisk"
+            },
+            {
+              "$ref": "#/$defs/phaseMapped"
+            }
+          ],
+          "items": false,
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "slices": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/observedSliceOrdinal0"
+            },
+            {
+              "$ref": "#/$defs/observedSliceOrdinal1"
+            },
+            {
+              "$ref": "#/$defs/observedSliceOrdinal2"
+            },
+            {
+              "$ref": "#/$defs/observedSliceOrdinal3"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 4
+        },
+        "outcome": {
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive"
+          ]
+        },
+        "reasons": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/reasonCode"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/runOrdinalCounterRules"
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "pass"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reasons": {
+                "maxItems": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reasons": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "main_app"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fixture_relative_path": {
+                "const": "DemoLab.app/DemoLab"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "framework"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fixture_relative_path": {
+                "const": "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "role": {
+                "const": "share_extension"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "fixture_relative_path": {
+                "const": "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "oracleSlice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ordinal",
+        "cpu_type",
+        "cpu_subtype",
+        "macho_uuid",
+        "code_signature_sha256",
+        "slice_file_offset",
+        "slice_file_size",
+        "archive_cryptid",
+        "ipa_cryptid",
+        "section_slice_offset",
+        "section_file_offset",
+        "section_vm_offset",
+        "section_length",
+        "expected_plaintext_sha256",
+        "ipa_section_sha256"
+      ],
+      "properties": {
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "cpu_type": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "cpu_subtype": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "macho_uuid": {
+          "$ref": "#/$defs/uuidHex"
+        },
+        "code_signature_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "slice_file_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "slice_file_size": {
+          "$ref": "#/$defs/executableSize"
+        },
+        "archive_cryptid": {
+          "const": 0
+        },
+        "ipa_cryptid": {
+          "const": 0
+        },
+        "section_slice_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "section_file_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "section_vm_offset": {
+          "$ref": "#/$defs/executableOffset"
+        },
+        "section_length": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 1024
+        },
+        "expected_plaintext_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ipa_section_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "oracleSliceOrdinal0": {
+      "$ref": "#/$defs/oracleSlice",
+      "properties": {
+        "ordinal": {
+          "const": 0
+        }
+      }
+    },
+    "oracleSliceOrdinal1": {
+      "$ref": "#/$defs/oracleSlice",
+      "properties": {
+        "ordinal": {
+          "const": 1
+        }
+      }
+    },
+    "oracleSliceOrdinal2": {
+      "$ref": "#/$defs/oracleSlice",
+      "properties": {
+        "ordinal": {
+          "const": 2
+        }
+      }
+    },
+    "oracleSliceOrdinal3": {
+      "$ref": "#/$defs/oracleSlice",
+      "properties": {
+        "ordinal": {
+          "const": 3
+        }
+      }
+    },
+    "oracleRoleMain": {
+      "$ref": "#/$defs/oracleRole",
+      "properties": {
+        "role": {
+          "const": "main_app"
+        },
+        "fixture_relative_path": {
+          "const": "DemoLab.app/DemoLab"
+        }
+      }
+    },
+    "oracleRoleFramework": {
+      "$ref": "#/$defs/oracleRole",
+      "properties": {
+        "role": {
+          "const": "framework"
+        },
+        "fixture_relative_path": {
+          "const": "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
+        }
+      }
+    },
+    "oracleRoleShareExtension": {
+      "$ref": "#/$defs/oracleRole",
+      "properties": {
+        "role": {
+          "const": "share_extension"
+        },
+        "fixture_relative_path": {
+          "const": "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+        }
+      }
+    },
+    "oracleRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "fixture_relative_path",
+        "target_identity_binding_sha256",
+        "slices"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "main_app",
+            "framework",
+            "share_extension"
+          ]
+        },
+        "fixture_relative_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "target_identity_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "slices": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/oracleSliceOrdinal0"
+            },
+            {
+              "$ref": "#/$defs/oracleSliceOrdinal1"
+            },
+            {
+              "$ref": "#/$defs/oracleSliceOrdinal2"
+            },
+            {
+              "$ref": "#/$defs/oracleSliceOrdinal3"
+            }
+          ],
+          "items": false,
+          "minItems": 1,
+          "maxItems": 4
+        }
+      }
+    },
+    "labOracle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "source_commit",
+        "fixture_source_root",
+        "marketing_version",
+        "build_number",
+        "configuration",
+        "observer_revision",
+        "generator_revision",
+        "build_binding_sha256",
+        "authorized_target_manifest_sha256",
+        "authorization_public_key",
+        "authorization_key_id",
+        "target_identity_set_sha256",
+        "toolchain",
+        "ipa_size",
+        "ipa_sha256",
+        "roles"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.oracle.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/sourceCommit"
+        },
+        "fixture_source_root": {
+          "const": "fixtures/DemoLab"
+        },
+        "marketing_version": {
+          "$ref": "#/$defs/version"
+        },
+        "build_number": {
+          "$ref": "#/$defs/version"
+        },
+        "configuration": {
+          "const": "Release"
+        },
+        "observer_revision": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "generator_revision": {
+          "$ref": "#/$defs/sourceCommit"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorized_target_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_key_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "target_identity_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain"
+        },
+        "ipa_size": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "ipa_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "roles": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/oracleRoleMain"
+            },
+            {
+              "$ref": "#/$defs/oracleRoleFramework"
+            },
+            {
+              "$ref": "#/$defs/oracleRoleShareExtension"
+            }
+          ],
+          "items": false,
+          "minItems": 3,
+          "maxItems": 3
+        }
+      }
+    },
+    "collectionIntent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "challenge_file_sha256",
+        "collection_id",
+        "run_ordinal",
+        "expected_run_counter",
+        "prior_collection_binding_sha256",
+        "not_before",
+        "not_after",
+        "source_commit",
+        "marketing_version",
+        "build_number",
+        "observer_revision",
+        "build_binding_sha256",
+        "installation_acknowledgement_sha256",
+        "device_enrollment_binding_sha256",
+        "run_acknowledgement_sha256",
+        "authorization_policy_version",
+        "authorization_envelope_signature",
+        "authorization_envelope_sha256",
+        "authorized_target_manifest_sha256",
+        "expected_target_identity_set_sha256",
+        "enrollment_public_key",
+        "expected_device_installation_binding_sha256",
+        "toolchain",
+        "preupload_evidence_sha256",
+        "ipa_sha256",
+        "oracle_sha256",
+        "expected_inventory_sha256"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.collection-intent.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "challenge_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "expected_run_counter": {
+          "enum": [
+            "0000000000000001",
+            "0000000000000002"
+          ]
+        },
+        "prior_collection_binding_sha256": {
+          "$ref": "#/$defs/sha256OrNull"
+        },
+        "not_before": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "not_after": {
+          "$ref": "#/$defs/unixTime"
+        },
+        "source_commit": {
+          "$ref": "#/$defs/sourceCommit"
+        },
+        "marketing_version": {
+          "$ref": "#/$defs/version"
+        },
+        "build_number": {
+          "$ref": "#/$defs/version"
+        },
+        "observer_revision": {
+          "$ref": "#/$defs/observerRevision"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "installation_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "authorization_envelope_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorized_target_manifest_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_target_identity_set_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "toolchain": {
+          "$ref": "#/$defs/toolchain"
+        },
+        "preupload_evidence_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "ipa_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "oracle_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "expected_inventory_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 1
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expected_run_counter": {
+                "const": "0000000000000001"
+              },
+              "prior_collection_binding_sha256": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "run_ordinal": {
+                "const": 2
+              }
+            },
+            "required": [
+              "run_ordinal"
+            ]
+          },
+          "then": {
+            "properties": {
+              "expected_run_counter": {
+                "const": "0000000000000002"
+              },
+              "prior_collection_binding_sha256": {
+                "$ref": "#/$defs/sha256"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "exportEntrySession": {
+      "$ref": "#/$defs/exportEntry",
+      "properties": {
+        "logical_filename": {
+          "const": "session.json"
+        }
+      }
+    },
+    "exportEntryMain": {
+      "$ref": "#/$defs/exportEntry",
+      "properties": {
+        "logical_filename": {
+          "const": "main-app.json"
+        }
+      }
+    },
+    "exportEntryFramework": {
+      "$ref": "#/$defs/exportEntry",
+      "properties": {
+        "logical_filename": {
+          "const": "framework.json"
+        }
+      }
+    },
+    "exportEntryShareExtension": {
+      "$ref": "#/$defs/exportEntry",
+      "properties": {
+        "logical_filename": {
+          "const": "share-extension.json"
+        }
+      }
+    },
+    "exportEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "logical_filename",
+        "sha256",
+        "canonical_document"
+      ],
+      "properties": {
+        "logical_filename": {
+          "enum": [
+            "session.json",
+            "main-app.json",
+            "framework.json",
+            "share-extension.json"
+          ]
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "canonical_document": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 32768
+        }
+      }
+    },
+    "unsignedSessionExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "collection_id",
+        "session_id",
+        "run_ordinal",
+        "run_counter",
+        "challenge_sha256",
+        "build_binding_sha256",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "entries"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.session-export-core.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "session_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "run_counter": {
+          "$ref": "#/$defs/counter"
+        },
+        "challenge_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "build_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "entries": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/exportEntrySession"
+            },
+            {
+              "$ref": "#/$defs/exportEntryMain"
+            },
+            {
+              "$ref": "#/$defs/exportEntryFramework"
+            },
+            {
+              "$ref": "#/$defs/exportEntryShareExtension"
+            }
+          ],
+          "items": false,
+          "minItems": 4,
+          "maxItems": 4
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/runOrdinalCounterRules"
+        }
+      ]
+    },
+    "signedSessionExport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "unsigned_export_canonical",
+        "enrollment_public_key",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.session-export.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "unsigned_export_canonical": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 262144
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signature": {
+          "$ref": "#/$defs/signature"
+        }
+      }
+    },
+    "roleFileHashes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "main_app_sha256",
+        "framework_sha256",
+        "share_extension_sha256"
+      ],
+      "properties": {
+        "main_app_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "framework_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "share_extension_sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "collectionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "profile",
+        "installation_acknowledgement_sha256",
+        "run_acknowledgement_sha256",
+        "authorization_policy_version",
+        "intent_sha256",
+        "device_enrollment_binding_sha256",
+        "authorization_envelope_signature",
+        "authorization_envelope_sha256",
+        "challenge_file_sha256",
+        "signed_session_export_sha256",
+        "collection_id",
+        "run_ordinal",
+        "signed_run_counter",
+        "collected_run_counter",
+        "session_id",
+        "enrollment_public_key",
+        "device_installation_binding_sha256",
+        "environment",
+        "session_sha256",
+        "role_file_hashes",
+        "completed_at"
+      ],
+      "properties": {
+        "schema": {
+          "const": "orchardprobe.lab002.collection-binding.v1"
+        },
+        "profile": {
+          "$ref": "#/$defs/profile"
+        },
+        "installation_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_acknowledgement_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_policy_version": {
+          "$ref": "#/$defs/policyVersion"
+        },
+        "intent_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_enrollment_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "authorization_envelope_signature": {
+          "$ref": "#/$defs/signature"
+        },
+        "authorization_envelope_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "challenge_file_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "signed_session_export_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "collection_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "run_ordinal": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "signed_run_counter": {
+          "$ref": "#/$defs/counter"
+        },
+        "collected_run_counter": {
+          "$ref": "#/$defs/counter"
+        },
+        "session_id": {
+          "$ref": "#/$defs/sha256"
+        },
+        "enrollment_public_key": {
+          "$ref": "#/$defs/sha256"
+        },
+        "device_installation_binding_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "session_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "role_file_hashes": {
+          "$ref": "#/$defs/roleFileHashes"
+        },
+        "completed_at": {
+          "$ref": "#/$defs/unixTime"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/bindingCounterRules"
+        }
+      ]
+    }
+  }
+}

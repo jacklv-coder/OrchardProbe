@@ -97,10 +97,16 @@ containing PR is on `main`.
 | Order | Checkpoint | Status when this PR is on `main` | Evidence / next gate |
 |---:|---|---|---|
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
-| 2 | Device-free implementation and synthetic/Simulator verification | `planned` | Starts only after PR #58 merges; must implement the closed design and pass local/remote CR and CI |
+| 2 | Device-free implementation and synthetic/Simulator verification | `done` | [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; this status takes effect only after the PR passes final CR/CI/review and merges |
 | 3 | Exact signed DemoLab build and pre-upload oracle | `blocked` | Requires checkpoint 2 plus separate explicit authorization naming the exact version/build |
 | 4 | Installation enrollment and two clean device observations | `blocked` | Requires checkpoint 3, fresh per-operation authorization, the selected owned iPhone, and the reviewed two-run procedure |
 | 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
+
+Checkpoint 2 is tracked in the
+[LAB-002 implementation progress ledger](docs/research/lab-002-implementation-progress.md).
+Its branch-local progress labels are informational until the complete
+checkpoint-2 PR passes CR and CI and is merged. No 2A–2E substep independently
+authorizes a signed build, TestFlight upload, or device observation.
 
 The activation and workflow-preparation PRs are merged. The account-free
 evidence audit and the first signed-candidate run are recorded in Issue #9.

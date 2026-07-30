@@ -8,7 +8,7 @@
 
 use std::io::{self, Read, Seek, SeekFrom};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 const MACH_HEADER_32_SIZE: u64 = 28;
@@ -33,7 +33,7 @@ pub const MAX_LOAD_COMMANDS: u32 = 4_096;
 pub const MAX_LOAD_COMMAND_BYTES: u32 = 16 * 1024 * 1024;
 
 /// Byte order used by a Mach-O header or universal-binary table.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Endianness {
     Little,
@@ -77,7 +77,7 @@ impl Endianness {
 }
 
 /// Top-level Mach-O container representation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MachOContainer {
     Thin,
@@ -86,7 +86,7 @@ pub enum MachOContainer {
 }
 
 /// The encryption load-command variant found in a slice.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EncryptionCommand {
     EncryptionInfo,
@@ -94,7 +94,7 @@ pub enum EncryptionCommand {
 }
 
 /// Metadata from `LC_ENCRYPTION_INFO` or `LC_ENCRYPTION_INFO_64`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EncryptionInfo {
     pub command: EncryptionCommand,
     pub cryptoff: u32,
