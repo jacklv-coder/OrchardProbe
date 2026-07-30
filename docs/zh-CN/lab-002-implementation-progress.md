@@ -105,6 +105,17 @@
   新导入的重放会被 Restore 并拒绝。CR 还关闭了 Source Provenance 不一致：Archive
   Lane 会在 Build Staging 前拒绝冻结的 LAB-002 40 位 Hex Wire Format 之外的 Git
   Object ID。
+- 2C.4b 已实现 Target 私有的安装文件与 Mapped Header Mach-O Core。Stable
+  Descriptor Reader 使用只读 `O_NOFOLLOW`、普通文件/100 MiB 上限、精确 `pread`
+  以及解析后的身份与 Metadata 复核。有界 Thin/FAT32/FAT64 Parser 最多接受四个
+  不重叠 Slice，绑定 CPU/Subtype/Ordinal/UUID 与检查后的 File/VM 坐标，要求恰好
+  一个 64–1,024 字节、可执行、Regular、Pure-instruction 的
+  `__TEXT,__oprobe`，并拒绝 Relocation、区间重叠或指向可执行 `__TEXT` 的
+  Classic/Chained Fixup。它还规范化唯一且与架构匹配的 Encryption Interval，并把
+  Mapped Header 与编译 Anchor Offset 绑定回安装 Slice。调用方可选 URL/Header
+  入口只存在于 Debug 测试 Harness；生产构造保持私有，留给 2C.4c 的零参数 Role
+  Wrapper。28 项合成 Simulator 测试、Release Simulator Build 与专项 Codex CR
+  均通过，且没有剩余可执行 P1/P2。
 
 ## 已完成的 2B 门禁
 
@@ -164,6 +175,6 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 顺序 | 工作项 | 状态 | 退出门禁 |
 |---:|---|---|---|
 | 2C.4a | 闭合并持久化不可变 Run Session | `完成` | 精确 Session Report 字段只来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、精确 Counter 与系统随机数/时间；Counter/Session 中断发布只可由原先精确 Quarantine 恢复，`session.json` 排他创建，19 项 Simulator 测试与专项 CR 通过 |
-| 2C.4b | 实现 Target 私有 Mach-O Observer Core | `进行中` | 对安装文件做 No-follow 有界解析并解析已映射 Image，只推导编译固定的 `__TEXT,__oprobe` Range；返回闭合结构证据/原因，不接受调用方选择输入 |
-| 2C.4c | 接入三个零参数 Role 入口 | `planned` | Main App、DemoFramework、Share Extension 只解析自身，按固定顺序各发布一次固定报告，并拒绝重复、过期或冲突 Session |
+| 2C.4b | 实现 Target 私有 Mach-O Observer Core | `完成` | Stable No-follow Descriptor 读取、有界 Thin/FAT 解析、精确固定 Section/Encryption/Fixup 证据、Mapped Header/Anchor 绑定、28 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有调用方可选输入 |
+| 2C.4c | 接入三个零参数 Role 入口 | `进行中` | Main App、DemoFramework、Share Extension 只解析自身，按固定顺序各发布一次固定报告，并拒绝重复、过期或冲突 Session |
 | 2C.4d | 完成 Session 并执行专项门禁 | `planned` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |

@@ -48,6 +48,38 @@ There is no OrchardProbe CLI, Core, Host, Fastlane, or device-helper API for
 resolving, listing, reading, writing, importing, exporting, or cleaning the App
 Group container.
 
+## Target-private Mach-O observer core
+
+Checkpoint 2C.4b implements one source-level core that is compiled separately
+into each consuming target. Production construction remains private so the
+2C.4c zero-argument role entry is the only future path that may supply its
+fixed bundle executable and compiled anchor. URL and mapped-header injection
+exist only in the Debug test harness.
+
+The installed-file reader opens the fixed executable read-only with
+`O_NOFOLLOW`, requires a linked regular file no larger than 100 MiB, reads
+exact ranges with `pread`, and rechecks descriptor identity, mode, link count,
+size, modification time, and change time after parsing. The parser then:
+
+1. accepts one thin, FAT32, or FAT64 container with at most four non-overlapping
+   aligned slices;
+2. bounds load-command count/bytes and every fixup payload;
+3. binds FAT and Mach-O CPU identity, file type, UUID, slice ordinal, and
+   checked file/VM coordinates;
+4. requires exactly one executable regular pure-instruction
+   `__TEXT,__oprobe` section of 64–1,024 bytes with no section relocation;
+5. rejects overlapping sections/segments and classic or chained fixups that
+   target executable `__TEXT`;
+6. normalizes the single architecture-correct encryption command from
+   slice-relative to absolute file coordinates and records exact coverage; and
+7. reparses the bounded mapped header and requires its CPU identity, UUID,
+   fixed coordinates, and compiled-anchor containment to match the installed
+   slice before returning a mapped range.
+
+The core returns only closed evidence structures and closed reason codes. It
+does not perform oracle comparison, signing-identity validation, mapped-memory
+hashing, or report publication; those remain ordered work in 2C.4c.
+
 ## Fixed production container
 
 Production code obtains the container only from

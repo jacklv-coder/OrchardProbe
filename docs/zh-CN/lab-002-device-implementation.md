@@ -43,6 +43,32 @@ Parser Helper 与 Report Builder 保持 Target 私有。
 OrchardProbe CLI、Core、Host、Fastlane 或设备 Helper 都不存在解析、列出、读取、
 写入、导入、导出或清理 App Group Container 的 API。
 
+## Target 私有 Mach-O Observer Core
+
+检查点 2C.4b 实现一份源代码级 Core，并由每个消费 Target 分别编译。生产构造器保持
+私有，后续只有 2C.4c 的零参数 Role 入口可以提供其固定 Bundle Executable 与编译期
+Anchor。URL 和 Mapped Header 注入只存在于 Debug 测试 Harness。
+
+安装文件 Reader 使用 `O_NOFOLLOW` 只读打开固定 Executable，只接受仍有链接且不超过
+100 MiB 的普通文件，使用 `pread` 精确读取，并在解析后重新核对 Descriptor 身份、
+Mode、Link Count、Size、Modification Time 与 Change Time。Parser 随后：
+
+1. 只接受一份 Thin、FAT32 或 FAT64 Container，最多四个不重叠且对齐的 Slice；
+2. 限制 Load Command 数量/字节数和每份 Fixup Payload；
+3. 绑定 FAT/Mach-O CPU 身份、File Type、UUID、Slice Ordinal 及经过检查的 File/VM
+   坐标；
+4. 要求恰好一个 64–1,024 字节、可执行、Regular、Pure-instruction 的
+   `__TEXT,__oprobe` Section，且没有 Section Relocation；
+5. 拒绝 Section/Segment 重叠，以及指向可执行 `__TEXT` 的 Classic 或 Chained
+   Fixup；
+6. 把唯一且与架构匹配的 Encryption Command 从 Slice 相对坐标规范为绝对文件坐标，
+   并记录精确 Coverage；以及
+7. 重新解析有界 Mapped Header，要求其 CPU 身份、UUID、固定坐标与编译 Anchor
+   包含关系匹配安装 Slice，之后才返回 Mapped Range。
+
+Core 只返回闭合证据结构与闭合 Reason Code，不执行 Oracle 比较、签名身份验证、
+Mapped-memory Hash 或报告发布；这些仍按顺序留给 2C.4c。
+
 ## 固定生产 Container
 
 生产代码只通过 `containerURL(forSecurityApplicationGroupIdentifier:)` 获取

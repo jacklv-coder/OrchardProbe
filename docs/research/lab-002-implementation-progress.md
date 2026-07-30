@@ -143,6 +143,20 @@ installation, device observation, or device-backend work.
   and rejected. CR also closed a source-provenance mismatch by making the
   archive lane reject Git object IDs outside the frozen 40-hex LAB-002 wire
   form before build staging.
+- 2C.4b now implements the target-private installed-file and mapped-header
+  Mach-O core. Its stable descriptor reader uses read-only `O_NOFOLLOW`,
+  regular-file/100 MiB limits, exact `pread`, and post-parse identity and
+  metadata revalidation. Bounded thin/FAT32/FAT64 parsing accepts at most four
+  non-overlapping slices, binds CPU/subtype/ordinal/UUID and checked file/VM
+  coordinates, requires exactly one 64–1,024 byte executable regular
+  pure-instruction `__TEXT,__oprobe`, and rejects relocations, overlapping
+  ranges, or classic/chained fixups targeting executable `__TEXT`. It also
+  normalizes the single architecture-correct encryption interval and binds a
+  mapped header plus compiled-anchor offset back to the installed slice.
+  Caller-selected URL/header entry points exist only in the Debug test harness;
+  production construction remains private for the 2C.4c zero-argument role
+  wrappers. Twenty-eight synthetic Simulator tests, a Release Simulator build,
+  and focused Codex CR pass with no remaining actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -213,6 +227,6 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | Order | Work item | Status | Exit gate |
 |---:|---|---|---|
 | 2C.4a | Close and persist the immutable run session | `done` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, the exact counter, and system randomness/time; interrupted counter/session publication is recoverable only from the pre-existing exact quarantine, `session.json` is exclusive, and 19 Simulator tests plus focused CR pass |
-| 2C.4b | Implement the target-private Mach-O observer core | `in progress` | Bounded no-follow installed-file and mapped-image parsing derive only the compiled `__TEXT,__oprobe` range and closed structural evidence/reasons without caller-selected inputs |
-| 2C.4c | Wire the three zero-argument role entries | `planned` | Main App, DemoFramework, and Share Extension resolve only themselves, publish the three fixed reports once in required order, and reject duplicate/stale/conflicting sessions |
+| 2C.4b | Implement the target-private Mach-O observer core | `done` | Stable no-follow descriptor reads, bounded thin/FAT parsing, exact fixed-section/encryption/fixup evidence, mapped-header/anchor binding, 28 Simulator tests, Release build, and focused CR pass without a production caller-selected input |
+| 2C.4c | Wire the three zero-argument role entries | `in progress` | Main App, DemoFramework, and Share Extension resolve only themselves, publish the three fixed reports once in required order, and reject duplicate/stale/conflicting sessions |
 | 2C.4d | Close the session and run focused gates | `planned` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |
