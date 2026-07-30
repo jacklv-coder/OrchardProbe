@@ -28,6 +28,12 @@
 	<string>$(DEMO_LAB_KEYCHAIN_ACCESS_GROUP)</string>
 	<key>LAB002BuildBindingSHA256</key>
 	<string>$(DEMO_LAB_BUILD_BINDING_SHA256)</string>
+	<key>LAB002IdentityNonce</key>
+	<string>$(DEMO_LAB_IDENTITY_NONCE)</string>
+	<key>LAB002ObserverRevision</key>
+	<string>$(DEMO_LAB_OBSERVER_REVISION)</string>
+	<key>LAB002SourceCommit</key>
+	<string>$(DEMO_LAB_SOURCE_COMMIT)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UILaunchScreen</key>

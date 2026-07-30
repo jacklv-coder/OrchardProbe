@@ -143,11 +143,16 @@ collecting_main
 idle
 ```
 
-The counter is durably incremented before `session.json` is created. A crash
-may consume a counter but cannot reuse it. Each role report is exclusively
-created once and never overwritten. Missing, duplicate, out-of-order, expired,
-or conflicting state makes the exact experiment fail; incomplete/failed
-evidence cannot be cleaned and retried into a passing result.
+The counter is durably incremented before `session.json` is created. The exact
+validated authorization remains quarantined until both records are durable.
+If interruption occurs after the counter commit or during atomic session
+publication, only that already-quarantined authorization may resume the
+matching transaction; a newly imported replay is restored and rejected.
+Recovery accepts only the exact counter plus complete or staged canonical
+session facts. Each role report is exclusively created once and never
+overwritten. Missing, duplicate, out-of-order, expired, or conflicting state
+makes the exact experiment fail; incomplete/failed evidence cannot be cleaned
+and retried into a passing result.
 
 ## Storage invariants
 

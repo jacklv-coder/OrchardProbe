@@ -34,10 +34,17 @@ internally and require `DEMO_LAB_BUILD_BINDING_SHA256` to inject the exact
 lowercase 64-hex build binding into the app Info.plist. The checked-in setting
 is deliberately empty, so production coordination fails closed until the
 reviewed LAB-002 pre-build step derives it from every frozen binding input.
-The signed archive lane refuses a missing or malformed precomputed binding and
-injects the validated value into the compiled Info.plist; it does not invent a
-default. Runtime caller-controlled overrides are available only through the
-Debug test initializer.
+The same pre-build step supplies the private 32-byte identity nonce as exact
+lowercase hex. The signed archive lane refuses a missing or malformed
+precomputed binding/nonce, requires the frozen 40-hex LAB-002 source-commit
+wire form, and injects those values plus the fixed observer revision into the
+compiled Info.plist; it does not invent defaults. A valid run authorization is
+fully validated against those compiled facts, enrollment continuity, the
+current installation binding, environment, and exact next counter before it
+can consume authorization or counter state. It then exclusively persists one
+bounded canonical `reports/current/session.json`; an existing session rejects
+the run before either state is consumed. Runtime caller-controlled overrides
+are available only through the Debug test initializer.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
 The branch-local LAB-002 app/extension capability, fixed-container, and state

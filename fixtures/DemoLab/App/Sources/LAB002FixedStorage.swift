@@ -72,6 +72,11 @@ struct LAB002EnrollmentAuthorization {
     let resumedAfterPersistence: Bool
 }
 
+struct LAB002RunAuthorization {
+    let quarantined: LAB002QuarantinedAuthorization
+    let resumedAfterPersistence: Bool
+}
+
 struct LAB002CounterRecord {
     static let schema = "orchardprobe.lab002.run-counter-state.v1"
 
@@ -141,6 +146,7 @@ final class LAB002FixedStorage {
     private let rootDirectory: LAB002FileDescriptor
     private let inboxDirectory: LAB002FileDescriptor
     private let stateDirectory: LAB002FileDescriptor
+    private let reportsDirectory: LAB002FileDescriptor
 
     static func production() throws -> LAB002FixedStorage {
         guard let identifier = Bundle.main.object(
@@ -191,6 +197,7 @@ final class LAB002FixedStorage {
         rootDirectory = root.descriptor
         inboxDirectory = inbox.descriptor
         stateDirectory = state.descriptor
+        reportsDirectory = reports.descriptor
     }
 
     func withCoordinatorLock<T>(_ body: () throws -> T) throws -> T {
@@ -334,6 +341,56 @@ final class LAB002FixedStorage {
         )
     }
 
+    func quarantineRunAuthorization() throws -> LAB002RunAuthorization {
+        guard try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        ) != nil
+        else {
+            return LAB002RunAuthorization(
+                quarantined: try quarantineAuthorization(),
+                resumedAfterPersistence: false
+            )
+        }
+        guard try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorization
+        ) == nil
+        else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.authorization
+            )
+        }
+        let descriptor = try openRegularFile(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        )
+        let descriptorIdentity = try identity(descriptor)
+        let entry = try requireMatchingEntry(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine,
+            descriptorIdentity: descriptorIdentity
+        )
+        guard entry.isRegularOwnerOnly else {
+            throw LAB002StorageError.unsafeEntry(
+                LAB002FixedName.authorizationQuarantine
+            )
+        }
+        let bytes = try Self.readBounded(
+            descriptor,
+            maximum: LAB002Limit.controlDocument,
+            label: LAB002FixedName.authorizationQuarantine
+        )
+        return LAB002RunAuthorization(
+            quarantined: LAB002QuarantinedAuthorization(
+                bytes: bytes,
+                descriptor: descriptor,
+                identity: descriptorIdentity
+            ),
+            resumedAfterPersistence: true
+        )
+    }
+
     func hasQuarantinedAuthorization() throws -> Bool {
         try entryIdentity(
             directory: inboxDirectory,
@@ -383,6 +440,38 @@ final class LAB002FixedStorage {
         expected: UInt64,
         buildBindingSHA256: String
     ) throws -> LAB002CounterRecord {
+        let prepared = try prepareExpectedCounter(
+            expected: expected,
+            buildBindingSHA256: buildBindingSHA256
+        )
+        try writeAtomic(
+            directory: stateDirectory,
+            directoryURL: stateURL,
+            destination: LAB002FixedName.counter,
+            temporary: LAB002FixedName.counterTemporary,
+            bytes: try prepared.record.canonicalData(),
+            replacing: prepared.priorIdentity
+        )
+        return prepared.record
+    }
+
+    func validateExpectedCounter(
+        expected: UInt64,
+        buildBindingSHA256: String
+    ) throws {
+        _ = try prepareExpectedCounter(
+            expected: expected,
+            buildBindingSHA256: buildBindingSHA256
+        )
+    }
+
+    private func prepareExpectedCounter(
+        expected: UInt64,
+        buildBindingSHA256: String
+    ) throws -> (
+        record: LAB002CounterRecord,
+        priorIdentity: LAB002FileIdentity?
+    ) {
         let priorIdentity = try entryIdentity(
             directory: stateDirectory,
             name: LAB002FixedName.counter
@@ -427,15 +516,7 @@ final class LAB002FixedStorage {
             buildBindingSHA256: buildBindingSHA256,
             counter: next
         )
-        try writeAtomic(
-            directory: stateDirectory,
-            directoryURL: stateURL,
-            destination: LAB002FixedName.counter,
-            temporary: LAB002FixedName.counterTemporary,
-            bytes: try record.canonicalData(),
-            replacing: priorIdentity
-        )
-        return record
+        return (record, priorIdentity)
     }
 
     func readCounter() throws -> LAB002CounterRecord? {
@@ -499,6 +580,183 @@ final class LAB002FixedStorage {
             label: LAB002FixedName.installationNonce
         )
         return try LAB002InstallationState(canonicalBytes: bytes)
+    }
+
+    func createSession(_ record: LAB002SessionReport) throws {
+        guard try entryIdentity(
+            directory: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        ) == nil
+        else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.currentReports
+            )
+        }
+        try createOrRecoverSession(record)
+    }
+
+    func createOrRecoverSession(_ record: LAB002SessionReport) throws {
+        if try entryIdentity(
+            directory: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        ) == nil {
+            try createSessionDirectory()
+        }
+        let currentURL = reportsURL.appendingPathComponent(
+            LAB002FixedName.currentReports,
+            isDirectory: true
+        )
+        try applyProtectionAndBackupExclusion(currentURL)
+        let currentDirectory = try openDirectory(
+            parent: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        )
+        let hasSession = try entryIdentity(
+            directory: currentDirectory,
+            name: LAB002FixedName.session
+        ) != nil
+        let hasTemporary = try entryIdentity(
+            directory: currentDirectory,
+            name: LAB002FixedName.sessionTemporary
+        ) != nil
+        guard !(hasSession && hasTemporary) else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.sessionTemporary
+            )
+        }
+        if hasSession {
+            guard try readSessionFile(
+                directory: currentDirectory,
+                name: LAB002FixedName.session
+            ) == record else {
+                throw LAB002StorageError.existingEntry(
+                    LAB002FixedName.session
+                )
+            }
+            return
+        }
+        if hasTemporary {
+            guard try readSessionFile(
+                directory: currentDirectory,
+                name: LAB002FixedName.sessionTemporary
+            ) == record else {
+                throw LAB002StorageError.existingEntry(
+                    LAB002FixedName.sessionTemporary
+                )
+            }
+            try rename(
+                directory: currentDirectory,
+                source: LAB002FixedName.sessionTemporary,
+                destination: LAB002FixedName.session,
+                exclusive: true
+            )
+            try sync(currentDirectory, label: LAB002FixedName.currentReports)
+            return
+        }
+        try writeAtomic(
+            directory: currentDirectory,
+            directoryURL: currentURL,
+            destination: LAB002FixedName.session,
+            temporary: LAB002FixedName.sessionTemporary,
+            bytes: try record.canonicalData(),
+            replacing: nil
+        )
+    }
+
+    private func createSessionDirectory() throws {
+        let result = LAB002FixedName.currentReports.withCString {
+            mkdirat(reportsDirectory.rawValue, $0, 0o700)
+        }
+        guard result == 0 else {
+            throw LAB002StorageError.io(
+                "mkdir \(LAB002FixedName.currentReports)",
+                errno
+            )
+        }
+        try sync(reportsDirectory, label: LAB002FixedName.reports)
+    }
+
+    func hasSessionDirectory() throws -> Bool {
+        try entryIdentity(
+            directory: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        ) != nil
+    }
+
+    func readSession() throws -> LAB002SessionReport? {
+        guard try entryIdentity(
+            directory: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        ) != nil
+        else {
+            return nil
+        }
+        let currentDirectory = try openDirectory(
+            parent: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        )
+        return try readSessionFile(
+            directory: currentDirectory,
+            name: LAB002FixedName.session
+        )
+    }
+
+    func readRecoverableSession() throws -> LAB002SessionReport? {
+        guard try hasSessionDirectory() else {
+            return nil
+        }
+        let currentDirectory = try openDirectory(
+            parent: reportsDirectory,
+            name: LAB002FixedName.currentReports
+        )
+        let hasSession = try entryIdentity(
+            directory: currentDirectory,
+            name: LAB002FixedName.session
+        ) != nil
+        let hasTemporary = try entryIdentity(
+            directory: currentDirectory,
+            name: LAB002FixedName.sessionTemporary
+        ) != nil
+        guard !(hasSession && hasTemporary) else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.sessionTemporary
+            )
+        }
+        if hasSession {
+            return try readSessionFile(
+                directory: currentDirectory,
+                name: LAB002FixedName.session
+            )
+        }
+        if hasTemporary {
+            return try readSessionFile(
+                directory: currentDirectory,
+                name: LAB002FixedName.sessionTemporary
+            )
+        }
+        return nil
+    }
+
+    private func readSessionFile(
+        directory: LAB002FileDescriptor,
+        name: String
+    ) throws -> LAB002SessionReport {
+        let descriptor = try openRegularFile(
+            directory: directory,
+            name: name
+        )
+        let descriptorIdentity = try identity(descriptor)
+        _ = try requireMatchingEntry(
+            directory: directory,
+            name: name,
+            descriptorIdentity: descriptorIdentity
+        )
+        let bytes = try Self.readBounded(
+            descriptor,
+            maximum: LAB002Limit.sessionReport,
+            label: name
+        )
+        return try LAB002SessionReport(canonicalBytes: bytes)
     }
 
     private func writeAtomic(
@@ -662,6 +920,33 @@ final class LAB002FixedStorage {
         guard try identity(descriptor).isRegularOwnerOnly else {
             throw LAB002StorageError.unsafeEntry(name)
         }
+        return descriptor
+    }
+
+    private func openDirectory(
+        parent: LAB002FileDescriptor,
+        name: String
+    ) throws -> LAB002FileDescriptor {
+        let raw = name.withCString {
+            openat(
+                parent.rawValue,
+                $0,
+                O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+            )
+        }
+        guard raw >= 0 else {
+            throw LAB002StorageError.unsafeEntry(name)
+        }
+        let descriptor = LAB002FileDescriptor(raw)
+        let descriptorIdentity = try identity(descriptor)
+        guard descriptorIdentity.isOwnerOnlyDirectory else {
+            throw LAB002StorageError.unsafeEntry(name)
+        }
+        _ = try requireMatchingEntry(
+            directory: parent,
+            name: name,
+            descriptorIdentity: descriptorIdentity
+        )
         return descriptor
     }
 

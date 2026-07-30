@@ -312,7 +312,7 @@ final class LAB002EnrollmentStateCoordinator {
     }
 }
 
-private extension Data {
+extension Data {
     var hexLowercase: String {
         map { String(format: "%02x", $0) }.joined()
     }

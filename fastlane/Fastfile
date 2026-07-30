@@ -4443,10 +4443,19 @@ platform :ios do
       "DEMO_LAB_BUILD_BINDING_SHA256",
       pattern: /\A[0-9a-f]{64}\z/
     )
+    identity_nonce = required_environment(
+      "DEMO_LAB_IDENTITY_NONCE",
+      pattern: /\A[0-9a-f]{64}\z/
+    )
 
     output_identity = private_output_directory
     output_root = output_identity.first
     source_commit = git_command_output("rev-parse", "HEAD")
+    unless /\A[0-9a-f]{40}\z/.match?(source_commit)
+      UI.user_error!(
+        "LAB-002 requires the frozen 40-hex source_commit wire format."
+      )
+    end
     run_directory = File.join(
       output_root,
       "#{marketing_version}-#{build_number}-#{source_commit[0, 12]}"
@@ -4502,9 +4511,12 @@ platform :ios do
             "DEMO_LAB_APP_BUNDLE_ID=#{app_identifier}",
             "DEMO_LAB_FRAMEWORK_BUNDLE_ID=#{app_identifier}.framework",
             "DEMO_LAB_BUILD_BINDING_SHA256=#{build_binding_sha256}",
+            "DEMO_LAB_IDENTITY_NONCE=#{identity_nonce}",
             "DEMO_LAB_KEYCHAIN_ACCESS_GROUP=" \
               "#{team_identifier}.#{app_identifier}",
+            "DEMO_LAB_OBSERVER_REVISION=lab002-observer-v1",
             "DEMO_LAB_SHARE_BUNDLE_ID=#{share_identifier}",
+            "DEMO_LAB_SOURCE_COMMIT=#{source_commit}",
             "MARKETING_VERSION=#{marketing_version}",
           ].shelljoin
 

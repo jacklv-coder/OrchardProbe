@@ -15,6 +15,7 @@ enum LAB002FixedName {
     static let reports = "reports"
     static let currentReports = "current"
     static let session = "session.json"
+    static let sessionTemporary = "session.json.tmp"
     static let mainAppReport = "main-app.json"
     static let frameworkReport = "framework.json"
     static let shareExtensionReport = "share-extension.json"

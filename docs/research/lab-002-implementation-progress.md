@@ -125,6 +125,24 @@ installation, device observation, or device-backend work.
   reject quarantine/state conflicts. Eleven synthetic Simulator tests and
   Debug/Release builds pass; the final focused Codex recheck found no remaining
   actionable P1/P2.
+- 2C.4a now closes one immutable canonical `session.json` from the verified
+  run envelope, compile-time build/observer/source facts, authenticated
+  enrollment continuity, recomputed installation binding, fixed environment
+  queries, exact run counter, system time, and 32 bytes of system randomness.
+  Creation is exclusive beneath the fixed `reports/current` directory with
+  bounded no-follow reads, atomic publication, complete protection, and backup
+  exclusion. Nineteen synthetic Simulator tests cover exact canonical
+  decoding, session exclusivity/size bounds, counter and authorization
+  consumption, skipped counters, existing/staged sessions, interrupted
+  transaction recovery, replay rejection, and invalid source provenance. The
+  focused CR found and closed the state-ordering and recovery gaps: all
+  fallible session validation and conflict preflight happen before a new
+  counter commit; the exact authorization remains quarantined until the
+  counter and session are durable; and only that pre-existing quarantine may
+  recover a matching committed/staged transaction. A fresh replay is restored
+  and rejected. CR also closed a source-provenance mismatch by making the
+  archive lane reject Git object IDs outside the frozen 40-hex LAB-002 wire
+  form before build staging.
 
 ## Completed 2B gates
 
@@ -194,7 +212,7 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 
 | Order | Work item | Status | Exit gate |
 |---:|---|---|---|
-| 2C.4a | Close and persist the immutable run session | `in progress` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, committed counter, and system randomness/time; `session.json` is exclusively created before observation |
-| 2C.4b | Implement the target-private Mach-O observer core | `planned` | Bounded no-follow installed-file and mapped-image parsing derive only the compiled `__TEXT,__oprobe` range and closed structural evidence/reasons without caller-selected inputs |
+| 2C.4a | Close and persist the immutable run session | `done` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, the exact counter, and system randomness/time; interrupted counter/session publication is recoverable only from the pre-existing exact quarantine, `session.json` is exclusive, and 19 Simulator tests plus focused CR pass |
+| 2C.4b | Implement the target-private Mach-O observer core | `in progress` | Bounded no-follow installed-file and mapped-image parsing derive only the compiled `__TEXT,__oprobe` range and closed structural evidence/reasons without caller-selected inputs |
 | 2C.4c | Wire the three zero-argument role entries | `planned` | Main App, DemoFramework, and Share Extension resolve only themselves, publish the three fixed reports once in required order, and reject duplicate/stale/conflicting sessions |
 | 2C.4d | Close the session and run focused gates | `planned` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |

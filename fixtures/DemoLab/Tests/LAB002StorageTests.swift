@@ -1,4 +1,5 @@
 import Darwin
+import CryptoKit
 import Foundation
 import XCTest
 @testable import DemoLab
@@ -17,7 +18,10 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
             buildBindingSHA256: build,
             notBefore: 1_000,
             notAfter: 1_900,
-            expectedRunCounter: expectedCounter
+            expectedRunCounter: expectedCounter,
+            runFacts: kind == .collectionRun
+                ? Self.runFacts(counter: expectedCounter ?? 1)
+                : nil
         )
     }
 
@@ -26,6 +30,22 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
             throw LAB002CoordinatorError.wrongOperation
         }
         return metadata
+    }
+
+    static func runFacts(counter: UInt64) -> LAB002VerifiedRunFacts {
+        let signingKey = try! LAB002CryptoKitSigningKey(
+            rawRepresentation: Data(repeating: 0x41, count: 32)
+        )
+        return LAB002VerifiedRunFacts(
+            collectionID: String(repeating: "e", count: 64),
+            runOrdinal: UInt8(counter),
+            challengeSHA256: String(repeating: "d", count: 64),
+            acknowledgementSHA256: String(repeating: "b", count: 64),
+            deviceEnrollmentBindingSHA256: String(repeating: "f", count: 64),
+            enrollmentPublicKey: signingKey.publicKeyRaw.hexLowercase,
+            expectedDeviceInstallationBindingSHA256:
+                String(repeating: "1", count: 64)
+        )
     }
 }
 
@@ -95,18 +115,40 @@ private final class TestRandomBytes: LAB002RandomBytesGenerating {
 
 private final class TestRuntimeContext: LAB002RuntimeContextProviding {
     let buildBindingSHA256: String
+    let runBuildFacts: LAB002RunBuildFacts
     var now: Int64
 
     init(
         build: String = String(repeating: "a", count: 64),
-        now: Int64 = 1_500
+        now: Int64 = 1_500,
+        sourceCommit: String = String(repeating: "4", count: 40)
     ) {
         buildBindingSHA256 = build
         self.now = now
+        runBuildFacts = LAB002RunBuildFacts(
+            observerRevision: "lab002-observer-v1",
+            sourceCommit: sourceCommit,
+            marketingVersion: "1.0",
+            buildNumber: "1"
+        )
     }
 
     func currentUnixTime() throws -> Int64 {
         now
+    }
+
+    func currentEnvironment() throws -> LAB002SessionEnvironment {
+        try LAB002SessionEnvironment(
+            hardwareModel: "iPhone17,1",
+            iosProductVersion: "18.0",
+            iosBuild: "22A3354"
+        )
+    }
+
+    func deviceInstallationBinding(
+        state: LAB002InstallationState
+    ) throws -> String {
+        String(repeating: "1", count: 64)
     }
 }
 
@@ -182,10 +224,207 @@ final class LAB002StorageTests: XCTestCase {
 
         let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
         XCTAssertEqual(try storage.readCounter()?.counter, 1)
+        let session = try XCTUnwrap(storage.readSession())
+        XCTAssertEqual(session.state, .collecting)
+        XCTAssertEqual(session.runOrdinal, 1)
+        XCTAssertEqual(session.runCounter, "0000000000000001")
+        XCTAssertEqual(session.sessionID, String(repeating: "51", count: 32))
+        XCTAssertEqual(
+            session.authorizationEnvelopeSHA256,
+            Data(SHA256.hash(data: Data("valid".utf8))).hexLowercase
+        )
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: storage.inboxURL
                     .appendingPathComponent(LAB002FixedName.authorization)
+                    .path
+            )
+        )
+    }
+
+    func testInvalidSourceCommitFailsBeforeStateConsumption() async throws {
+        let build = String(repeating: "a", count: 64)
+        let sourceCommit = String(repeating: "4", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(
+                build: build,
+                sourceCommit: sourceCommit
+            )
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("invalid source commit started a run")
+        } catch LAB002SessionError.invalidRecord {
+        }
+
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        XCTAssertNil(try storage.readSession())
+        XCTAssertNil(try storage.readCounter())
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorizationQuarantine
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testInterruptedRunResumesOnlyFromExistingQuarantine() async throws {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        _ = try storage.quarantineAuthorization()
+        _ = try storage.commitExpectedCounter(
+            expected: 1,
+            buildBindingSHA256: build
+        )
+
+        _ = try await coordinator.startCleanRun()
+
+        XCTAssertEqual(try storage.readCounter()?.counter, 1)
+        XCTAssertEqual(
+            try storage.readSession()?.sessionID,
+            String(repeating: "51", count: 32)
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorizationQuarantine
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testFreshReplayCannotEnterInterruptedRunRecovery() async throws {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        try await coordinator.importAuthorization(from: source)
+
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("fresh replay entered interrupted-run recovery")
+        } catch LAB002StorageError.existingEntry {
+        }
+
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        XCTAssertEqual(try storage.readCounter()?.counter, 1)
+        XCTAssertNotNil(try storage.readSession())
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorization
+                    )
+                    .path
+            )
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorizationQuarantine
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testInterruptedRunAfterSessionPublicationFinishesConsumption()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        try await coordinator.importAuthorization(from: source)
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        _ = try storage.quarantineAuthorization()
+
+        _ = try await coordinator.startCleanRun()
+
+        XCTAssertEqual(try storage.readCounter()?.counter, 1)
+        XCTAssertNotNil(try storage.readSession())
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorizationQuarantine
+                    )
                     .path
             )
         )
@@ -383,7 +622,18 @@ final class LAB002StorageTests: XCTestCase {
             buildBindingSHA256: build,
             notBefore: 1_000,
             notAfter: 1_900,
-            expectedRunCounter: 1
+            expectedRunCounter: 1,
+            runFacts: LAB002VerifiedRunFacts(
+                collectionID: String(repeating: "e", count: 64),
+                runOrdinal: 1,
+                challengeSHA256: String(repeating: "d", count: 64),
+                acknowledgementSHA256: String(repeating: "b", count: 64),
+                deviceEnrollmentBindingSHA256:
+                    String(repeating: "f", count: 64),
+                enrollmentPublicKey: state.enrollmentPublicKey,
+                expectedDeviceInstallationBindingSHA256:
+                    String(repeating: "1", count: 64)
+            )
         )
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
@@ -616,6 +866,120 @@ final class LAB002StorageTests: XCTestCase {
         _ = try storage.quarantineAuthorization()
     }
 
+    func testSessionReportHasExactCanonicalClosedForm() throws {
+        let report = try makeSessionReport()
+        let canonical = try report.canonicalData()
+        XCTAssertEqual(
+            String(decoding: canonical, as: UTF8.self),
+            """
+            {"acknowledgement_sha256":"\(String(repeating: "b", count: 64))","authorization_envelope_sha256":"\(String(repeating: "c", count: 64))","authorization_policy_version":"orchardprobe.authorized-use.v1","build_binding_sha256":"\(String(repeating: "a", count: 64))","build_number":"1","challenge_sha256":"\(String(repeating: "d", count: 64))","collection_id":"\(String(repeating: "e", count: 64))","completed_at":null,"created_at":1500,"device_enrollment_binding_sha256":"\(String(repeating: "f", count: 64))","device_installation_binding_sha256":"\(String(repeating: "1", count: 64))","enrollment_public_key":"\(String(repeating: "2", count: 64))","environment":{"hardware_model":"iPhone17,1","ios_build":"22A3354","ios_product_version":"18.0"},"marketing_version":"1.0","observer_revision":"lab002-observer-v1","profile":"orchardprobe.demolab.lab002.observation.v1","run_counter":"0000000000000001","run_ordinal":1,"schema":"orchardprobe.lab002.session-report.v1","session_id":"\(String(repeating: "3", count: 64))","source_commit":"\(String(repeating: "4", count: 40))","state":"collecting"}
+            """
+        )
+        XCTAssertEqual(
+            try LAB002SessionReport(canonicalBytes: canonical),
+            report
+        )
+
+        let nonCanonical = Data(
+            String(decoding: canonical, as: UTF8.self)
+                .replacingOccurrences(
+                    of: #"{"acknowledgement_sha256""#,
+                    with: #"{ "acknowledgement_sha256""#
+                )
+                .utf8
+        )
+        XCTAssertThrowsError(
+            try LAB002SessionReport(canonicalBytes: nonCanonical)
+        )
+    }
+
+    func testExistingSessionRejectsRunBeforeCounterOrAuthorizationConsumption()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        try storage.createSession(makeSessionReport())
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("existing session accepted a new run")
+        } catch LAB002StorageError.existingEntry {
+        }
+        XCTAssertNil(try storage.readCounter())
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorization
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testSessionCreationIsExclusiveAndBounded() throws {
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        let report = try makeSessionReport()
+        try storage.createSession(report)
+        XCTAssertEqual(try storage.readSession(), report)
+        XCTAssertThrowsError(try storage.createSession(report))
+
+        let sessionURL = storage.reportsURL
+            .appendingPathComponent(LAB002FixedName.currentReports)
+            .appendingPathComponent(LAB002FixedName.session)
+        try Data(repeating: 0x61, count: LAB002Limit.sessionReport + 1)
+            .write(to: sessionURL)
+        XCTAssertThrowsError(try storage.readSession())
+    }
+
+    func testSessionTemporaryPublicationIsRecoverable() throws {
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        let currentURL = storage.reportsURL.appendingPathComponent(
+            LAB002FixedName.currentReports,
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: currentURL,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let temporaryURL = currentURL.appendingPathComponent(
+            LAB002FixedName.sessionTemporary
+        )
+        let report = try makeSessionReport()
+        try report.canonicalData().write(to: temporaryURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: temporaryURL.path
+        )
+
+        try storage.createOrRecoverSession(report)
+
+        XCTAssertEqual(try storage.readSession(), report)
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: temporaryURL.path)
+        )
+    }
+
     private func enroll(
         coordinator: LAB002InboxCoordinator,
         validator: TestAuthorizationValidator,
@@ -638,7 +1002,38 @@ final class LAB002StorageTests: XCTestCase {
             buildBindingSHA256: build,
             notBefore: 1_000,
             notAfter: 1_900,
-            expectedRunCounter: expectedRunCounter
+            expectedRunCounter: expectedRunCounter,
+            runFacts: TestAuthorizationValidator.runFacts(
+                counter: expectedRunCounter
+            )
+        )
+    }
+
+    private func makeSessionReport() throws -> LAB002SessionReport {
+        try LAB002SessionReport(
+            observerRevision: "lab002-observer-v1",
+            buildBindingSHA256: String(repeating: "a", count: 64),
+            collectionID: String(repeating: "e", count: 64),
+            runOrdinal: 1,
+            challengeSHA256: String(repeating: "d", count: 64),
+            acknowledgementSHA256: String(repeating: "b", count: 64),
+            authorizationEnvelopeSHA256: String(repeating: "c", count: 64),
+            deviceEnrollmentBindingSHA256: String(repeating: "f", count: 64),
+            enrollmentPublicKey: String(repeating: "2", count: 64),
+            deviceInstallationBindingSHA256: String(repeating: "1", count: 64),
+            environment: LAB002SessionEnvironment(
+                hardwareModel: "iPhone17,1",
+                iosProductVersion: "18.0",
+                iosBuild: "22A3354"
+            ),
+            sessionID: String(repeating: "3", count: 64),
+            runCounter: "0000000000000001",
+            createdAt: 1_500,
+            completedAt: nil,
+            sourceCommit: String(repeating: "4", count: 40),
+            marketingVersion: "1.0",
+            buildNumber: "1",
+            state: .collecting
         )
     }
 }

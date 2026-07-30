@@ -174,6 +174,7 @@ checkout, or export them only in the local terminal:
 | `DEMO_LAB_MARKETING_VERSION` | archive | Optional dotted version; defaults to `1.0`. |
 | `DEMO_LAB_BUILD_NUMBER` | archive | New positive integer for every App Store Connect upload. |
 | `DEMO_LAB_BUILD_BINDING_SHA256` | archive | Exact lowercase 64-hex binding produced by the reviewed LAB-002 pre-build step from every frozen source, version, manifest, and toolchain input. The archive lane validates and injects it; it never supplies a default. |
+| `DEMO_LAB_IDENTITY_NONCE` | archive | Exact lowercase 64-hex private target-manifest nonce produced by the same reviewed LAB-002 pre-build step. The archive lane validates and injects it into the owned DemoLab fixture; it is never generated or defaulted by the lane. |
 | `DEMO_LAB_OUTPUT_DIR` | archive | Absolute dedicated directory outside the repository. It must already exist, be owned by the current user, not be a symlink, already have mode `0700`, and contain no single quote or control character; the lane never creates it or changes its permissions. |
 | `DEMO_LAB_EVIDENCE_PATH` | upload, reconciliation | Absolute path to the generated pre-upload evidence JSON. It must remain owned by the current user with no group/other access. |
 | `DEMO_LAB_APPLE_ID` | upload | Numeric Apple ID of the existing App Store Connect app record; this binds Apple's package-upload command to the intended app. |
@@ -184,6 +185,12 @@ checkout, or export them only in the local terminal:
 | `DEMO_LAB_CONFIRM_UPLOAD` | upload | Exact explicit ownership confirmation required by the lane. |
 | `DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT` | reconciliation | Exact `attempt_started_at` value from an indeterminate upload result. This binds a retry decision to one attempt. |
 | `DEMO_LAB_CONFIRM_RETRY_AFTER_RECONCILIATION` | reconciliation | Must equal `I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT`, and only after the exact version/build has been checked in App Store Connect. |
+
+The LAB-002 artifact schema freezes `source_commit` as exactly 40 lowercase
+hex characters. `demolab_archive` therefore rejects a checkout using a
+different Git object-ID width before staging or archiving, even though shared
+source-staging helpers remain capable of handling wider identifiers for other
+workflows.
 
 The `.p8` file must not be a symlink and must have owner-only permissions:
 

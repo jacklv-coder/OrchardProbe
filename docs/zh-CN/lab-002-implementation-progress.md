@@ -93,6 +93,18 @@
   恢复那一个精确的隔离授权，重新验证后严格加载已持久化的 State/Key，再完成删除；
   新的重复 Enrollment 与所有 Run 仍会拒绝隔离/状态冲突。11 项合成 Simulator 测试与
   Debug/Release Build 已通过；最终专项 Codex 复审没有剩余可执行的 P1/P2。
+- 2C.4a 已从验证后的 Run Envelope、编译期 Build/Observer/Source 事实、已认证
+  Enrollment 连续性、重新计算的 Installation Binding、固定环境查询、精确 Run
+  Counter、系统时间和 32 字节系统随机数闭合一份不可变规范 `session.json`。文件只会
+  在固定 `reports/current` 下排他创建，使用有界 No-follow 读取、原子发布、完整保护及
+  禁止备份。19 项合成 Simulator 测试覆盖精确规范解码、Session 排他性/大小上限、
+  Counter 与授权消费、跳号、已有/暂存 Session、中断事务恢复、重放拒绝及无效 Source
+  Provenance。专项 CR 发现并关闭了状态顺序与恢复缺口：所有可能失败的 Session 校验和
+  冲突预检都先于新 Counter Commit；精确授权会一直保留在 Quarantine，直到 Counter
+  与 Session 都持久化；只有原先已存在的那份 Quarantine 能恢复匹配的已提交/暂存事务，
+  新导入的重放会被 Restore 并拒绝。CR 还关闭了 Source Provenance 不一致：Archive
+  Lane 会在 Build Staging 前拒绝冻结的 LAB-002 40 位 Hex Wire Format 之外的 Git
+  Object ID。
 
 ## 已完成的 2B 门禁
 
@@ -151,7 +163,7 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 
 | 顺序 | 工作项 | 状态 | 退出门禁 |
 |---:|---|---|---|
-| 2C.4a | 闭合并持久化不可变 Run Session | `进行中` | 精确 Session Report 字段只能来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、已提交 Counter 与系统随机数/时间；观察前排他创建 `session.json` |
-| 2C.4b | 实现 Target 私有 Mach-O Observer Core | `planned` | 对安装文件做 No-follow 有界解析并解析已映射 Image，只推导编译固定的 `__TEXT,__oprobe` Range；返回闭合结构证据/原因，不接受调用方选择输入 |
+| 2C.4a | 闭合并持久化不可变 Run Session | `完成` | 精确 Session Report 字段只来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、精确 Counter 与系统随机数/时间；Counter/Session 中断发布只可由原先精确 Quarantine 恢复，`session.json` 排他创建，19 项 Simulator 测试与专项 CR 通过 |
+| 2C.4b | 实现 Target 私有 Mach-O Observer Core | `进行中` | 对安装文件做 No-follow 有界解析并解析已映射 Image，只推导编译固定的 `__TEXT,__oprobe` Range；返回闭合结构证据/原因，不接受调用方选择输入 |
 | 2C.4c | 接入三个零参数 Role 入口 | `planned` | Main App、DemoFramework、Share Extension 只解析自身，按固定顺序各发布一次固定报告，并拒绝重复、过期或冲突 Session |
 | 2C.4d | 完成 Session 并执行专项门禁 | `planned` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |
