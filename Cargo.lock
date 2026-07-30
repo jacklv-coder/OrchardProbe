@@ -846,6 +846,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchardprobe-lab002-tools"
+version = "0.1.0-alpha.1"
+dependencies = [
+ "ed25519-dalek",
+ "orchardprobe-core",
+ "rand_core",
+ "rustix",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
 name = "outref"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

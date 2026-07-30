@@ -1,4 +1,5 @@
 require "digest"
+require "etc"
 require "fiddle/import"
 require "fcntl"
 require "fileutils"
@@ -52,10 +53,22 @@ DEMO_LAB_TRUSTED_XCODEGEN_BINARIES = {
       "2.46.0",
   }.freeze,
 }.freeze
+DEMO_LAB_TRUSTED_RUST_TOOLCHAINS = {
+  # This digest uses lab002_rust_toolchain_tree_sha256's framed, sorted
+  # inventory protocol; an unframed whole-tree digest is not equivalent.
+  "1.85.0-aarch64-apple-darwin" =>
+    "8662d91ca4cefb026309b47a1b6e4a581273fd5021eb68aec8a0ee81659384ec",
+}.freeze
 DEMO_LAB_LOCAL_RUN_CONFIRMATION = "I_AM_RUNNING_LOCALLY_OUTSIDE_CI"
 DEMO_LAB_RETRY_CONFIRMATION =
   "I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT"
 DEMO_LAB_UPLOAD_KEY_FD = 4
+DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA =
+  "orchardprobe.lab002.prebuild-request.v1"
+DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA =
+  "orchardprobe.lab002.prebuild-result.v1"
+DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
+DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
 DEMO_LAB_LINEAGE_NOTE =
   "Pre-upload bytes are candidates, not proof of installed plaintext."
 DEMO_LAB_UPLOAD_INDETERMINATE_NOTE =
@@ -455,6 +468,404 @@ def validate_demolab_authorization_public_key!(value)
   value
 end
 
+def lab002_rust_toolchain_name
+  toolchain_file = File.join(repository_root, "rust-toolchain.toml")
+  content = File.read(toolchain_file, mode: "rb")
+  matches = content.scan(/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/)
+  unless matches.length == 1 && content.start_with?("[toolchain]\n")
+    UI.user_error!("The pinned Rust toolchain file is invalid.")
+  end
+  matches.fetch(0).fetch(0)
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to read the pinned Rust toolchain safely.")
+end
+
+def lab002_rust_toolchain_tree_sha256(root)
+  root = File.realpath(root)
+  entries = []
+  Find.find(root) { |path| entries << path }
+  entries.sort_by! do |path|
+    relative_path =
+      path == root ? "." : path.delete_prefix("#{root}#{File::SEPARATOR}")
+    [path == root ? 0 : 1, relative_path.b]
+  end
+  digest = Digest::SHA256.new
+  digest.update("orchardprobe.rust-toolchain-tree.v1\0")
+
+  entries.each do |path|
+    relative_path =
+      path == root ? "." : path.delete_prefix("#{root}#{File::SEPARATOR}")
+    stat = File.lstat(path)
+    unless stat.uid == Process.uid &&
+           (stat.mode & 0o022).zero? &&
+           !stat.symlink? &&
+           (stat.directory? || stat.file?)
+      UI.user_error!(
+        "Pinned Rust toolchain contains an unsafe node."
+      )
+    end
+    type = stat.directory? ? "d" : "f"
+    digest.update([relative_path.bytesize].pack("N"))
+    digest.update(relative_path)
+    digest.update(type)
+    digest.update([stat.mode & 0o7777].pack("N"))
+    next if stat.directory?
+
+    flags = File::RDONLY | File::NONBLOCK
+    flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    File.open(path, flags) do |file|
+      opened = file.stat
+      path_stat = File.lstat(path)
+      unless opened.file? &&
+             opened.dev == stat.dev &&
+             opened.ino == stat.ino &&
+             path_stat.dev == opened.dev &&
+             path_stat.ino == opened.ino
+        UI.user_error!("Pinned Rust toolchain file identity changed.")
+      end
+      file_digest = Digest::SHA256.new
+      while (chunk = file.read(1024 * 1024))
+        file_digest.update(chunk)
+      end
+      after = file.stat
+      unless [
+        after.dev,
+        after.ino,
+        after.size,
+        after.mtime.to_f,
+      ] == [
+        opened.dev,
+        opened.ino,
+        opened.size,
+        opened.mtime.to_f,
+      ]
+        UI.user_error!("Pinned Rust toolchain file changed while hashing.")
+      end
+      digest.update([opened.size].pack("Q>"))
+      digest.update(file_digest.digest)
+    end
+  end
+  observed_entries = []
+  Find.find(root) { |path| observed_entries << path }
+  observed_entries.sort_by! do |path|
+    relative_path =
+      path == root ? "." : path.delete_prefix("#{root}#{File::SEPARATOR}")
+    [path == root ? 0 : 1, relative_path.b]
+  end
+  unless entries == observed_entries
+    UI.user_error!("Pinned Rust toolchain inventory changed while hashing.")
+  end
+  digest.hexdigest
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to hash the pinned Rust toolchain safely.")
+end
+
+def lab002_rust_target_architecture(host_architecture)
+  case host_architecture
+  when "arm64"
+    "aarch64"
+  when "x86_64"
+    "x86_64"
+  else
+    UI.user_error!("This host architecture has no LAB-002 Rust target.")
+  end
+end
+
+def selected_lab002_rust_toolchain
+  channel = lab002_rust_toolchain_name
+  architecture = lab002_rust_target_architecture(
+    command_output("/usr/bin/uname", "-m")
+  )
+  toolchain_name = "#{channel}-#{architecture}-apple-darwin"
+  expected_sha256 = DEMO_LAB_TRUSTED_RUST_TOOLCHAINS[toolchain_name]
+  unless expected_sha256
+    UI.user_error!("This Rust toolchain has no reviewed content allowlist.")
+  end
+  owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
+  root = File.join(
+    owner_home,
+    ".rustup",
+    "toolchains",
+    toolchain_name
+  )
+  resolved = File.realpath(root)
+  unless resolved == root
+    UI.user_error!("The pinned Rust toolchain path is not canonical.")
+  end
+  root_stat = File.lstat(resolved)
+  unless root_stat.directory? &&
+         !root_stat.symlink? &&
+         root_stat.uid == Process.uid &&
+         (root_stat.mode & 0o022).zero?
+    UI.user_error!("The pinned Rust toolchain root is unsafe.")
+  end
+  observed_sha256 = lab002_rust_toolchain_tree_sha256(resolved)
+  unless observed_sha256 == expected_sha256
+    UI.user_error!("The selected Rust toolchain content is not reviewed.")
+  end
+  cargo = File.join(resolved, "bin", "cargo")
+  rustc = File.join(resolved, "bin", "rustc")
+  [resolved, cargo, rustc, observed_sha256]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to resolve the pinned Rust toolchain safely.")
+end
+
+def build_lab002_private_tool
+  workspace = nil
+  toolchain_root, cargo, rustc, toolchain_sha256 =
+    selected_lab002_rust_toolchain
+  workspace = external_temporary_directory("orchardprobe-lab002-tool-")
+  cargo_home = File.join(Etc.getpwuid(Process.uid).dir, ".cargo")
+  %w[config config.toml].each do |name|
+    if File.exist?(File.join(cargo_home, name)) ||
+       File.symlink?(File.join(cargo_home, name))
+      UI.user_error!("A user Cargo configuration is not allowed.")
+    end
+  end
+  environment = {
+    "CARGO_HOME" => cargo_home,
+    "CARGO_NET_OFFLINE" => "true",
+    "CARGO_TARGET_DIR" => workspace,
+    "HOME" => Etc.getpwuid(Process.uid).dir,
+    "LANG" => "en_US.UTF-8",
+    "LC_ALL" => "en_US.UTF-8",
+    "PATH" =>
+      "#{File.join(toolchain_root, 'bin')}:#{DEMO_LAB_PINNED_SYSTEM_PATH}",
+    "RUSTC" => rustc,
+    "TMPDIR" => workspace,
+  }
+  _, stderr, status = Open3.capture3(
+    environment,
+    cargo,
+    "build",
+    "--offline",
+    "--locked",
+    "--release",
+    "--package",
+    "orchardprobe-lab002-tools",
+    chdir: repository_root,
+    unsetenv_others: true
+  )
+  unless status.success?
+    UI.user_error!("Private LAB-002 tool build failed: #{stderr.strip}")
+  end
+  unless lab002_rust_toolchain_tree_sha256(toolchain_root) ==
+         toolchain_sha256
+    UI.user_error!("The pinned Rust toolchain changed during the build.")
+  end
+  binary = File.join(workspace, "release", "oprobe-lab002")
+  stat = File.lstat(binary)
+  unless stat.file? &&
+         !stat.symlink? &&
+         stat.uid == Process.uid &&
+         File.executable?(binary) &&
+         stat.size.positive? &&
+         stat.size <= 32 * 1024 * 1024
+    UI.user_error!("The private LAB-002 tool product is invalid.")
+  end
+  File.chmod(0o500, binary)
+  locked_stat = File.stat(binary)
+  identity = [
+    locked_stat.dev,
+    locked_stat.ino,
+    locked_stat.size,
+    Digest::SHA256.file(binary).hexdigest,
+  ]
+  [binary, workspace, identity]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  FileUtils.rm_rf(workspace) if workspace
+  UI.user_error!("Unable to build the private LAB-002 tool safely.")
+rescue StandardError
+  FileUtils.rm_rf(workspace) if workspace
+  raise
+end
+
+def verify_lab002_private_tool!(binary, workspace, identity)
+  resolved = File.realpath(binary)
+  stat = File.stat(resolved)
+  unless resolved.start_with?("#{File.realpath(workspace)}#{File::SEPARATOR}") &&
+         stat.file? &&
+         stat.uid == Process.uid &&
+         (stat.mode & 0o777) == 0o500 &&
+         [
+           stat.dev,
+           stat.ino,
+           stat.size,
+           Digest::SHA256.file(resolved).hexdigest,
+         ] == identity
+    UI.user_error!("The private LAB-002 tool changed during use.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to revalidate the private LAB-002 tool safely.")
+end
+
+def lab002_toolchain_record(xcode_toolchain)
+  xcode_lines = xcode_toolchain.fetch("xcode_version").map(&:strip)
+  xcode_version = xcode_lines[0]&.delete_prefix("Xcode ")
+  xcode_build = xcode_lines[1]&.delete_prefix("Build version ")
+  unless /\A[0-9]+(?:\.[0-9]+){0,3}\z/.match?(xcode_version.to_s) &&
+         /\A[0-9]+[A-Z][A-Za-z0-9]+\z/.match?(xcode_build.to_s)
+    UI.user_error!("Selected Xcode version metadata is invalid for LAB-002.")
+  end
+  xcodegen_path, xcodegen_version, xcodegen_identity = selected_xcodegen
+  {
+    "xcode_version" => xcode_version,
+    "xcode_build" => xcode_build,
+    "iphoneos_sdk_version" =>
+      xcode_toolchain.fetch("iphoneos_sdk_version"),
+    "iphoneos_sdk_build" =>
+      xcode_toolchain.fetch("iphoneos_sdk_build"),
+    "xcodegen_version" => xcodegen_version,
+    "xcodegen_architecture" => command_output("/usr/bin/uname", "-m"),
+    "xcodegen_executable_sha256" => xcodegen_identity.fetch(4),
+    "fastlane_version" => Fastlane::VERSION,
+    "gemfile_lock_sha256" =>
+      Digest::SHA256.file(File.join(repository_root, "Gemfile.lock")).hexdigest,
+  }.tap do
+    current = File.stat(xcodegen_path)
+    unless [
+      current.dev,
+      current.ino,
+      current.size,
+      current.mtime.to_i,
+      Digest::SHA256.file(xcodegen_path).hexdigest,
+    ] == xcodegen_identity
+      UI.user_error!("The selected XcodeGen changed during LAB-002 preparation.")
+    end
+  end
+end
+
+def lab002_entitlement(presence, value = nil)
+  record = { "presence" => presence }
+  record["value"] = value if value
+  record
+end
+
+def lab002_app_groups(presence, values = nil)
+  record = { "presence" => presence }
+  record["values"] = values if values
+  record
+end
+
+def prepare_lab002_private_inputs!(
+  output_root:,
+  source_commit:,
+  marketing_version:,
+  build_number:,
+  app_identifier:,
+  share_identifier:,
+  app_group_identifier:,
+  team_identifier:,
+  xcode_toolchain:
+)
+  toolchain = lab002_toolchain_record(xcode_toolchain)
+  present_application_identifier = lambda do |bundle_identifier|
+    lab002_entitlement(
+      "present",
+      "#{team_identifier}.#{bundle_identifier}"
+    )
+  end
+  present_team_identifier =
+    lab002_entitlement("present", team_identifier)
+  present_app_group =
+    lab002_app_groups("present", [app_group_identifier])
+  required_absent = lab002_entitlement("required_absent")
+  groups_required_absent = lab002_app_groups("required_absent")
+  targets = [
+    {
+      "role" => "main_app",
+      "bundle_id" => app_identifier,
+      "code_directory_identifier" => app_identifier,
+      "code_directory_team_identifier" => team_identifier,
+      "application_identifier" =>
+        present_application_identifier.call(app_identifier),
+      "developer_team_identifier" => present_team_identifier,
+      "application_groups" => present_app_group,
+    },
+    {
+      "role" => "framework",
+      "bundle_id" => "#{app_identifier}.framework",
+      "code_directory_identifier" => "#{app_identifier}.framework",
+      "code_directory_team_identifier" => team_identifier,
+      "application_identifier" => required_absent,
+      "developer_team_identifier" => required_absent,
+      "application_groups" => groups_required_absent,
+    },
+    {
+      "role" => "share_extension",
+      "bundle_id" => share_identifier,
+      "code_directory_identifier" => share_identifier,
+      "code_directory_team_identifier" => team_identifier,
+      "application_identifier" =>
+        present_application_identifier.call(share_identifier),
+      "developer_team_identifier" => present_team_identifier,
+      "application_groups" => present_app_group,
+    },
+  ]
+  request = {
+    "schema" => DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA,
+    "source_commit" => source_commit,
+    "marketing_version" => marketing_version,
+    "build_number" => build_number,
+    "configuration" => "Release",
+    "observer_revision" => "lab002-observer-v1",
+    "toolchain" => toolchain,
+    "targets" => targets,
+  }
+
+  binary = nil
+  tool_workspace = nil
+  begin
+    binary, tool_workspace, tool_identity = build_lab002_private_tool
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    stdout, stderr, status = Open3.capture3(
+      sanitized_dynamic_loader_environment,
+      binary,
+      "prepare",
+      "--output-root",
+      output_root,
+      stdin_data: JSON.generate(request),
+      chdir: repository_root
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    unless status.success?
+      UI.user_error!(
+        "LAB-002 private input preparation failed: #{stderr.strip}"
+      )
+    end
+    result = JSON.parse(stdout)
+    require_exact_hash_keys!(
+      result,
+      %w[
+        schema
+        prebuild_directory
+        authorized_target_manifest_sha256
+        build_binding_sha256
+        target_identity_set_sha256
+      ],
+      "LAB-002 prebuild result"
+    )
+    unless result["schema"] == DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA &&
+           result["prebuild_directory"].is_a?(String) &&
+           Pathname.new(result["prebuild_directory"]).absolute? &&
+           %w[
+             authorized_target_manifest_sha256
+             build_binding_sha256
+             target_identity_set_sha256
+           ].all? { |name|
+             /\A[0-9a-f]{64}\z/.match?(result[name].to_s)
+           }
+      UI.user_error!("LAB-002 private input result is invalid.")
+    end
+    result
+  ensure
+    FileUtils.rm_rf(tool_workspace) if tool_workspace
+  end
+end
+
 def valid_utc_timestamp?(value)
   return false unless value.is_a?(String) && value.end_with?("Z")
 
@@ -687,6 +1098,33 @@ def ensure_clean_source!
     "--untracked-files=all"
   )
   UI.user_error!("Commit or remove every local change before creating evidence.") unless status.empty?
+end
+
+def reviewed_main_source_commit
+  source_commit = git_command_output("rev-parse", "HEAD")
+  reviewed_main = git_command_output(
+    "rev-parse",
+    "--verify",
+    "refs/remotes/origin/main"
+  )
+  _, _, status = Open3.capture3(
+    sanitized_dynamic_loader_environment(
+      DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }
+    ),
+    "/usr/bin/git",
+    "merge-base",
+    "--is-ancestor",
+    source_commit,
+    reviewed_main,
+    chdir: repository_root
+  )
+  unless status.success?
+    UI.user_error!(
+      "LAB-002 preparation requires HEAD to be present in the reviewed " \
+      "origin/main history."
+    )
+  end
+  source_commit
 end
 
 def ensure_manual_lane!
@@ -4446,6 +4884,88 @@ platform :ios do
     ensure
       FileUtils.rm_rf(workspace)
     end
+  end
+
+  desc "Create private LAB-002 authorization and build inputs outside Git"
+  lane :demolab_prepare_lab002 do
+    ensure_manual_lane!
+    ensure_clean_source!
+    source_commit = reviewed_main_source_commit
+    xcode_toolchain = selected_xcode_toolchain
+
+    app_identifier, share_identifier = demolab_bundle_identifiers
+    app_group_identifier = required_environment(
+      "DEMO_LAB_APP_GROUP_ID",
+      pattern: /\Agroup\.[A-Za-z0-9][A-Za-z0-9.-]*\z/
+    )
+    if app_group_identifier.start_with?("group.com.example.")
+      UI.user_error!("Use the registered first-party DemoLab App Group.")
+    end
+    team_identifier = required_environment(
+      "DEMO_LAB_TEAM_ID",
+      pattern: /\A[A-Z0-9]{10}\z/
+    )
+    marketing_version = ENV.fetch("DEMO_LAB_MARKETING_VERSION", "1.0").strip
+    unless /\A[0-9]+(?:\.[0-9]+){0,2}\z/.match?(marketing_version)
+      UI.user_error!("DEMO_LAB_MARKETING_VERSION has an invalid format.")
+    end
+    build_number = required_environment(
+      "DEMO_LAB_BUILD_NUMBER",
+      pattern: /\A[1-9][0-9]{0,17}\z/
+    )
+    unless marketing_version ==
+             DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+           build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+      UI.user_error!(
+        "This reviewed LAB-002 checkpoint only authorizes DemoLab 1.0 (3)."
+      )
+    end
+    output_identity = private_output_directory
+    output_root = output_identity.first
+    unless /\A[0-9a-f]{40}\z/.match?(source_commit)
+      UI.user_error!(
+        "LAB-002 requires the frozen 40-hex source_commit wire format."
+      )
+    end
+
+    result = nil
+    with_locked_private_directory(
+      output_root,
+      output_identity,
+      "DEMO_LAB_OUTPUT_DIR"
+    ) do |output_handle|
+      verify_locked_directory!(
+        output_handle,
+        output_root,
+        output_identity,
+        "DEMO_LAB_OUTPUT_DIR"
+      )
+      ensure_clean_source!
+      unless reviewed_main_source_commit == source_commit
+        UI.user_error!("LAB-002 source commit changed during preparation.")
+      end
+      result = prepare_lab002_private_inputs!(
+        output_root: output_root,
+        source_commit: source_commit,
+        marketing_version: marketing_version,
+        build_number: build_number,
+        app_identifier: app_identifier,
+        share_identifier: share_identifier,
+        app_group_identifier: app_group_identifier,
+        team_identifier: team_identifier,
+        xcode_toolchain: xcode_toolchain
+      )
+      verify_locked_directory!(
+        output_handle,
+        output_root,
+        output_identity,
+        "DEMO_LAB_OUTPUT_DIR"
+      )
+    end
+    UI.success(
+      "Private LAB-002 inputs published: " \
+      "#{result.fetch('prebuild_directory')}"
+    )
   end
 
   desc "Archive and export one signed first-party DemoLab candidate outside Git"
