@@ -28,8 +28,10 @@ targets:
     platform: iOS
     sources:
       - path: Framework/Sources
+      - path: Shared/Sources/LAB002FixedLayout.swift
       - path: Shared/Sources/LAB002MachOObserverCore.swift
       - path: Shared/Sources/LAB002LiveMachOObserver.swift
+      - path: Shared/Sources/LAB002RoleReport.swift
       - path: Framework/Headers
         buildPhase: headers
         headerVisibility: public

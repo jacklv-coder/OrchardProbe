@@ -15,6 +15,42 @@ enum LAB002Role: String {
         case .shareExtension: return 3
         }
     }
+
+    var fixtureRelativePath: String {
+        switch self {
+        case .mainApp:
+            return "DemoLab.app/DemoLab"
+        case .framework:
+            return "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework"
+        case .shareExtension:
+            return "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension"
+        }
+    }
+
+    var reportName: String {
+        switch self {
+        case .mainApp: return LAB002FixedName.mainAppReport
+        case .framework: return LAB002FixedName.frameworkReport
+        case .shareExtension: return LAB002FixedName.shareExtensionReport
+        }
+    }
+
+    var temporaryReportName: String {
+        switch self {
+        case .mainApp: return LAB002FixedName.mainAppReportTemporary
+        case .framework: return LAB002FixedName.frameworkReportTemporary
+        case .shareExtension:
+            return LAB002FixedName.shareExtensionReportTemporary
+        }
+    }
+
+    var precedingRoles: [LAB002Role] {
+        switch self {
+        case .mainApp: return []
+        case .framework: return [.mainApp]
+        case .shareExtension: return [.mainApp, .framework]
+        }
+    }
 }
 
 struct LAB002LocalRoleObservation: Equatable {

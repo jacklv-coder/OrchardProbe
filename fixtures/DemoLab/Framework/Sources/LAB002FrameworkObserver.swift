@@ -18,5 +18,11 @@ private func currentFrameworkObservation()
 }
 
 public func observeCurrentFrameworkImage() throws {
-    _ = try currentFrameworkObservation()
+    let bundle = Bundle(for: LAB002FrameworkBundleToken.self)
+    let observation = try currentFrameworkObservation()
+    try LAB002RoleReportPublisher.publish(
+        observation,
+        fixedBundle: bundle,
+        fixedRole: .framework
+    )
 }

@@ -104,8 +104,33 @@ public `SecStaticCode` validation surface, so this parser deliberately records
 never become `valid`. Consequently the future report is No-Go unless a
 separately reviewed validator can supply real validation.
 
-Report encoding and exclusive ordered publication are not part of this local
-assembly and remain 2C.4c2.
+### Canonical fixed-role publication
+
+Checkpoint 2C.4c2 makes each zero-argument entry close its local observation
+into the exact `orchardprobe.lab002.role-report.v1` JSON shape. The report
+copies every run/build/environment binding from the canonical immutable
+`session.json`; compiled Bundle build binding, source commit, observer
+revision, marketing version, and build number must match that session before
+publication. Installed iOS executables must be thinned to the single loaded
+slice so one observed mapped digest cannot be misrepresented as evidence for
+an inactive FAT slice.
+
+Publication opens only the compiled App Group and fixed
+`lab-002-v1/reports/current` chain. After acquiring the shared coordinator
+lock, it revalidates every directory and lock inode, rejects any unknown or
+temporary entry, reparses the session and every preceding report canonically,
+and requires nondecreasing phase times. The allowed pre-publication sets are
+exactly session; session plus main; and session plus main plus framework.
+Each 32 KiB role report is written to its fixed owner-only temporary name,
+flushed, protected, excluded from backup, and renamed without replacement
+before the directory is flushed. Duplicate, stale, conflicting, oversized,
+out-of-order, replaced, or malformed state fails closed.
+
+The device never receives the frozen plaintext oracle. The current bounded
+signature parser deliberately emits `not_checked`, so these locally published
+reports are `inconclusive` with
+`signature_invalid_or_unchecked`; they are not plaintext or successful
+signature claims. Exact oracle comparison remains Host work after export.
 
 ## Fixed production container
 
@@ -232,7 +257,7 @@ The implementation must:
   valid authorization, or clean an unexported/mismatched session.
 
 Surface limits remain those in the reviewed schema contract: 16 KiB control
-documents, 1 KiB fixed state records, 128 KiB role reports, 16 KiB session
+documents, 1 KiB fixed state records, 32 KiB role reports, 16 KiB session
 reports, and 512 KiB signed exports.
 
 ## Production and test dependencies

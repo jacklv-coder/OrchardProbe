@@ -126,6 +126,17 @@
   `not_checked`，绝不能产生签名通过声明。30 项 Simulator 测试覆盖合成签名/身份
   一致性与零参数失败关闭，Release Simulator Build 与专项 Codex CR 均通过，没有
   剩余可执行 P1/P2。
+- 2C.4c2 已实现三份固定 Role Report 的规范编码与排他发布。每个 Target 只重新打开
+  编译期 App Group 与固定当前报告目录，取得共享 Coordinator Lock 后重新验证完整
+  目录/Lock Inode 链，并且只接受 Session、Main、Framework、Share 的精确前缀。
+  发布器会重新解析不可变 Session 与全部前序报告，绑定全部
+  Run/Build/Environment Facts，强制 Phase 不倒退及最大可能授权窗口，再通过
+  Owner-only、完整保护、排除备份、不超过 32 KiB 的临时文件执行数据 Flush、
+  元数据后 Flush、无覆盖 Rename 和目录 Flush。未知、临时、重复、格式错误、超限、被替换、过期、冲突或
+  乱序状态全部失败关闭。由于 Validation 仍为 `not_checked`，本地报告明确为
+  `inconclusive`，不是签名或明文成功。33 项 Simulator 测试与 Release Simulator
+  Build 已通过。专项 CR 发现并关闭了一个文件元数据持久化缺口，最终差异没有剩余
+  可执行 P1/P2。
 
 ## 已完成的 2B 门禁
 
@@ -187,5 +198,5 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 2C.4a | 闭合并持久化不可变 Run Session | `完成` | 精确 Session Report 字段只来自已验证 Authorization、固定 Build/Runtime Facts、Enrollment 连续性、精确 Counter 与系统随机数/时间；Counter/Session 中断发布只可由原先精确 Quarantine 恢复，`session.json` 排他创建，19 项 Simulator 测试与专项 CR 通过 |
 | 2C.4b | 实现 Target 私有 Mach-O Observer Core | `完成` | Stable No-follow Descriptor 读取、有界 Thin/FAT 解析、精确固定 Section/Encryption/Fixup 证据、Mapped Header/Anchor 绑定、28 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有调用方可选输入 |
 | 2C.4c1 | 组装三个 Target 私有零参数观察 | `完成` | 固定 Bundle/Anchor 与 `dladdr` 绑定、有界安装签名身份、Active Mapped Header/Range/VM 绑定、精确 Disk/Mapped Digest、30 项 Simulator 测试、Release Build 与专项 CR 均通过，且生产代码没有选择器输入 |
-| 2C.4c2 | 编码并发布三份固定 Role Report | `进行中` | 精确规范报告绑定不可变 Session，按 Main/Framework/Share 顺序排他发布，并拒绝重复、过期、冲突、超限或乱序状态 |
-| 2C.4d | 完成 Session 并执行专项门禁 | `planned` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |
+| 2C.4c2 | 编码并发布三份固定 Role Report | `完成` | 精确规范报告绑定不可变 Session，按 Main/Framework/Share 顺序排他发布，拒绝重复/过期/冲突/超限/乱序状态，并通过 33 项 Simulator 测试、Release Build 与专项 CR，最终没有剩余可执行 P1/P2 |
+| 2C.4d | 完成 Session 并执行专项门禁 | `进行中` | 精确顺序/完成迁移、负向 Simulator Fixture、Debug/Release Build、文档与专项 Codex CR 均通过且没有剩余 P1/P2 |

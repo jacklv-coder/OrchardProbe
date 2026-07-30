@@ -242,6 +242,180 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
         assertRejects(malformed, .inventoryMismatch)
     }
 
+    func testRoleReportsPublishCanonicallyInFixedOrder() throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_200, mappedTime: 1_300),
+            fixedRole: .framework,
+            testContainerURL: container
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_300, mappedTime: 1_400),
+            fixedRole: .shareExtension,
+            testContainerURL: container
+        )
+
+        let current = storage.reportsURL.appendingPathComponent(
+            LAB002FixedName.currentReports,
+            isDirectory: true
+        )
+        let expected = Set([
+            LAB002FixedName.session,
+            LAB002FixedName.mainAppReport,
+            LAB002FixedName.frameworkReport,
+            LAB002FixedName.shareExtensionReport,
+        ])
+        XCTAssertEqual(
+            Set(try FileManager.default.contentsOfDirectory(
+                atPath: current.path
+            )),
+            expected
+        )
+        let mainBytes = try Data(
+            contentsOf: current.appendingPathComponent(
+                LAB002FixedName.mainAppReport
+            )
+        )
+        XCTAssertLessThanOrEqual(mainBytes.count, 32 * 1024)
+        XCTAssertNoThrow(try LAB002RoleReport(canonicalBytes: mainBytes))
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: mainBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(object["role"] as? String, "main_app")
+        XCTAssertEqual(object["outcome"] as? String, "inconclusive")
+        XCTAssertEqual(
+            object["reasons"] as? [String],
+            ["signature_invalid_or_unchecked"]
+        )
+        var invalidSignature = object
+        var signature = try XCTUnwrap(
+            invalidSignature["signature"] as? [String: Any]
+        )
+        signature["presence"] = "absent"
+        signature["kind"] = "not_applicable"
+        signature["validation"] = "not_applicable"
+        signature["superblob_sha256"] = 7
+        invalidSignature["signature"] = signature
+        let invalidBytes = try JSONSerialization.data(
+            withJSONObject: invalidSignature,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        XCTAssertThrowsError(
+            try LAB002RoleReport(canonicalBytes: invalidBytes)
+        )
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.publish(
+                makeRoleObservation(
+                    diskTime: 1_400,
+                    mappedTime: 1_500
+                ),
+                fixedRole: .shareExtension,
+                testContainerURL: container
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .duplicateRoleReport
+            )
+        }
+    }
+
+    func testRoleReportPublisherRejectsOutOfOrderAndUnexpectedState()
+        throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.publish(
+                makeRoleObservation(
+                    diskTime: 1_100,
+                    mappedTime: 1_200
+                ),
+                fixedRole: .framework,
+                testContainerURL: container
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .staleOrConflictingSession
+            )
+        }
+
+        let current = storage.reportsURL.appendingPathComponent(
+            LAB002FixedName.currentReports,
+            isDirectory: true
+        )
+        try Data("unexpected".utf8).write(
+            to: current.appendingPathComponent("unexpected.json")
+        )
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.publish(
+                makeRoleObservation(
+                    diskTime: 1_100,
+                    mappedTime: 1_200
+                ),
+                fixedRole: .mainApp,
+                testContainerURL: container
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .staleOrConflictingSession
+            )
+        }
+    }
+
+    func testRoleReportPublisherRejectsOversizedPriorReport() throws {
+        let container = try makeRoleReportContainer()
+        defer { try? FileManager.default.removeItem(at: container) }
+        let storage = try LAB002FixedStorage(testContainerURL: container)
+        try storage.withCoordinatorLock {}
+        try storage.createSession(makeRoleSessionReport())
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(diskTime: 1_100, mappedTime: 1_200),
+            fixedRole: .mainApp,
+            testContainerURL: container
+        )
+        let mainURL = storage.reportsURL
+            .appendingPathComponent(
+                LAB002FixedName.currentReports,
+                isDirectory: true
+            )
+            .appendingPathComponent(LAB002FixedName.mainAppReport)
+        try Data(repeating: 0x61, count: LAB002Limit.roleReport + 1)
+            .write(to: mainURL)
+
+        XCTAssertThrowsError(
+            try LAB002RoleReportTestHarness.publish(
+                makeRoleObservation(
+                    diskTime: 1_200,
+                    mappedTime: 1_300
+                ),
+                fixedRole: .framework,
+                testContainerURL: container
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? LAB002ObserverReason,
+                .reportLimitExceeded
+            )
+        }
+    }
+
     private func assertMappedRejects(
         _ bytes: Data,
         matching slice: LAB002MachOFixedSlice,
@@ -274,6 +448,65 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
             )
         }
     }
+}
+
+private func makeRoleReportContainer() throws -> URL {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "lab002-role-\(UUID().uuidString)",
+        isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+        at: url,
+        withIntermediateDirectories: false
+    )
+    return url
+}
+
+private func makeRoleSessionReport() throws -> LAB002SessionReport {
+    try LAB002SessionReport(
+        observerRevision: "lab002-observer-v1",
+        buildBindingSHA256: String(repeating: "a", count: 64),
+        collectionID: String(repeating: "b", count: 64),
+        runOrdinal: 1,
+        challengeSHA256: String(repeating: "c", count: 64),
+        acknowledgementSHA256: String(repeating: "d", count: 64),
+        authorizationEnvelopeSHA256: String(repeating: "e", count: 64),
+        deviceEnrollmentBindingSHA256:
+            String(repeating: "f", count: 64),
+        enrollmentPublicKey: String(repeating: "1", count: 64),
+        deviceInstallationBindingSHA256:
+            String(repeating: "2", count: 64),
+        environment: LAB002SessionEnvironment(
+            hardwareModel: "iPhone17,1",
+            iosProductVersion: "26.0",
+            iosBuild: "23A100"
+        ),
+        sessionID: String(repeating: "3", count: 64),
+        runCounter: "0000000000000001",
+        createdAt: 1_000,
+        completedAt: nil,
+        sourceCommit: String(repeating: "4", count: 40),
+        marketingVersion: "1.0",
+        buildNumber: "1",
+        state: .collecting
+    )
+}
+
+private func makeRoleObservation(
+    diskTime: Int64,
+    mappedTime: Int64
+) throws -> LAB002LocalRoleObservation {
+    let installed = try LAB002MachOObserverTestHarness.parseInstalled(
+        makeThinMachO(includeCodeSignature: true)
+    )
+    return LAB002LocalRoleObservation(
+        installed: installed,
+        activeSliceIndex: 0,
+        targetIdentityBindingSHA256: String(repeating: "5", count: 64),
+        mappedSHA256: String(repeating: "6", count: 64),
+        diskInspectionCompletedAt: diskTime,
+        mappedHashCompletedAt: mappedTime
+    )
 }
 
 private func makeThinMachO(

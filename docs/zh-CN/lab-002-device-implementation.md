@@ -89,7 +89,27 @@ CMS/Ad-hoc/Unknown Kind，以及完整 SuperBlob SHA-256。编译期 32 字节 I
 `not_checked`；成功启动、形似 CMS 的 Slot、Identifier 或 Digest 都不会变成
 `valid`。所以除非以后有另行评审的 Validator 提供真实验证，最终报告必须为 No-Go。
 
-报告编码与按固定顺序排他发布不属于本次本地组装，仍留给 2C.4c2。
+### 规范固定 Role 发布
+
+检查点 2C.4c2 让每个零参数入口把本地 Observation 闭合为精确的
+`orchardprobe.lab002.role-report.v1` JSON。报告从规范且不可变的 `session.json`
+复制全部 Run/Build/Environment Binding；发布前，编译进 Bundle 的 Build Binding、
+Source Commit、Observer Revision、Marketing Version 与 Build Number 必须与
+Session 完全一致。安装到 iOS 的 Executable 必须已经 Thinning 为当前加载的单个
+Slice，不能把一个 Active Mapped Digest 冒充为未加载 FAT Slice 的证据。
+
+发布器只打开编译期 App Group 与固定 `lab-002-v1/reports/current` 链。取得共享
+Coordinator Lock 后，它会重新验证全部目录和 Lock Inode，拒绝任何未知项或临时项，
+重新规范解析 Session 与所有前序报告，并要求 Phase Time 不倒退。发布前允许的文件
+集合只能依次是：仅 Session；Session 加 Main；Session 加 Main 与 Framework。
+每份不超过 32 KiB 的 Role Report 先写入固定 Owner-only 临时名称，Flush、设置完整
+保护并排除备份，然后无覆盖 Rename，最后 Flush 目录。重复、过期、冲突、超限、
+乱序、被替换或格式错误的状态全部失败关闭。
+
+设备端永远不会收到冻结的 Plaintext Oracle。当前有界签名 Parser 会刻意输出
+`not_checked`，因此本地发布报告明确为 `inconclusive` 并携带
+`signature_invalid_or_unchecked`；它不是明文成功或签名成功声明。精确 Oracle
+比较仍由 Export 后的 Host 完成。
 
 ## 固定生产 Container
 
@@ -197,7 +217,7 @@ Counter 在创建 `session.json` 前持久提交。崩溃可以消耗 Counter，
   不匹配 Session。
 
 各 Surface 上限沿用已评审 Schema 契约：Control 文档 16 KiB、固定 State 记录
-1 KiB、Role Report 128 KiB、Session Report 16 KiB、签名 Export 512 KiB。
+1 KiB、Role Report 32 KiB、Session Report 16 KiB、签名 Export 512 KiB。
 
 ## 生产与测试依赖
 

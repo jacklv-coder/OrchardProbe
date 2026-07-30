@@ -170,6 +170,22 @@ installation, device observation, or device-backend work.
   synthetic signature/identity parity and zero-argument fail-closed checks,
   plus a Release Simulator build and focused Codex CR pass with no remaining
   actionable P1/P2.
+- 2C.4c2 now canonically encodes and exclusively publishes the fixed role
+  reports. Each target reopens only the compiled App Group and literal current
+  report directory, acquires the shared coordinator lock, revalidates the
+  complete directory/lock inode chain, and accepts only the exact prefix of
+  session, main, framework, and share files. It reparses the immutable session
+  and every predecessor, binds all run/build/environment facts, enforces
+  nondecreasing phases and the maximum possible authorization window, and
+  publishes one owner-only, protected, no-backup, at-most-32-KiB canonical
+  report through data flush, post-metadata flush,
+  rename-without-replacement, and directory flush.
+  Unknown, temporary, duplicate, malformed, oversized, replaced, stale,
+  conflicting, or out-of-order state fails closed. Since validation remains
+  `not_checked`, the local report is explicitly `inconclusive`, not a
+  signature or plaintext success. Thirty-three Simulator tests and a Release
+  Simulator build pass. Focused CR found and closed one file-metadata
+  durability gap; the final diff has no remaining actionable P1/P2.
 
 ## Completed 2B gates
 
@@ -242,5 +258,5 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.4a | Close and persist the immutable run session | `done` | Exact session-report fields come only from verified authorization, fixed build/runtime facts, enrollment continuity, the exact counter, and system randomness/time; interrupted counter/session publication is recoverable only from the pre-existing exact quarantine, `session.json` is exclusive, and 19 Simulator tests plus focused CR pass |
 | 2C.4b | Implement the target-private Mach-O observer core | `done` | Stable no-follow descriptor reads, bounded thin/FAT parsing, exact fixed-section/encryption/fixup evidence, mapped-header/anchor binding, 28 Simulator tests, Release build, and focused CR pass without a production caller-selected input |
 | 2C.4c1 | Assemble the three target-private zero-argument observations | `done` | Fixed bundle/anchor and `dladdr` binding, bounded installed signature identity, active mapped-header/range/VM binding, exact disk/mapped digests, 30 Simulator tests, Release build, and focused CR pass without production selector input |
-| 2C.4c2 | Encode and publish the three fixed role reports | `in progress` | Exact canonical reports bind the immutable session, publish exclusively in main/framework/share order, and reject duplicate, stale, conflicting, oversized, or out-of-order state |
-| 2C.4d | Close the session and run focused gates | `planned` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |
+| 2C.4c2 | Encode and publish the three fixed role reports | `done` | Exact canonical reports bind the immutable session, publish exclusively in main/framework/share order, reject duplicate/stale/conflicting/oversized/out-of-order state, and pass 33 Simulator tests, Release build, and focused CR with no remaining actionable P1/P2 |
+| 2C.4d | Close the session and run focused gates | `in progress` | Exact ordering/completion transitions, negative Simulator fixtures, Debug/Release builds, docs, and focused Codex CR pass with no remaining P1/P2 |

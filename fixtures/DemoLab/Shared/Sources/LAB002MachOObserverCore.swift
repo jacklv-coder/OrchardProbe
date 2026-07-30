@@ -11,6 +11,10 @@ enum LAB002ObserverReason: String, Error {
     case fixedSectionHasFixups = "fixed_section_has_fixups"
     case encryptionCommandInvalid = "encryption_command_invalid"
     case encryptionDoesNotCoverRange = "encryption_does_not_cover_range"
+    case diskDigestEqualsPlaintext = "disk_digest_equals_plaintext"
+    case mappedDigestMismatch = "mapped_digest_mismatch"
+    case staleOrConflictingSession = "stale_or_conflicting_session"
+    case duplicateRoleReport = "duplicate_role_report"
     case unexpectedInstalledSlice = "unexpected_installed_slice"
     case reportLimitExceeded = "report_limit_exceeded"
 }
