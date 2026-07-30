@@ -296,6 +296,7 @@ private struct LAB002MachOMagic {
 private struct LAB002FixupSegment {
     let vmAddress: UInt64
     let vmSize: UInt64
+    let fileSize: UInt64
     let isText: Bool
 }
 
@@ -1260,6 +1261,7 @@ enum LAB002MachOObserverCore {
         guard !sectionBytesResult.overflow,
               !expectedSizeResult.overflow,
               expectedSizeResult.partialValue == bytes.count,
+              fileSize <= vmSize,
               try checkedAdd(
                 fileOffset,
                 fileSize,
@@ -1278,6 +1280,7 @@ enum LAB002MachOObserverCore {
             LAB002FixupSegment(
                 vmAddress: vmAddress,
                 vmSize: vmSize,
+                fileSize: fileSize,
                 isText: segmentName == "__TEXT"
             )
         )
@@ -1662,17 +1665,23 @@ enum LAB002MachOObserverCore {
                 imageVMAddress,
                 reason: .fixedSectionHasFixups
             )
-            let roundedVMSize = try checkedAdd(
-                segment.vmSize,
+            // Xcode 26 may serialize only the prefix through the last page
+            // containing a chained start. Bound that prefix by the file-backed
+            // extent; trailing serialized or zero-fill pages are not required.
+            let roundedFileSize = try checkedAdd(
+                segment.fileSize,
                 UInt64(pageSize) - 1,
                 reason: .fixedSectionHasFixups
             )
-            let expectedPages = Int(roundedVMSize / UInt64(pageSize))
+            let maximumPages = Int(
+                roundedFileSize / UInt64(pageSize)
+            )
             guard recordSize >= pagesEnd,
                   recordSize <= info.count,
                   (1...14).contains(pointerFormat),
                   segmentOffset == expectedOffset,
-                  pageCount == expectedPages
+                  pageCount > 0,
+                  pageCount <= maximumPages
             else {
                 throw LAB002ObserverReason.fixedSectionHasFixups
             }
@@ -1692,7 +1701,7 @@ enum LAB002MachOObserverCore {
                             || (start & 0x8000 == 0
                                 && start < pageSize
                                 && UInt64(page) * UInt64(pageSize)
-                                    + UInt64(start) < segment.vmSize)
+                                    + UInt64(start) < segment.fileSize)
                     else {
                         throw LAB002ObserverReason.fixedSectionHasFixups
                     }

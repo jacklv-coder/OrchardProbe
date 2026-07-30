@@ -14,7 +14,7 @@
 | 2A | 闭合协议基础与固定 Mach-O 区间 | `完成` | Build/目标/设备的域分离绑定、有界规范 JSON、Ed25519 授权信封、两次运行比较、三个 Role 专用 `__TEXT,__oprobe`、失败关闭解析器、仅 Fixture 的 CI 检查、对抗测试和 Codex CR 均已完成，当前没有 P1/P2 |
 | 2B | 闭合 Schema 与完整 Host 工件链 | `完成` | 全部 18 种 Wire 形式、精确 Enrollment/Run/两轮验证链、对抗 Fixture、完整本地门禁和最终 Codex CR 均通过且没有剩余 P1/P2 |
 | 2C | DemoLab 状态协调器与零参数观察器 | `完成` | 下文 2C.1–2C.5 已按顺序完成；不接受调用者选择的目标、区间、路径、PID 或地址 |
-| 2D | 合成与 Simulator 验证 | `planned` | 覆盖三个 Role、全部生成 Slice、状态迁移、负向 Fixture、崩溃/重放边界，并明确 Simulator 只能得到 `inconclusive` |
+| 2D | 合成与 Simulator 验证 | `完成` | 下文 2D.1–2D.4 矩阵现已覆盖完整两轮生命周期、三个 Role、所有构建出的 Simulator Slice、负向状态/崩溃/重放边界，并明确 Simulator 只能得到 `inconclusive` |
 | 2E | 文档、最终 CR、CI、PR 与合并 | `planned` | 更新中英双语架构/用户 Runbook 与兼容性模板；解决全部 P1/P2，通过所有门禁，复核 PR 后合并 |
 
 ## 当前已验证事实
@@ -26,7 +26,7 @@
 - Debug 与 Release Simulator 的精确产物均通过冻结清单检查：每种配置包含三个
   Role、每个 Role 两个 Slice，共六个互不相同的 Role/Slice 区间哈希，每个 Slice
   恰好一个 256 字节区段。
-- 本地完整门禁通过：CLI 单元测试 5 项、CLI 集成测试 17 项、Core 测试 167 项、
+- 本地完整门禁通过：CLI 单元测试 5 项、CLI 集成测试 17 项、Core 测试 171 项、
   Fixture 集成测试 1 项、Schema 测试 9 项，以及格式化、Clippy 警告即错误和相对
   基线的 Diff 检查。
 - 最终 2A 专项 Codex CR 已复核 Segment 重叠、经典/链式 Fixup、链式 Import 名称、
@@ -229,3 +229,16 @@ SHA-256；两者在两轮之间都必须新鲜，一次性 Acknowledgement ID �
 | 2C.5b | 构造并保留签名四文档 Session Export | `完成` | 一份精确 Completed Snapshot 按固定顺序保留四份规范文档及 Digest，使用冻结 Export Domain 签名，拒绝 Key/Schema/Order 替换，并在重复调用时返回完全相同字节 |
 | 2C.5c | 要求明确确认且只清理匹配报告 | `完成` | Export 之前或传入 `false` 时不能 Cleanup；两次精确 Snapshot 复核拒绝内容改写，一次确认只清理一次固定报告子树并保留 Key/State/Counter |
 | 2C.5d | 执行专项实现门禁与 Codex CR | `完成` | 43 项 Simulator 测试、Debug/Release Build、Rust/Schema 门禁、Diff 检查、文档及专项 Codex CR 均通过且没有剩余可执行 P1/P2 |
+
+## 当前 2D 验证计划
+
+2D 仍然只做设备无关验证，不能把未签名 Simulator 行为表述成物理设备、初始保护、
+明文或解密能力。正向合成路径只证明冻结协议与状态机彼此一致；构建产物路径仍必须把
+Simulator 的签名/保护证据明确分类为 `inconclusive`。
+
+| 顺序 | 工作项 | 状态 | 退出门禁 |
+|---:|---|---|---|
+| 2D.1 | 冻结端到端验证矩阵 | `完成` | 台账要求一轮 Enrollment 加两轮互异 Run、精确 Counter/Session/Export/Cleanup 迁移、三个固定 Role、Debug/Release 的每个 Simulator 产物 Slice、Host 两轮验证、负向改写/顺序/重放/崩溃边界，以及明确的非 Go 表述 |
+| 2D.2 | 执行完整两轮合成设备生命周期 | `完成` | 45 项 Simulator 测试全部通过；确定性端到端测试使用真实固定存储、Enrollment State、Session/Report Store、签名、四文档 Export、Cleanup 与跨两次互异 Run 保留的 Counter，既有对抗测试闭合改写、乱序、崩溃恢复、重放与提交后不确定边界；三个固定 Role 均保持 `inconclusive` |
+| 2D.3 | 在 CI 中串联 XCTest、构建产物清单与 Host 验证 | `完成` | DemoLab CI 选择一台可用 iPhone Simulator，运行全部 45 项 Swift 测试，构建 Debug/Release 双 Slice 产物，验证三个 Role 的全部 12 个 Role/配置/Slice 区间，并运行 26 项封闭 Host 链；Host 与 Runtime 的配套回归均按文件支持的 Segment 前缀约束 Xcode 26 chained starts，不再把尾部零填充 VM 页误当成已序列化 fixup 页 |
+| 2D.4 | 执行完整本地门禁与 Codex CR | `完成` | Debug/Release 双 Slice Build、45 项 Simulator 测试、全部 12 个产物区间、5 项 CLI 单测 + 17 项 CLI 集成测试 + 171 项 Core 测试 + 1 项产物 Fixture + 9 项 Schema 测试、格式化、Clippy、YAML/Diff 检查、中英双语文档及最终 Codex CR 均通过且没有剩余可执行 P1/P2 |

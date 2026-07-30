@@ -16,7 +16,7 @@ installation, device observation, or device-backend work.
 | 2A | Closed protocol foundation and fixed Mach-O range | `done` | Domain-separated build/target/device bindings, bounded canonical JSON, Ed25519 authorization envelopes, two-run comparison, role-specific `__TEXT,__oprobe`, a fail-closed parser, fixture-only CI inspection, adversarial tests, and Codex CR are complete with no remaining P1/P2 |
 | 2B | Closed schemas and complete host artifact chain | `done` | All 18 wire forms, the exact enrollment/run/two-run verifier chain, adversarial fixtures, the complete local gate, and final Codex CR pass with no remaining P1/P2 |
 | 2C | DemoLab state coordinator and zero-argument observers | `done` | The documented 2C.1–2C.5 sequence is complete; no caller-selected target, range, path, PID, or address |
-| 2D | Synthetic and Simulator verification | `planned` | Exercise all three roles, all emitted slices, state transitions, negative fixtures, crash/replay boundaries, and explicit Simulator `inconclusive` semantics |
+| 2D | Synthetic and Simulator verification | `done` | The documented 2D.1–2D.4 matrix now covers the two-run lifecycle, all three roles, every built Simulator slice, negative state/crash/replay boundaries, and explicit Simulator `inconclusive` semantics |
 | 2E | Documentation, final CR, CI, PR, and merge | `planned` | Update bilingual architecture/user runbooks and compatibility template; resolve every P1/P2, pass all required checks, review the PR, then merge |
 
 ## Current verified facts
@@ -30,7 +30,7 @@ installation, device observation, or device-backend work.
   two-slice inventory: each configuration has six distinct role/slice range
   hashes, with one 256-byte section per slice.
 - The full local gate passes: 5 CLI unit tests, 17 CLI integration tests,
-  167 core tests, 1 fixture integration test, 9 schema tests, formatting,
+  171 core tests, 1 fixture integration test, 9 schema tests, formatting,
   Clippy with warnings denied, and the base-relative diff check.
 - The final focused 2A Codex CR found no actionable P1/P2 after reviewing
   segment overlap, classic/chained fixups, chained import names, dynamic
@@ -299,3 +299,18 @@ signed archive, TestFlight upload, app installation, or physical-device read.
 | 2C.5b | Construct and retain the signed four-document session export | `done` | One exact completed snapshot retains the four canonical documents and digests in fixed order, signs the frozen export domain, rejects key/schema/order substitutions, and repeats identical retained bytes |
 | 2C.5c | Require explicit confirmation and clean only matching reports | `done` | Cleanup is impossible before export or on `false`; two exact snapshot revalidations reject mutation, one confirmed cleanup removes the fixed report subtree once and preserves key/state/counter |
 | 2C.5d | Run focused implementation gates and Codex CR | `done` | 43 Simulator tests, Debug/Release builds, Rust/schema gates, diff checks, docs, and focused Codex CR pass with no remaining actionable P1/P2 |
+
+## Active 2D verification plan
+
+2D remains device-free and must not turn unsigned Simulator behavior into a
+physical-device, protection, plaintext, or decryption claim. The positive
+synthetic path proves only that the frozen protocols and state machine agree.
+The built-product path must continue to classify Simulator signing/protection
+evidence as `inconclusive`.
+
+| Order | Work item | Status | Exit gate |
+|---:|---|---|---|
+| 2D.1 | Freeze the end-to-end verification matrix | `done` | The ledger requires one enrollment plus two distinct runs, exact counter/session/export/cleanup transitions, all three fixed roles, every Debug/Release Simulator product slice, host two-run verification, negative mutation/order/replay/crash boundaries, and explicit non-Go terminology |
+| 2D.2 | Exercise the complete synthetic two-run device lifecycle | `done` | All 45 Simulator tests pass; the deterministic end-to-end test uses the real fixed storage, enrollment state, session/report store, signatures, four-document exports, cleanup, and retained counter across two distinct runs, while the existing adversarial tests close mutation, ordering, crash-recovery, replay, and uncertain-commit boundaries; all three fixed roles remain `inconclusive` |
+| 2D.3 | Join XCTest, built-product inventory, and Host verification in CI | `done` | DemoLab CI selects an available iPhone Simulator, runs all 45 Swift tests, builds Debug/Release dual-slice products, verifies all three roles and all 12 role/configuration/slice intervals, and runs the 26-test closed Host chain; matching Host and runtime regressions keep Xcode 26 chained starts bounded by the file-backed segment prefix without confusing trailing zero-fill VM pages for serialized fixup pages |
+| 2D.4 | Run complete local gates and Codex CR | `done` | Debug/Release dual-slice builds, 45 Simulator tests, all 12 product intervals, 5 CLI unit + 17 CLI integration + 171 Core + 1 product fixture + 9 Schema tests, formatting, Clippy, YAML/diff checks, bilingual docs, and final Codex CR pass with no remaining actionable P1/P2 |

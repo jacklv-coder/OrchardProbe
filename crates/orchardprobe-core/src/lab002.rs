@@ -1626,6 +1626,7 @@ fn bounded_range(
 struct FixupSegment {
     vmaddr: u64,
     vmsize: u64,
+    filesize: u64,
     is_text: bool,
 }
 
@@ -1998,9 +1999,15 @@ fn inspect_chained_fixups(
             segment.vmaddr.checked_sub(image_vmaddr).ok_or_else(|| {
                 Lab002Error::InvalidMachO("chained-fixups segment precedes the image header".into())
             })?;
-        let expected_page_count = if matches!(page_size, 0x1000 | 0x4000) {
+        // Chained starts cover the serialized prefix through the last page
+        // containing a fixup. Xcode 26 can emit one page entry for a two-page
+        // file-backed __DATA segment when only its first page has a start, so
+        // equality with the file-backed page count would reject valid output.
+        // The prefix still cannot exceed the file-backed segment extent, while
+        // the VM extent may additionally include trailing __bss/__common pages.
+        let maximum_page_count = if matches!(page_size, 0x1000 | 0x4000) {
             segment
-                .vmsize
+                .filesize
                 .checked_add(u64::from(page_size) - 1)
                 .map(|size| size / u64::from(page_size))
                 .and_then(|count| usize::try_from(count).ok())
@@ -2012,7 +2019,8 @@ fn inspect_chained_fixups(
             || !matches!(page_size, 0x1000 | 0x4000)
             || !(1..=14).contains(&pointer_format)
             || segment_offset != expected_segment_offset
-            || expected_page_count != Some(page_count)
+            || page_count == 0
+            || maximum_page_count.is_none_or(|maximum| page_count > maximum)
         {
             return Err(Lab002Error::InvalidMachO(
                 "chained-fixups segment record is invalid".into(),
@@ -2044,7 +2052,7 @@ fn inspect_chained_fixups(
                     .and_then(|base| base.checked_add(u64::from(start)));
                 if start & 0x8000 != 0
                     || u64::from(start) >= u64::from(page_size)
-                    || page_start.is_none_or(|value| value >= segment.vmsize)
+                    || page_start.is_none_or(|value| value >= segment.filesize)
                 {
                     return Err(Lab002Error::InvalidMachO(
                         "chained-fixups page start is invalid".into(),
@@ -2336,6 +2344,14 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                         "segment command size does not match its section count".into(),
                     ));
                 }
+                let segment_file_end = fileoff.checked_add(filesize).ok_or_else(|| {
+                    Lab002Error::InvalidMachO("segment file range overflows".into())
+                })?;
+                if filesize > vmsize || segment_file_end > slice.size {
+                    return Err(Lab002Error::InvalidMachO(
+                        "segment file extent is invalid".into(),
+                    ));
+                }
                 let segment_name = macho_name(&bytes[8..24])?;
                 if segment_name == "__TEXT" && image_text_vmaddr.replace(vmaddr).is_some() {
                     return Err(Lab002Error::InvalidMachO(
@@ -2345,6 +2361,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                 fixup_segments.push(FixupSegment {
                     vmaddr,
                     vmsize,
+                    filesize,
                     is_text: segment_name == "__TEXT",
                 });
                 for section_index in 0..nsects as usize {
@@ -2418,9 +2435,6 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                             "fixed section is not relocation-free pure instructions".into(),
                         ));
                     }
-                    let segment_file_end = fileoff.checked_add(filesize).ok_or_else(|| {
-                        Lab002Error::InvalidMachO("segment file range overflows".into())
-                    })?;
                     let segment_vm_end = vmaddr.checked_add(vmsize).ok_or_else(|| {
                         Lab002Error::InvalidMachO("segment VM range overflows".into())
                     })?;
@@ -3472,17 +3486,30 @@ mod tests {
     }
 
     #[test]
+    fn fixed_section_parser_rejects_file_extent_beyond_segment_vm() {
+        let mut thin = synthetic_fixed_macho(1, false, 0, true);
+        thin[80..88].copy_from_slice(&0x1001_u64.to_le_bytes());
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(thin)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("segment file extent is invalid")
+        ));
+    }
+
+    #[test]
     fn chained_fixups_reject_nontext_record_pointing_into_text() {
         let image_vmaddr = 0x1_0000_0000;
         let segments = [
             FixupSegment {
                 vmaddr: image_vmaddr,
                 vmsize: 0x1000,
+                filesize: 0x1000,
                 is_text: true,
             },
             FixupSegment {
                 vmaddr: image_vmaddr + 0x1000,
                 vmsize: 0x1000,
+                filesize: 0x1000,
                 is_text: false,
             },
         ];
@@ -3506,6 +3533,64 @@ mod tests {
             ),
             Err(Lab002Error::InvalidMachO(message))
                 if message.contains("segment record is invalid")
+        ));
+    }
+
+    #[test]
+    fn chained_fixups_accept_xcode_short_page_table_prefix() {
+        let image_vmaddr = 0x1_0000_0000;
+        let file_backed_page_count = 2_usize;
+        let serialized_prefix_page_count = 1_usize;
+        assert!(serialized_prefix_page_count < file_backed_page_count);
+        let segments = [FixupSegment {
+            vmaddr: image_vmaddr,
+            vmsize: 0x3000,
+            filesize: 0x1000 * file_backed_page_count as u64,
+            is_text: false,
+        }];
+        let mut payload = Vec::new();
+        for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 24] {
+            push_u32(&mut payload, value);
+        }
+        payload.extend_from_slice(&0x1000_u16.to_le_bytes());
+        payload.extend_from_slice(&2_u16.to_le_bytes());
+        push_u64(&mut payload, 0);
+        push_u32(&mut payload, 0);
+        payload.extend_from_slice(&1_u16.to_le_bytes());
+        payload.extend_from_slice(&0_u16.to_le_bytes());
+
+        inspect_chained_fixups(&payload, Endianness::Little, &segments, image_vmaddr).unwrap();
+    }
+
+    #[test]
+    fn chained_fixups_reject_page_start_outside_file_backed_extent() {
+        let image_vmaddr = 0x1_0000_0000;
+        let short_file_segments = [FixupSegment {
+            vmaddr: image_vmaddr,
+            vmsize: 0x2000,
+            filesize: 0x1800,
+            is_text: false,
+        }];
+        let mut outside_file = Vec::new();
+        for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 26] {
+            push_u32(&mut outside_file, value);
+        }
+        outside_file.extend_from_slice(&0x1000_u16.to_le_bytes());
+        outside_file.extend_from_slice(&2_u16.to_le_bytes());
+        push_u64(&mut outside_file, 0);
+        push_u32(&mut outside_file, 0);
+        outside_file.extend_from_slice(&2_u16.to_le_bytes());
+        outside_file.extend_from_slice(&0xffff_u16.to_le_bytes());
+        outside_file.extend_from_slice(&0x900_u16.to_le_bytes());
+        assert!(matches!(
+            inspect_chained_fixups(
+                &outside_file,
+                Endianness::Little,
+                &short_file_segments,
+                image_vmaddr
+            ),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("page start is invalid")
         ));
     }
 

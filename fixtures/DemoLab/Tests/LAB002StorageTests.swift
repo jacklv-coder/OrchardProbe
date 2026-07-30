@@ -7,6 +7,7 @@ import XCTest
 private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
     var metadata: LAB002AuthorizationMetadata
     var shouldFail = false
+    var expectedBytes = Data("valid".utf8)
 
     init(
         kind: LAB002AuthorizationKind = .collectionRun,
@@ -29,7 +30,7 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
     }
 
     func validate(_ canonicalBytes: Data) throws -> LAB002AuthorizationMetadata {
-        if shouldFail || canonicalBytes != Data("valid".utf8) {
+        if shouldFail || canonicalBytes != expectedBytes {
             throw LAB002CoordinatorError.wrongOperation
         }
         return metadata
@@ -39,11 +40,21 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
         let signingKey = try! LAB002CryptoKitSigningKey(
             rawRepresentation: Data(repeating: 0x41, count: 32)
         )
+        let secondRun = counter == 2
         return LAB002VerifiedRunFacts(
-            collectionID: String(repeating: "e", count: 64),
+            collectionID: String(
+                repeating: secondRun ? "7" : "e",
+                count: 64
+            ),
             runOrdinal: UInt8(counter),
-            challengeSHA256: String(repeating: "d", count: 64),
-            acknowledgementSHA256: String(repeating: "b", count: 64),
+            challengeSHA256: String(
+                repeating: secondRun ? "8" : "d",
+                count: 64
+            ),
+            acknowledgementSHA256: String(
+                repeating: secondRun ? "9" : "b",
+                count: 64
+            ),
             deviceEnrollmentBindingSHA256: String(repeating: "f", count: 64),
             enrollmentPublicKey: signingKey.publicKeyRaw.hexLowercase,
             expectedDeviceInstallationBindingSHA256:
@@ -165,6 +176,23 @@ private final class TestRandomBytes: LAB002RandomBytesGenerating {
     }
 }
 
+private final class SequencedTestRandomBytes: LAB002RandomBytesGenerating {
+    private var nextByte: UInt8
+
+    init(firstByte: UInt8) {
+        nextByte = firstByte
+    }
+
+    func bytes(count: Int) throws -> Data {
+        guard count == 32 else {
+            throw LAB002EnrollmentError.invalidState
+        }
+        let bytes = Data(repeating: nextByte, count: count)
+        nextByte &+= 1
+        return bytes
+    }
+}
+
 private final class TestRuntimeContext: LAB002RuntimeContextProviding {
     let buildBindingSHA256: String
     let runBuildFacts: LAB002RunBuildFacts
@@ -209,6 +237,55 @@ private final class TestRunRoleObserver: LAB002RunRoleObserving {
 
     func observeMainAndFramework() throws {
         callCount += 1
+    }
+}
+
+private final class SyntheticTwoRunRoleObserver: LAB002RunRoleObserving {
+    let containerURL: URL
+    var baseTime: Int64
+
+    init(containerURL: URL, baseTime: Int64) {
+        self.containerURL = containerURL
+        self.baseTime = baseTime
+    }
+
+    func observeMainAndFramework() throws {
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(
+                diskTime: baseTime,
+                mappedTime: baseTime + 1,
+                targetIdentityDigit: "5",
+                mappedDigestDigit: "6",
+                uuidSeed: 0x10
+            ),
+            fixedRole: .mainApp,
+            testContainerURL: containerURL
+        )
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(
+                diskTime: baseTime + 1,
+                mappedTime: baseTime + 2,
+                targetIdentityDigit: "7",
+                mappedDigestDigit: "8",
+                uuidSeed: 0x20
+            ),
+            fixedRole: .framework,
+            testContainerURL: containerURL
+        )
+    }
+
+    func observeShareExtension() throws {
+        try LAB002RoleReportTestHarness.publish(
+            makeRoleObservation(
+                diskTime: baseTime + 2,
+                mappedTime: baseTime + 3,
+                targetIdentityDigit: "9",
+                mappedDigestDigit: "a",
+                uuidSeed: 0x30
+            ),
+            fixedRole: .shareExtension,
+            testContainerURL: containerURL
+        )
     }
 }
 
@@ -1184,6 +1261,162 @@ final class LAB002StorageTests: XCTestCase {
         )
     }
 
+    func testSyntheticEnrollmentAndTwoRunLifecycleIsDistinctAndInconclusive()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x41)
+        let random = SequencedTestRandomBytes(firstByte: 0x51)
+        let runtime = TestRuntimeContext(build: build, now: 1_500)
+        let roleObserver = SyntheticTwoRunRoleObserver(
+            containerURL: temporaryRoot,
+            baseTime: runtime.now
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: random,
+            testRuntimeContext: runtime,
+            testRunRoleObserver: roleObserver
+        )
+        let source = temporaryRoot.appendingPathComponent(
+            "synthetic-authorization.json"
+        )
+
+        validator.expectedBytes = Data("synthetic-enrollment".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let enrollment = try await coordinator
+            .confirmInstallationEnrollment()
+        XCTAssertEqual(enrollment.state.buildBindingSHA256, build)
+        XCTAssertEqual(
+            enrollment.receipt.filename,
+            "device-enrollment-receipt-v1.json"
+        )
+        XCTAssertEqual(
+            enrollment.deviceSelectionFingerprintSHA256.count,
+            64
+        )
+        try assertValidEnrollmentReceipt(
+            enrollment.receipt,
+            enrollmentPublicKey: enrollment.state.enrollmentPublicKey,
+            createdAt: runtime.now
+        )
+
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        var signedExports = [Data]()
+        var sessionIDs = Set<String>()
+        var envelopeDigests = Set<String>()
+
+        for ordinal in UInt64(1)...UInt64(2) {
+            let baseTime: Int64 = ordinal == 1 ? 2_000 : 4_000
+            runtime.now = baseTime
+            roleObserver.baseTime = baseTime
+            validator.metadata = LAB002AuthorizationMetadata(
+                kind: .collectionRun,
+                buildBindingSHA256: build,
+                notBefore: baseTime - 100,
+                notAfter: baseTime + 800,
+                expectedRunCounter: ordinal,
+                runFacts: TestAuthorizationValidator.runFacts(
+                    counter: ordinal
+                )
+            )
+            validator.expectedBytes = Data("synthetic-run-\(ordinal)".utf8)
+            try validator.expectedBytes.write(to: source)
+            try await coordinator.importAuthorization(from: source)
+
+            let consumed = try await coordinator.startCleanRun()
+            XCTAssertEqual(consumed.canonicalBytes, validator.expectedBytes)
+            try roleObserver.observeShareExtension()
+            runtime.now = baseTime + 4
+            let completionOutcome = try await coordinator
+                .completeRunAfterShareExtension()
+            XCTAssertEqual(
+                completionOutcome,
+                .committed
+            )
+
+            let export = try await coordinator.exportLAB002Evidence()
+            let verified = try assertValidSyntheticExport(
+                export,
+                expectedOrdinal: UInt8(ordinal),
+                enrollmentPublicKey:
+                    enrollment.state.enrollmentPublicKey
+            )
+            signedExports.append(export.canonicalBytes)
+            XCTAssertTrue(sessionIDs.insert(verified.sessionID).inserted)
+            XCTAssertTrue(
+                envelopeDigests.insert(
+                    verified.authorizationEnvelopeSHA256
+                ).inserted
+            )
+
+            if ordinal == 1 {
+                let restartedCoordinator = try LAB002InboxCoordinator(
+                    testContainerURL: temporaryRoot,
+                    validator: validator,
+                    enrollmentKeyStore: keyStore,
+                    random: random,
+                    testRuntimeContext: runtime,
+                    testRunRoleObserver: roleObserver
+                )
+                do {
+                    _ = try await restartedCoordinator
+                        .exportLAB002Evidence()
+                    XCTFail(
+                        "a restarted coordinator reconstructed completed evidence"
+                    )
+                } catch LAB002ObserverReason.staleOrConflictingSession {
+                }
+            }
+
+            let cleanupOutcome = try await coordinator
+                .confirmExportReceivedAndCleanReports(confirmed: true)
+            XCTAssertEqual(cleanupOutcome, .cleaned)
+            XCTAssertFalse(try storage.hasSessionDirectory())
+            XCTAssertEqual(try storage.readCounter()?.counter, ordinal)
+            XCTAssertEqual(
+                try storage.readInstallationState(),
+                enrollment.state
+            )
+        }
+
+        XCTAssertEqual(signedExports.count, 2)
+        XCTAssertNotEqual(signedExports[0], signedExports[1])
+        XCTAssertEqual(sessionIDs.count, 2)
+        XCTAssertEqual(envelopeDigests.count, 2)
+
+        runtime.now = 6_000
+        roleObserver.baseTime = runtime.now
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 5_900,
+            notAfter: 6_800,
+            expectedRunCounter: 2,
+            runFacts: TestAuthorizationValidator.runFacts(counter: 2)
+        )
+        validator.expectedBytes = Data("synthetic-run-2-replay".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("a completed run counter was replayed")
+        } catch LAB002StorageError.counterMismatch {
+        }
+        XCTAssertEqual(try storage.readCounter()?.counter, 2)
+        XCTAssertFalse(try storage.hasSessionDirectory())
+    }
+
     func testExportRequiresExplicitConfirmationAndPreservesFixedState()
         async throws {
         let build = String(repeating: "a", count: 64)
@@ -1308,6 +1541,167 @@ final class LAB002StorageTests: XCTestCase {
             XCTFail("cleanup reused a consumed export")
         } catch LAB002EvidenceArtifactError.exportNotConstructed {
         }
+    }
+
+    private func assertValidEnrollmentReceipt(
+        _ artifact: LAB002ShareArtifact,
+        enrollmentPublicKey: String,
+        createdAt: Int64
+    ) throws {
+        let signed = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: artifact.canonicalBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            signed["schema"] as? String,
+            "orchardprobe.lab002.device-enrollment-receipt.v1"
+        )
+        XCTAssertEqual(
+            signed["enrollment_public_key"] as? String,
+            enrollmentPublicKey
+        )
+        let unsignedText = try XCTUnwrap(
+            signed["unsigned_receipt_canonical"] as? String
+        )
+        let unsignedBytes = Data(unsignedText.utf8)
+        let unsigned = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: unsignedBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(unsigned["created_at"] as? Int64, createdAt)
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: decodeTestHex(enrollmentPublicKey)
+        )
+        XCTAssertTrue(
+            publicKey.isValidSignature(
+                try decodeTestHex(
+                    try XCTUnwrap(signed["signature"] as? String)
+                ),
+                for: try framedTestMessage(
+                    domain:
+                        "orchardprobe.demolab.lab002.enrollment-receipt.v1\0",
+                    canonicalBytes: unsignedBytes
+                )
+            )
+        )
+    }
+
+    private func assertValidSyntheticExport(
+        _ artifact: LAB002ShareArtifact,
+        expectedOrdinal: UInt8,
+        enrollmentPublicKey: String
+    ) throws -> (
+        sessionID: String,
+        authorizationEnvelopeSHA256: String
+    ) {
+        XCTAssertEqual(artifact.filename, "lab-002-session-export-v1.json")
+        let signed = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: artifact.canonicalBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            signed["schema"] as? String,
+            "orchardprobe.lab002.session-export.v1"
+        )
+        XCTAssertEqual(
+            signed["enrollment_public_key"] as? String,
+            enrollmentPublicKey
+        )
+        let unsignedText = try XCTUnwrap(
+            signed["unsigned_export_canonical"] as? String
+        )
+        let unsignedBytes = Data(unsignedText.utf8)
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: decodeTestHex(enrollmentPublicKey)
+        )
+        XCTAssertTrue(
+            publicKey.isValidSignature(
+                try decodeTestHex(
+                    try XCTUnwrap(signed["signature"] as? String)
+                ),
+                for: try framedTestMessage(
+                    domain:
+                        "orchardprobe.demolab.lab002.session-export.v1\0",
+                    canonicalBytes: unsignedBytes
+                )
+            )
+        )
+
+        let unsigned = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: unsignedBytes)
+                as? [String: Any]
+        )
+        XCTAssertEqual(
+            unsigned["run_ordinal"] as? Int64,
+            Int64(expectedOrdinal)
+        )
+        XCTAssertEqual(
+            unsigned["run_counter"] as? String,
+            String(format: "%016llx", UInt64(expectedOrdinal))
+        )
+        let entries = try XCTUnwrap(
+            unsigned["entries"] as? [[String: Any]]
+        )
+        XCTAssertEqual(
+            entries.compactMap { $0["logical_filename"] as? String },
+            [
+                LAB002FixedName.session,
+                LAB002FixedName.mainAppReport,
+                LAB002FixedName.frameworkReport,
+                LAB002FixedName.shareExtensionReport,
+            ]
+        )
+        let session = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(
+                    try XCTUnwrap(
+                        entries[0]["canonical_document"] as? String
+                    ).utf8
+                )
+            ) as? [String: Any]
+        )
+        XCTAssertEqual(session["state"] as? String, "complete")
+        XCTAssertEqual(
+            session["run_ordinal"] as? Int64,
+            Int64(expectedOrdinal)
+        )
+
+        let expectedRoles = ["main_app", "framework", "share_extension"]
+        for (entry, expectedRole) in zip(
+            entries.dropFirst(),
+            expectedRoles
+        ) {
+            let report = try XCTUnwrap(
+                JSONSerialization.jsonObject(
+                    with: Data(
+                        try XCTUnwrap(
+                            entry["canonical_document"] as? String
+                        ).utf8
+                    )
+                ) as? [String: Any]
+            )
+            XCTAssertEqual(report["role"] as? String, expectedRole)
+            XCTAssertEqual(report["outcome"] as? String, "inconclusive")
+            XCTAssertEqual(
+                report["reasons"] as? [String],
+                ["signature_invalid_or_unchecked"]
+            )
+            XCTAssertEqual(
+                (report["signature"] as? [String: Any])?["validation"]
+                    as? String,
+                "not_checked"
+            )
+            XCTAssertEqual(
+                (report["slices"] as? [[String: Any]])?.count,
+                1
+            )
+        }
+        return (
+            try XCTUnwrap(session["session_id"] as? String),
+            try XCTUnwrap(
+                session["authorization_envelope_sha256"] as? String
+            )
+        )
     }
 
     private func enroll(

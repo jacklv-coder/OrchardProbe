@@ -145,6 +145,15 @@ final class LAB002MachOObserverCoreTests: XCTestCase {
         )
     }
 
+    func testXcodeShortChainedStartsPrefixIsAccepted() throws {
+        let installed = try LAB002MachOObserverTestHarness.parseInstalled(
+            makeThinMachO(includeShortChainedStartsPrefix: true)
+        )
+
+        XCTAssertEqual(installed.slices.count, 1)
+        XCTAssertEqual(installed.slices.first?.sectionSliceOffset, 0x1000)
+    }
+
     func testFatSliceOverlapAndExcessCountAreRejected() {
         var overlap = makeFat32MachO()
         writeBigEndian(UInt32(0x2000), to: &overlap, at: 8 + 20 + 8)
@@ -1074,31 +1083,49 @@ private func makeRoleSessionReport(
     )
 }
 
-private func makeRoleObservation(
+func makeRoleObservation(
     diskTime: Int64,
-    mappedTime: Int64
+    mappedTime: Int64,
+    targetIdentityDigit: String = "5",
+    mappedDigestDigit: String = "6",
+    uuidSeed: UInt8 = 0x10
 ) throws -> LAB002LocalRoleObservation {
     let installed = try LAB002MachOObserverTestHarness.parseInstalled(
-        makeThinMachO(includeCodeSignature: true)
+        makeThinMachO(
+            uuidSeed: uuidSeed,
+            includeCodeSignature: true
+        )
     )
     return LAB002LocalRoleObservation(
         installed: installed,
         activeSliceIndex: 0,
-        targetIdentityBindingSHA256: String(repeating: "5", count: 64),
-        mappedSHA256: String(repeating: "6", count: 64),
+        targetIdentityBindingSHA256: String(
+            repeating: targetIdentityDigit,
+            count: 64
+        ),
+        mappedSHA256: String(
+            repeating: mappedDigestDigit,
+            count: 64
+        ),
         diskInspectionCompletedAt: diskTime,
         mappedHashCompletedAt: mappedTime
     )
 }
 
-private func makeThinMachO(
+func makeThinMachO(
     uuidSeed: UInt8 = 0x10,
     cpuSubtype: Int32 = 0,
     includeClassicTextFixup: Bool = false,
     includeChainedTextFixup: Bool = false,
+    includeShortChainedStartsPrefix: Bool = false,
     includeCodeSignature: Bool = false
 ) -> Data {
-    precondition(!(includeClassicTextFixup && includeChainedTextFixup))
+    let chainedFixupModeCount = [
+        includeChainedTextFixup,
+        includeShortChainedStartsPrefix,
+    ].filter { $0 }.count
+    precondition(!includeClassicTextFixup || chainedFixupModeCount == 0)
+    precondition(chainedFixupModeCount <= 1)
     var segment = Data()
     appendLittleEndian(UInt32(0x19), to: &segment)
     appendLittleEndian(UInt32(152), to: &segment)
@@ -1149,11 +1176,14 @@ private func makeThinMachO(
     }
 
     var chainedFixups = Data()
-    if includeChainedTextFixup {
+    if includeChainedTextFixup || includeShortChainedStartsPrefix {
         appendLittleEndian(UInt32(0x8000_0034), to: &chainedFixups)
         appendLittleEndian(UInt32(16), to: &chainedFixups)
         appendLittleEndian(UInt32(0x300), to: &chainedFixups)
-        appendLittleEndian(UInt32(62), to: &chainedFixups)
+        appendLittleEndian(
+            UInt32(includeChainedTextFixup ? 62 : 60),
+            to: &chainedFixups
+        )
     }
 
     let signatureBlob = includeCodeSignature
@@ -1182,7 +1212,7 @@ private func makeThinMachO(
         UInt32(
             3
                 + (includeClassicTextFixup ? 1 : 0)
-                + (includeChainedTextFixup ? 1 : 0)
+                + (chainedFixupModeCount == 1 ? 1 : 0)
                 + (includeCodeSignature ? 1 : 0)
         ),
         to: &result
@@ -1199,7 +1229,7 @@ private func makeThinMachO(
             with: [0x11, 0x20, 0x80, 0x20, 0x51, 0x00]
         )
     }
-    if includeChainedTextFixup {
+    if includeChainedTextFixup || includeShortChainedStartsPrefix {
         var payload = Data()
         appendLittleEndian(UInt32(0), to: &payload)
         appendLittleEndian(UInt32(28), to: &payload)
@@ -1210,16 +1240,28 @@ private func makeThinMachO(
         appendLittleEndian(UInt32(0), to: &payload)
         appendLittleEndian(UInt32(1), to: &payload)
         appendLittleEndian(UInt32(8), to: &payload)
-        appendLittleEndian(UInt32(26), to: &payload)
+        appendLittleEndian(
+            UInt32(includeChainedTextFixup ? 26 : 24),
+            to: &payload
+        )
         appendLittleEndian(UInt16(0x1000), to: &payload)
         appendLittleEndian(UInt16(1), to: &payload)
         appendLittleEndian(UInt64(0), to: &payload)
         appendLittleEndian(UInt32(0), to: &payload)
-        appendLittleEndian(UInt16(2), to: &payload)
+        appendLittleEndian(
+            UInt16(includeChainedTextFixup ? 2 : 1),
+            to: &payload
+        )
         appendLittleEndian(UInt16(0xffff), to: &payload)
-        appendLittleEndian(UInt16(0), to: &payload)
-        precondition(payload.count == 62)
-        result.replaceSubrange(0x300..<0x33e, with: payload)
+        if includeChainedTextFixup {
+            appendLittleEndian(UInt16(0), to: &payload)
+        }
+        let expectedPayloadSize = includeChainedTextFixup ? 62 : 60
+        precondition(payload.count == expectedPayloadSize)
+        result.replaceSubrange(
+            0x300..<(0x300 + expectedPayloadSize),
+            with: payload
+        )
     }
     if includeCodeSignature {
         result.replaceSubrange(

@@ -13,7 +13,7 @@ jobs:
   build:
     name: Build fixture
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
       - name: Check out repository
@@ -34,6 +34,35 @@ jobs:
           xcodegen generate \
             --spec "$generated_dir/project.yml" \
             --project "$generated_dir"
+
+      - name: Run DemoLab tests on an iPhone Simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          generated_dir="$RUNNER_TEMP/fixtures/DemoLab"
+          simulator_udid="$(
+            xcrun simctl list devices available --json |
+              jq -r '
+                [
+                  .devices[][] |
+                  select(
+                    .isAvailable == true and
+                    (.name | startswith("iPhone"))
+                  )
+                ][0].udid // empty
+              '
+          )"
+          test -n "$simulator_udid"
+
+          xcodebuild \
+            -project "$generated_dir/DemoLab.xcodeproj" \
+            -scheme DemoLab \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$simulator_udid" \
+            -derivedDataPath "$generated_dir/TestDerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            test
 
       - name: Build DemoLab Debug and Release for the iOS Simulator
         shell: bash
@@ -133,3 +162,9 @@ jobs:
           ORCHARDPROBE_LAB002_PRODUCTS_ROOT="$RUNNER_TEMP/fixtures/DemoLab/DerivedData/Build/Products" \
             cargo test --locked -p orchardprobe-core --test lab002_fixture \
               -- --exact simulator_products_have_frozen_lab002_sections
+
+      - name: Verify the closed LAB-002 Host chain
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p orchardprobe-core lab002::host::tests::
