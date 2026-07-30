@@ -64,6 +64,16 @@ DEMO_LAB_UPLOAD_INDETERMINATE_NOTE =
 DEMO_LAB_RECONCILED_ABSENT_NOTE =
   "The operator explicitly confirmed that this exact version and build were " \
   "absent in App Store Connect before permitting a new upload attempt."
+DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS = %w[
+  0100000000000000000000000000000000000000000000000000000000000000
+  c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a
+  0000000000000000000000000000000000000000000000000000000000000080
+  26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05
+  ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f
+  26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc85
+  0000000000000000000000000000000000000000000000000000000000000000
+  c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac03fa
+].freeze
 DEMO_LAB_BINARY_SPECS = [
   {
     "role" => "main_executable",
@@ -434,6 +444,13 @@ def required_environment(name, pattern: nil)
   UI.user_error!("Set #{name} before running this lane.") if value.nil? || value.empty?
   if pattern && !pattern.match?(value)
     UI.user_error!("#{name} has an invalid format.")
+  end
+  value
+end
+
+def validate_demolab_authorization_public_key!(value)
+  if DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS.include?(value)
+    UI.user_error!("DEMO_LAB_AUTHORIZATION_PUBLIC_KEY is weak.")
   end
   value
 end
@@ -2988,6 +3005,18 @@ platform :ios do
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
+    DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS.each do |weak_key|
+      weak_key_rejected = false
+      begin
+        validate_demolab_authorization_public_key!(weak_key)
+      rescue FastlaneCore::Interface::FastlaneError
+        weak_key_rejected = true
+      end
+      unless weak_key_rejected
+        UI.user_error!("A weak DemoLab authorization key was accepted.")
+      end
+    end
+    validate_demolab_authorization_public_key!("81" * 32)
     loader_key = "DYLD_INSERT_LIBRARIES"
     loader_key_was_set = ENV.key?(loader_key)
     previous_loader_value = ENV[loader_key]
@@ -4427,6 +4456,13 @@ platform :ios do
     xcode_toolchain = selected_xcode_toolchain
 
     app_identifier, share_identifier = demolab_bundle_identifiers
+    app_group_identifier = required_environment(
+      "DEMO_LAB_APP_GROUP_ID",
+      pattern: /\Agroup\.[A-Za-z0-9][A-Za-z0-9.-]*\z/
+    )
+    if app_group_identifier.start_with?("group.com.example.")
+      UI.user_error!("Use the registered first-party DemoLab App Group.")
+    end
     team_identifier = required_environment(
       "DEMO_LAB_TEAM_ID",
       pattern: /\A[A-Z0-9]{10}\z/
@@ -4447,6 +4483,11 @@ platform :ios do
       "DEMO_LAB_IDENTITY_NONCE",
       pattern: /\A[0-9a-f]{64}\z/
     )
+    authorization_public_key = required_environment(
+      "DEMO_LAB_AUTHORIZATION_PUBLIC_KEY",
+      pattern: /\A[0-9a-f]{64}\z/
+    )
+    validate_demolab_authorization_public_key!(authorization_public_key)
 
     output_identity = private_output_directory
     output_root = output_identity.first
@@ -4509,6 +4550,9 @@ platform :ios do
             "CURRENT_PROJECT_VERSION=#{build_number}",
             "DEVELOPMENT_TEAM=#{team_identifier}",
             "DEMO_LAB_APP_BUNDLE_ID=#{app_identifier}",
+            "DEMO_LAB_APP_GROUP_ID=#{app_group_identifier}",
+            "DEMO_LAB_AUTHORIZATION_PUBLIC_KEY=" \
+              "#{authorization_public_key}",
             "DEMO_LAB_FRAMEWORK_BUNDLE_ID=#{app_identifier}.framework",
             "DEMO_LAB_BUILD_BINDING_SHA256=#{build_binding_sha256}",
             "DEMO_LAB_IDENTITY_NONCE=#{identity_nonce}",

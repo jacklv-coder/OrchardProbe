@@ -4,10 +4,50 @@ import Foundation
 import XCTest
 @testable import DemoLab
 
+final class LAB002WorkflowSafetyTests: XCTestCase {
+    func testEnrollmentReceiptMustBeConfirmedBeforeAnotherImport() {
+        XCTAssertFalse(
+            LAB002WorkflowSafety.permitsAuthorizationImport(
+                baseConditionsSatisfied: true,
+                hasUnconfirmedEnrollmentReceipt: true
+            )
+        )
+        XCTAssertTrue(
+            LAB002WorkflowSafety.permitsAuthorizationImport(
+                baseConditionsSatisfied: true,
+                hasUnconfirmedEnrollmentReceipt: false
+            )
+        )
+    }
+
+    func testDurableRecoveryFailureAlwaysEntersTerminalState() {
+        XCTAssertTrue(
+            LAB002WorkflowSafety.requiresTerminalFailure(
+                terminalOnFailure: false,
+                recoverySucceeded: false
+            )
+        )
+        XCTAssertTrue(
+            LAB002WorkflowSafety.requiresTerminalFailure(
+                terminalOnFailure: true,
+                recoverySucceeded: true
+            )
+        )
+        XCTAssertFalse(
+            LAB002WorkflowSafety.requiresTerminalFailure(
+                terminalOnFailure: false,
+                recoverySucceeded: true
+            )
+        )
+    }
+}
+
 private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
     var metadata: LAB002AuthorizationMetadata
     var shouldFail = false
     var expectedBytes = Data("valid".utf8)
+    private var acceptedMetadataByBytes =
+        [Data: LAB002AuthorizationMetadata]()
 
     init(
         kind: LAB002AuthorizationKind = .collectionRun,
@@ -30,9 +70,19 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
     }
 
     func validate(_ canonicalBytes: Data) throws -> LAB002AuthorizationMetadata {
-        if shouldFail || canonicalBytes != expectedBytes {
+        if shouldFail && canonicalBytes == expectedBytes {
             throw LAB002CoordinatorError.wrongOperation
         }
+        if let accepted = acceptedMetadataByBytes[canonicalBytes] {
+            return accepted
+        }
+        if shouldFail {
+            throw LAB002CoordinatorError.wrongOperation
+        }
+        guard canonicalBytes == expectedBytes else {
+            throw LAB002CoordinatorError.wrongOperation
+        }
+        acceptedMetadataByBytes[canonicalBytes] = metadata
         return metadata
     }
 
@@ -42,6 +92,9 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
         )
         let secondRun = counter == 2
         return LAB002VerifiedRunFacts(
+            experimentID: Self.enrollmentFacts().experimentID,
+            authorizedTargetManifestSHA256:
+                Self.enrollmentFacts().authorizedTargetManifestSHA256,
             collectionID: String(
                 repeating: secondRun ? "7" : "e",
                 count: 64
@@ -67,6 +120,8 @@ private final class TestAuthorizationValidator: LAB002AuthorizationValidating {
             acknowledgementSHA256: String(repeating: "b", count: 64),
             authorizationPolicyVersion:
                 "orchardprobe.authorized-use.v1",
+            authorizedTargetManifestSHA256:
+                String(repeating: "4", count: 64),
             enrollmentChallenge: String(repeating: "c", count: 64),
             experimentID: String(repeating: "d", count: 64),
             deviceSelectionNonce: String(repeating: "e", count: 64),
@@ -234,9 +289,13 @@ private final class TestRuntimeContext: LAB002RuntimeContextProviding {
 
 private final class TestRunRoleObserver: LAB002RunRoleObserving {
     private(set) var callCount = 0
+    var shouldFail = false
 
     func observeMainAndFramework() throws {
         callCount += 1
+        if shouldFail {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
     }
 }
 
@@ -290,13 +349,21 @@ private final class SyntheticTwoRunRoleObserver: LAB002RunRoleObserving {
 }
 
 private final class TestSessionEvidenceStore: LAB002SessionEvidenceStoring {
-    let snapshot: LAB002CompletedSessionSnapshot
+    var snapshot: LAB002CompletedSessionSnapshot
+    let completionOutcome: LAB002SessionCompletionOutcome
     private(set) var completeCount = 0
     private(set) var cleanupCount = 0
     private var isCompleted = false
+    private var cleanupFailuresBeforeCommit: Int
 
-    init(snapshot: LAB002CompletedSessionSnapshot) {
+    init(
+        snapshot: LAB002CompletedSessionSnapshot,
+        completionOutcome: LAB002SessionCompletionOutcome = .committed,
+        cleanupFailuresBeforeCommit: Int = 0
+    ) {
         self.snapshot = snapshot
+        self.completionOutcome = completionOutcome
+        self.cleanupFailuresBeforeCommit = cleanupFailuresBeforeCommit
     }
 
     func complete(
@@ -305,9 +372,12 @@ private final class TestSessionEvidenceStore: LAB002SessionEvidenceStoring {
         guard !isCompleted else {
             throw LAB002ObserverReason.staleOrConflictingSession
         }
-        isCompleted = true
         completeCount += 1
-        return .committed
+        guard completionOutcome == .committed else {
+            return completionOutcome
+        }
+        isCompleted = true
+        return completionOutcome
     }
 
     func completedSnapshot() throws -> LAB002CompletedSessionSnapshot {
@@ -324,6 +394,10 @@ private final class TestSessionEvidenceStore: LAB002SessionEvidenceStoring {
             throw LAB002ObserverReason.staleOrConflictingSession
         }
         guard isCompleted else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        if cleanupFailuresBeforeCommit > 0 {
+            cleanupFailuresBeforeCommit -= 1
             throw LAB002ObserverReason.staleOrConflictingSession
         }
         isCompleted = false
@@ -425,6 +499,190 @@ final class LAB002StorageTests: XCTestCase {
         )
     }
 
+    func testObserverFailurePersistsTerminalLifecycleAcrossRestart()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore()
+        let observer = TestRunRoleObserver()
+        let runtime = TestRuntimeContext(build: build)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: observer
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        observer.shouldFail = true
+
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("observer failure did not stop the run")
+        } catch LAB002ObserverReason.staleOrConflictingSession {
+        }
+
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        XCTAssertEqual(
+            try storage.readRunLifecycle()?.phase,
+            .observingMainAndFramework
+        )
+        XCTAssertNil(try storage.readPendingAuthorization())
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x52),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver()
+        )
+        let recovered = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(recovered, .failedRun)
+    }
+
+    func testCompletionUncertaintyPersistsTerminalLifecycleAcrossRestart()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore()
+        let runtime = TestRuntimeContext(build: build)
+        let snapshot = LAB002CompletedSessionSnapshot(
+            collectionID: String(repeating: "e", count: 64),
+            sessionID: String(repeating: "5", count: 64),
+            runOrdinal: 1,
+            runCounter: "0000000000000001",
+            challengeSHA256: String(repeating: "d", count: 64),
+            buildBindingSHA256: build,
+            enrollmentPublicKey: TestAuthorizationValidator
+                .runFacts(counter: 1).enrollmentPublicKey,
+            deviceInstallationBindingSHA256:
+                String(repeating: "1", count: 64),
+            documents: []
+        )
+        let evidenceStore = TestSessionEvidenceStore(
+            snapshot: snapshot,
+            completionOutcome: .committedDurabilityUncertain
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver(),
+            testSessionEvidenceStore: evidenceStore
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+
+        let outcome = try await coordinator
+            .completeRunAfterShareExtension()
+        XCTAssertEqual(outcome, .committedDurabilityUncertain)
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        XCTAssertEqual(
+            try storage.readRunLifecycle()?.phase,
+            .completionPending
+        )
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x52),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver(),
+            testSessionEvidenceStore: evidenceStore
+        )
+        let recovered = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(recovered, .failedRun)
+    }
+
+    func testCompletionPrecommitFailureRollsBackAndCanRetry() async throws {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore()
+        let runtime = TestRuntimeContext(build: build, now: 1_500)
+        let roleObserver = SyntheticTwoRunRoleObserver(
+            containerURL: temporaryRoot,
+            baseTime: runtime.now
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x54),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: roleObserver
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        runtime.now = 1_504
+
+        do {
+            _ = try await coordinator.completeRunAfterShareExtension()
+            XCTFail("pre-commit completion failure was accepted")
+        } catch LAB002ObserverReason.staleOrConflictingSession {
+        }
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        XCTAssertEqual(
+            try storage.readRunLifecycle()?.phase,
+            .awaitingShareExtension
+        )
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x55),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: roleObserver
+        )
+        let recovered = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(recovered, .runInProgress)
+
+        try roleObserver.observeShareExtension()
+        let completion = try await restarted
+            .completeRunAfterShareExtension()
+        XCTAssertEqual(completion, .committed)
+    }
+
     func testInvalidSourceCommitFailsBeforeStateConsumption() async throws {
         let build = String(repeating: "a", count: 64)
         let sourceCommit = String(repeating: "4", count: 64)
@@ -469,6 +727,30 @@ final class LAB002StorageTests: XCTestCase {
                     .path
             )
         )
+
+        let boundsRoot = temporaryRoot.appendingPathComponent(
+            "storage-bounds",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: boundsRoot,
+            withIntermediateDirectories: false
+        )
+        let boundsStorage = try LAB002FixedStorage(
+            testContainerURL: boundsRoot
+        )
+        let recoveryBytes = Data(
+            repeating: 0x61,
+            count: LAB002Limit.controlDocument + 1
+        )
+        try boundsStorage.persistEnrollmentReceipt(recoveryBytes)
+        XCTAssertEqual(
+            try boundsStorage.readEnrollmentReceipt(),
+            recoveryBytes
+        )
+        XCTAssertThrowsError(
+            try boundsStorage.publishAuthorization(recoveryBytes)
+        )
     }
 
     func testInterruptedRunResumesOnlyFromExistingQuarantine() async throws {
@@ -494,9 +776,53 @@ final class LAB002StorageTests: XCTestCase {
         try await coordinator.importAuthorization(from: source)
         let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
         _ = try storage.quarantineAuthorization()
+        let runFacts = TestAuthorizationValidator.runFacts(counter: 1)
+        let report = try LAB002SessionReport(
+            observerRevision: "lab002-observer-v1",
+            buildBindingSHA256: build,
+            collectionID: runFacts.collectionID,
+            runOrdinal: runFacts.runOrdinal,
+            challengeSHA256: runFacts.challengeSHA256,
+            acknowledgementSHA256: runFacts.acknowledgementSHA256,
+            authorizationEnvelopeSHA256: Data(
+                SHA256.hash(data: Data("valid".utf8))
+            ).hexLowercase,
+            authorizationNotAfter: 2_400,
+            deviceEnrollmentBindingSHA256:
+                runFacts.deviceEnrollmentBindingSHA256,
+            enrollmentPublicKey: runFacts.enrollmentPublicKey,
+            deviceInstallationBindingSHA256:
+                runFacts.expectedDeviceInstallationBindingSHA256,
+            environment: try TestRuntimeContext(build: build)
+                .currentEnvironment(),
+            sessionID: String(repeating: "51", count: 32),
+            runCounter: "0000000000000001",
+            createdAt: 1_500,
+            completedAt: nil,
+            sourceCommit: String(repeating: "4", count: 40),
+            marketingVersion: "1.0",
+            buildNumber: "1",
+            state: .collecting
+        )
+        try storage.createSession(report)
+        try storage.transitionRunLifecycle(
+            from: nil,
+            to: try LAB002RunLifecycleState(
+                buildBindingSHA256: build,
+                sessionID: report.sessionID,
+                runOrdinal: report.runOrdinal,
+                phase: .observingMainAndFramework
+            )
+        )
         _ = try storage.commitExpectedCounter(
             expected: 1,
             buildBindingSHA256: build
+        )
+
+        let recovered = try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            recovered,
+            .pendingAuthorization(.collectionRun)
         )
 
         _ = try await coordinator.startCleanRun()
@@ -514,6 +840,72 @@ final class LAB002StorageTests: XCTestCase {
                     )
                     .path
             )
+        )
+    }
+
+    func testInterruptedRunRecoveryAcceptsSkewExpandedCreationTime()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore()
+        let runtime = TestRuntimeContext(build: build, now: 1_000)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver()
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: TestAuthorizationValidator.runFacts(counter: 1)
+        )
+        runtime.now = 999
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        try await coordinator.importAuthorization(from: source)
+
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        _ = try storage.quarantineAuthorization()
+        let awaiting = try XCTUnwrap(storage.readRunLifecycle())
+        try storage.transitionRunLifecycle(
+            from: awaiting,
+            to: try awaiting.changingPhase(
+                to: .observingMainAndFramework
+            )
+        )
+        XCTAssertEqual(try storage.readSession()?.createdAt, 999)
+
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x52),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver()
+        )
+        let recovered = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(
+            recovered,
+            .pendingAuthorization(.collectionRun)
         )
     }
 
@@ -597,11 +989,85 @@ final class LAB002StorageTests: XCTestCase {
         try await coordinator.importAuthorization(from: source)
         let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
         _ = try storage.quarantineAuthorization()
+        let awaiting = try XCTUnwrap(storage.readRunLifecycle())
+        try storage.transitionRunLifecycle(
+            from: awaiting,
+            to: try awaiting.changingPhase(
+                to: .observingMainAndFramework
+            )
+        )
 
         _ = try await coordinator.startCleanRun()
 
         XCTAssertEqual(try storage.readCounter()?.counter, 1)
         XCTAssertNotNil(try storage.readSession())
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorizationQuarantine
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testInterruptedRunPromotesTemporarySessionBeforeObservation()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        try await coordinator.importAuthorization(from: source)
+        let storage = try LAB002FixedStorage(testContainerURL: temporaryRoot)
+        _ = try storage.quarantineAuthorization()
+        let awaiting = try XCTUnwrap(storage.readRunLifecycle())
+        try storage.transitionRunLifecycle(
+            from: awaiting,
+            to: try awaiting.changingPhase(
+                to: .observingMainAndFramework
+            )
+        )
+        let currentURL = storage.reportsURL.appendingPathComponent(
+            LAB002FixedName.currentReports,
+            isDirectory: true
+        )
+        let sessionURL = currentURL.appendingPathComponent(
+            LAB002FixedName.session
+        )
+        let temporaryURL = currentURL.appendingPathComponent(
+            LAB002FixedName.sessionTemporary
+        )
+        try FileManager.default.moveItem(
+            at: sessionURL,
+            to: temporaryURL
+        )
+
+        _ = try await coordinator.startCleanRun()
+
+        XCTAssertEqual(try storage.readCounter()?.counter, 1)
+        XCTAssertNotNil(try storage.readSession())
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: temporaryURL.path)
+        )
         XCTAssertFalse(
             FileManager.default.fileExists(
                 atPath: storage.inboxURL
@@ -662,9 +1128,19 @@ final class LAB002StorageTests: XCTestCase {
             random: TestRandomBytes(byte: 0x51),
             testRuntimeContext: runtimeContext
         )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
         let source = temporaryRoot.appendingPathComponent("source.json")
         try Data("valid".utf8).write(to: source)
         try await coordinator.importAuthorization(from: source)
+        let importedRecovery = try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            importedRecovery,
+            .pendingAuthorization(.collectionRun)
+        )
 
         do {
             _ = try await coordinator.discardStaleAuthorization()
@@ -672,19 +1148,913 @@ final class LAB002StorageTests: XCTestCase {
         } catch LAB002CoordinatorError.authorizationStillValid {
         }
 
-        runtimeContext.now = 2_021
+        runtimeContext.now = 2_521
+        do {
+            _ = try await coordinator.startCleanRun()
+            XCTFail("expired authorization started a run")
+        } catch LAB002CoordinatorError.stale {
+        }
+        let expiredRecovery = try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            expiredRecovery,
+            .discardableAuthorization
+        )
         let expired = try await coordinator.discardStaleAuthorization()
         guard case .expired = expired else {
             return XCTFail("expected expired")
         }
 
-        try Data("valid".utf8).write(to: source)
+        validator.expectedBytes = Data("malformed".utf8)
+        try validator.expectedBytes.write(to: source)
         try await coordinator.importAuthorization(from: source)
         validator.shouldFail = true
         runtimeContext.now = 1_500
+        let malformedRecovery = try await coordinator
+            .recoverWorkflowState()
+        XCTAssertEqual(
+            malformedRecovery,
+            .discardableAuthorization
+        )
         let malformed = try await coordinator.discardStaleAuthorization()
         guard case .malformed = malformed else {
             return XCTFail("expected malformed")
+        }
+    }
+
+    func testRecoveryClassifiesOutsideUsableWindowsAsDiscardable()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let runtime = TestRuntimeContext(build: build, now: 1_901)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let expiredEnrollmentRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            expiredEnrollmentRecovery,
+            .discardableAuthorization
+        )
+        let expiredEnrollmentDiscard =
+            try await coordinator.discardStaleAuthorization()
+        XCTAssertEqual(
+            expiredEnrollmentDiscard,
+            .expired
+        )
+
+        runtime.now = 1_500
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 2_000,
+            notAfter: 2_900,
+            expectedRunCounter: 1,
+            runFacts: TestAuthorizationValidator.runFacts(counter: 1)
+        )
+        validator.expectedBytes = Data("future-run".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let futureRunRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            futureRunRecovery,
+            .discardableAuthorization
+        )
+        let futureRunDiscard =
+            try await coordinator.discardStaleAuthorization()
+        XCTAssertEqual(
+            futureRunDiscard,
+            .expired
+        )
+    }
+
+    func testAuthorizationTemporaryPublicationIsRecovered() async throws {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        let temporaryURL = storage.inboxURL.appendingPathComponent(
+            LAB002FixedName.authorizationTemporary
+        )
+        try Data("valid".utf8).write(to: temporaryURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: temporaryURL.path
+        )
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: TestEnrollmentKeyStore(),
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+
+        let recovered = try await coordinator.recoverWorkflowState()
+
+        XCTAssertEqual(
+            recovered,
+            .pendingAuthorization(.installationEnrollment)
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: temporaryURL.path)
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: storage.inboxURL
+                    .appendingPathComponent(
+                        LAB002FixedName.authorization
+                    )
+                    .path
+            )
+        )
+    }
+
+    func testEnrollmentReceiptSurvivesRestartAndFinishesConsumption()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x61)
+        let runtime = TestRuntimeContext(build: build)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let enrollment = try await coordinator
+            .confirmInstallationEnrollment()
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        let receiptURL = storage.stateURL.appendingPathComponent(
+            LAB002FixedName.enrollmentReceiptRecovery
+        )
+        let receiptTemporaryURL = storage.stateURL.appendingPathComponent(
+            LAB002FixedName.enrollmentReceiptRecoveryTemporary
+        )
+        try FileManager.default.moveItem(
+            at: receiptURL,
+            to: receiptTemporaryURL
+        )
+
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        let restored = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(
+            restored,
+            .enrollmentReceipt(
+                enrollment.receipt,
+                fingerprintSHA256:
+                    enrollment.deviceSelectionFingerprintSHA256
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: receiptURL.path)
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: receiptTemporaryURL.path
+            )
+        )
+        let updatedBuildRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: TestRuntimeContext(
+                build: String(repeating: "9", count: 64)
+            )
+        )
+        do {
+            _ = try await updatedBuildRestart.recoverWorkflowState()
+            XCTFail("receipt from a different current build was accepted")
+        } catch LAB002EvidenceArtifactError.invalidArtifact {
+        }
+        let recoveryBytes = try Data(contentsOf: receiptURL)
+        var uppercaseRecovery = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: recoveryBytes)
+                as? [String: Any]
+        )
+        var uppercaseReceipt = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(
+                    try XCTUnwrap(
+                        uppercaseRecovery["receipt_canonical"] as? String
+                    ).utf8
+                )
+            ) as? [String: Any]
+        )
+        uppercaseReceipt["signature"] = try XCTUnwrap(
+            uppercaseReceipt["signature"] as? String
+        ).uppercased()
+        let uppercaseReceiptBytes = try JSONSerialization.data(
+            withJSONObject: uppercaseReceipt,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        uppercaseRecovery["receipt_canonical"] =
+            String(decoding: uppercaseReceiptBytes, as: UTF8.self)
+        let uppercaseRecoveryBytes = try JSONSerialization.data(
+            withJSONObject: uppercaseRecovery,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        try uppercaseRecoveryBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+        let uppercaseRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        do {
+            _ = try await uppercaseRestart.recoverWorkflowState()
+            XCTFail("uppercase recovered signature was accepted")
+        } catch LAB002EvidenceArtifactError.invalidArtifact {
+        }
+        try recoveryBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+        var tamperedRecovery = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: recoveryBytes)
+                as? [String: Any]
+        )
+        tamperedRecovery["device_selection_fingerprint_sha256"] =
+            String(repeating: "0", count: 64)
+        let tamperedBytes = try JSONSerialization.data(
+            withJSONObject: tamperedRecovery,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        try tamperedBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+        let tamperedRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        do {
+            _ = try await tamperedRestart.recoverWorkflowState()
+            XCTFail("tampered recovered fingerprint was accepted")
+        } catch LAB002EvidenceArtifactError.invalidArtifact {
+        }
+        try recoveryBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+        var mismatchedRecovery = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: recoveryBytes)
+                as? [String: Any]
+        )
+        var mismatchedReceipt = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(
+                    try XCTUnwrap(
+                        mismatchedRecovery["receipt_canonical"] as? String
+                    ).utf8
+                )
+            ) as? [String: Any]
+        )
+        var mismatchedUnsigned = try XCTUnwrap(
+            JSONSerialization.jsonObject(
+                with: Data(
+                    try XCTUnwrap(
+                        mismatchedReceipt[
+                            "unsigned_receipt_canonical"
+                        ] as? String
+                    ).utf8
+                )
+            ) as? [String: Any]
+        )
+        mismatchedUnsigned["experiment_id"] =
+            String(repeating: "f", count: 64)
+        let mismatchedUnsignedBytes = try JSONSerialization.data(
+            withJSONObject: mismatchedUnsigned,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        let recoverySigningKey = try LAB002CryptoKitSigningKey(
+            rawRepresentation: Data(repeating: 0x61, count: 32)
+        )
+        mismatchedReceipt["unsigned_receipt_canonical"] =
+            String(decoding: mismatchedUnsignedBytes, as: UTF8.self)
+        mismatchedReceipt["signature"] = try recoverySigningKey.signature(
+            for: framedTestMessage(
+                domain:
+                    "orchardprobe.demolab.lab002.enrollment-receipt.v1\0",
+                canonicalBytes: mismatchedUnsignedBytes
+            )
+        ).hexLowercase
+        let mismatchedReceiptBytes = try JSONSerialization.data(
+            withJSONObject: mismatchedReceipt,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        mismatchedRecovery["receipt_canonical"] =
+            String(decoding: mismatchedReceiptBytes, as: UTF8.self)
+        let mismatchedRecoveryBytes = try JSONSerialization.data(
+            withJSONObject: mismatchedRecovery,
+            options: [.sortedKeys, .withoutEscapingSlashes]
+        )
+        try mismatchedRecoveryBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+        let mismatchedRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        do {
+            _ = try await mismatchedRestart.recoverWorkflowState()
+            XCTFail("signed receipt for another experiment was accepted")
+        } catch LAB002EvidenceArtifactError.invalidArtifact {
+        }
+        try recoveryBytes.write(to: receiptURL)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: receiptURL.path
+        )
+
+        runtime.now = 2_021
+        try await restarted.importAuthorization(from: source)
+        _ = try storage.quarantineAuthorization()
+        let interruptedRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+
+        let interruptedRecovery =
+            try await interruptedRestart.recoverWorkflowState()
+
+        XCTAssertEqual(
+            interruptedRecovery,
+            .enrollmentReceipt(
+                enrollment.receipt,
+                fingerprintSHA256:
+                    enrollment.deviceSelectionFingerprintSHA256
+            )
+        )
+        XCTAssertFalse(try storage.hasQuarantinedAuthorization())
+
+        runtime.now = 1_500
+        try FileManager.default.removeItem(at: receiptURL)
+        try await restarted.importAuthorization(from: source)
+        _ = try storage.quarantineAuthorization()
+        let receiptInterruptedRestart = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime
+        )
+        let receiptInterruptedRecovery =
+            try await receiptInterruptedRestart.recoverWorkflowState()
+        XCTAssertEqual(
+            receiptInterruptedRecovery,
+            .pendingAuthorization(.installationEnrollment)
+        )
+        let resumedEnrollment = try await receiptInterruptedRestart
+            .confirmInstallationEnrollment()
+        XCTAssertEqual(
+            resumedEnrollment.state,
+            enrollment.state
+        )
+        XCTAssertEqual(keyStore.createCount, 1)
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: receiptURL.path)
+        )
+    }
+
+    func testMissingEnrollmentReceiptWithoutEnvelopeFailsClosed()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            kind: .installationEnrollment,
+            expectedCounter: nil,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x66)
+        let runtime = TestRuntimeContext(build: build)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x67),
+            testRuntimeContext: runtime
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.confirmInstallationEnrollment()
+
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        try FileManager.default.removeItem(
+            at: storage.stateURL.appendingPathComponent(
+                LAB002FixedName.enrollmentReceiptRecovery
+            )
+        )
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x68),
+            testRuntimeContext: runtime
+        )
+
+        let recovered = try await restarted.recoverWorkflowState()
+        XCTAssertEqual(recovered, .failedRun)
+    }
+
+    func testInProgressRecoveryRequiresDurableEnrollmentProof()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x41)
+        let runtime = TestRuntimeContext(build: build)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        try FileManager.default.removeItem(
+            at: storage.stateURL.appendingPathComponent(
+                LAB002FixedName.enrollmentReceiptRecovery
+            )
+        )
+
+        let recovered = try await coordinator.recoverWorkflowState()
+
+        XCTAssertEqual(recovered, .failedRun)
+    }
+
+    func testCompletedRecoveryRequiresDurableEnrollmentControl()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x41)
+        let runtime = TestRuntimeContext(build: build)
+        let placeholder = LAB002CompletedSessionSnapshot(
+            collectionID: String(repeating: "e", count: 64),
+            sessionID: String(repeating: "51", count: 32),
+            runOrdinal: 1,
+            runCounter: "0000000000000001",
+            challengeSHA256: String(repeating: "d", count: 64),
+            buildBindingSHA256: build,
+            enrollmentPublicKey: String(repeating: "2", count: 64),
+            deviceInstallationBindingSHA256:
+                String(repeating: "1", count: 64),
+            documents: []
+        )
+        let evidenceStore = TestSessionEvidenceStore(snapshot: placeholder)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x51),
+            testRuntimeContext: runtime,
+            testSessionEvidenceStore: evidenceStore
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        let session = try XCTUnwrap(storage.readSession())
+        evidenceStore.snapshot = LAB002CompletedSessionSnapshot(
+            collectionID: session.collectionID,
+            sessionID: session.sessionID,
+            runOrdinal: session.runOrdinal,
+            runCounter: session.runCounter,
+            challengeSHA256: session.challengeSHA256,
+            buildBindingSHA256: session.buildBindingSHA256,
+            enrollmentPublicKey: session.enrollmentPublicKey,
+            deviceInstallationBindingSHA256:
+                session.deviceInstallationBindingSHA256,
+            documents: []
+        )
+        let completion = try await coordinator
+            .completeRunAfterShareExtension()
+        XCTAssertEqual(completion, .committed)
+        try FileManager.default.removeItem(
+            at: storage.stateURL.appendingPathComponent(
+                LAB002FixedName.enrollmentControl
+            )
+        )
+
+        let recovered = try await coordinator.recoverWorkflowState()
+
+        XCTAssertEqual(recovered, .failedRun)
+    }
+
+    func testMismatchedQuarantinedRunCannotResumeCollectingSession()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x41)
+        let runtime = TestRuntimeContext(build: build)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver()
+        )
+        try await enroll(
+            coordinator: coordinator,
+            validator: validator,
+            build: build
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.startCleanRun()
+
+        validator.expectedBytes = Data("different-run".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        _ = try storage.quarantineAuthorization()
+        let restarted = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: runtime,
+            testRunRoleObserver: TestRunRoleObserver()
+        )
+
+        do {
+            _ = try await restarted.recoverWorkflowState()
+            XCTFail("mismatched quarantined run resumed a session")
+        } catch LAB002ObserverReason.staleOrConflictingSession {
+        }
+    }
+
+    func testPrerequisiteMismatchAuthorizationCanBeDiscarded()
+        async throws
+    {
+        let build = String(repeating: "a", count: 64)
+        let validator = TestAuthorizationValidator(
+            expectedCounter: 1,
+            build: build
+        )
+        let keyStore = TestEnrollmentKeyStore(seed: 0x61)
+        let coordinator = try LAB002InboxCoordinator(
+            testContainerURL: temporaryRoot,
+            validator: validator,
+            enrollmentKeyStore: keyStore,
+            random: TestRandomBytes(byte: 0x62),
+            testRuntimeContext: TestRuntimeContext(build: build)
+        )
+        let source = temporaryRoot.appendingPathComponent("source.json")
+        try Data("valid".utf8).write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let missingEnrollment =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(missingEnrollment, .discardableAuthorization)
+        let missingReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .enrollmentRequired = missingReason else {
+            return XCTFail("expected enrollment-required discard")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .installationEnrollment,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: nil,
+            enrollmentFacts: TestAuthorizationValidator.enrollmentFacts()
+        )
+        validator.expectedBytes = Data("enrollment".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        _ = try await coordinator.confirmInstallationEnrollment()
+        validator.expectedBytes = Data("second-enrollment".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let alreadyEnrolled =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(alreadyEnrolled, .discardableAuthorization)
+        let enrolledReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .alreadyEnrolled = enrolledReason else {
+            return XCTFail("expected already-enrolled discard")
+        }
+
+        let storage = try LAB002FixedStorage(
+            testContainerURL: temporaryRoot
+        )
+        let state = try XCTUnwrap(storage.readInstallationState())
+        func runFacts(
+            counter: UInt64,
+            publicKey: String,
+            installationBinding: String,
+            experimentID: String? = nil,
+            authorizedTargetManifestSHA256: String? = nil,
+            enrollmentBinding: String? = nil
+        ) -> LAB002VerifiedRunFacts {
+            let base = TestAuthorizationValidator.runFacts(counter: counter)
+            return LAB002VerifiedRunFacts(
+                experimentID: experimentID ?? base.experimentID,
+                authorizedTargetManifestSHA256:
+                    authorizedTargetManifestSHA256
+                        ?? base.authorizedTargetManifestSHA256,
+                collectionID: base.collectionID,
+                runOrdinal: base.runOrdinal,
+                challengeSHA256: base.challengeSHA256,
+                acknowledgementSHA256: base.acknowledgementSHA256,
+                deviceEnrollmentBindingSHA256:
+                    enrollmentBinding
+                        ?? base.deviceEnrollmentBindingSHA256,
+                enrollmentPublicKey: publicKey,
+                expectedDeviceInstallationBindingSHA256:
+                    installationBinding
+            )
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: TestAuthorizationValidator.runFacts(counter: 1)
+        )
+        validator.expectedBytes = Data("run-before-enrollment".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let orderingRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            orderingRecovery,
+            .discardableAuthorization
+        )
+        let orderingReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = orderingReason else {
+            return XCTFail("expected enrollment-time ordering mismatch")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: TestAuthorizationValidator.runFacts(counter: 1)
+        )
+        validator.expectedBytes = Data("run-wrong-key".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let keyMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            keyMismatchRecovery,
+            .discardableAuthorization
+        )
+        let keyReason = try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = keyReason else {
+            return XCTFail("expected enrollment-key mismatch discard")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: runFacts(
+                counter: 1,
+                publicKey: state.enrollmentPublicKey,
+                installationBinding: String(repeating: "1", count: 64),
+                experimentID: String(repeating: "0", count: 64)
+            )
+        )
+        validator.expectedBytes = Data("run-wrong-experiment".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let experimentMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            experimentMismatchRecovery,
+            .discardableAuthorization
+        )
+        let experimentReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = experimentReason else {
+            return XCTFail("expected experiment mismatch discard")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: runFacts(
+                counter: 1,
+                publicKey: state.enrollmentPublicKey,
+                installationBinding: String(repeating: "1", count: 64),
+                authorizedTargetManifestSHA256:
+                    String(repeating: "0", count: 64)
+            )
+        )
+        validator.expectedBytes = Data("run-wrong-manifest".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let manifestMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            manifestMismatchRecovery,
+            .discardableAuthorization
+        )
+        let manifestReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = manifestReason else {
+            return XCTFail("expected target-manifest mismatch discard")
+        }
+
+        let enrolledFacts = TestAuthorizationValidator.enrollmentFacts()
+        let enrolledRunFacts =
+            TestAuthorizationValidator.runFacts(counter: 1)
+        try storage.createEnrollmentControl(
+            LAB002EnrollmentControlState(
+                buildBindingSHA256: build,
+                experimentID: enrolledFacts.experimentID,
+                deviceEnrollmentBindingSHA256:
+                    enrolledRunFacts.deviceEnrollmentBindingSHA256
+            )
+        )
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: runFacts(
+                counter: 1,
+                publicKey: state.enrollmentPublicKey,
+                installationBinding: String(repeating: "1", count: 64),
+                enrollmentBinding: String(repeating: "0", count: 64)
+            )
+        )
+        validator.expectedBytes = Data("run-wrong-enrollment-binding".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let enrollmentBindingMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            enrollmentBindingMismatchRecovery,
+            .discardableAuthorization
+        )
+        let enrollmentBindingReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = enrollmentBindingReason else {
+            return XCTFail("expected enrollment-binding mismatch discard")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 2,
+            runFacts: runFacts(
+                counter: 2,
+                publicKey: state.enrollmentPublicKey,
+                installationBinding: String(repeating: "1", count: 64)
+            )
+        )
+        validator.expectedBytes = Data("run-wrong-counter".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let counterMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            counterMismatchRecovery,
+            .discardableAuthorization
+        )
+        let counterReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = counterReason else {
+            return XCTFail("expected run-counter mismatch discard")
+        }
+
+        validator.metadata = LAB002AuthorizationMetadata(
+            kind: .collectionRun,
+            buildBindingSHA256: build,
+            notBefore: 1_000,
+            notAfter: 1_900,
+            expectedRunCounter: 1,
+            runFacts: runFacts(
+                counter: 1,
+                publicKey: state.enrollmentPublicKey,
+                installationBinding: String(repeating: "2", count: 64)
+            )
+        )
+        validator.expectedBytes = Data("run-wrong-binding".utf8)
+        try validator.expectedBytes.write(to: source)
+        try await coordinator.importAuthorization(from: source)
+        let bindingMismatchRecovery =
+            try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(
+            bindingMismatchRecovery,
+            .discardableAuthorization
+        )
+        let bindingReason =
+            try await coordinator.discardStaleAuthorization()
+        guard case .runPrerequisiteMismatch = bindingReason else {
+            return XCTFail("expected installation-binding mismatch discard")
         }
     }
 
@@ -860,10 +2230,15 @@ final class LAB002StorageTests: XCTestCase {
         validator.metadata = LAB002AuthorizationMetadata(
             kind: .collectionRun,
             buildBindingSHA256: build,
-            notBefore: 1_000,
-            notAfter: 1_900,
+            notBefore: 1_500,
+            notAfter: 2_400,
             expectedRunCounter: 1,
             runFacts: LAB002VerifiedRunFacts(
+                experimentID:
+                    TestAuthorizationValidator.enrollmentFacts().experimentID,
+                authorizedTargetManifestSHA256:
+                    TestAuthorizationValidator.enrollmentFacts()
+                        .authorizedTargetManifestSHA256,
                 collectionID: String(repeating: "e", count: 64),
                 runOrdinal: 1,
                 challengeSHA256: String(repeating: "d", count: 64),
@@ -875,7 +2250,8 @@ final class LAB002StorageTests: XCTestCase {
                     String(repeating: "1", count: 64)
             )
         )
-        try Data("valid".utf8).write(to: source)
+        validator.expectedBytes = Data("run".utf8)
+        try validator.expectedBytes.write(to: source)
         try await coordinator.importAuthorization(from: source)
         _ = try await coordinator.startCleanRun()
         XCTAssertEqual(keyStore.createCount, 1)
@@ -1336,6 +2712,20 @@ final class LAB002StorageTests: XCTestCase {
 
             let consumed = try await coordinator.startCleanRun()
             XCTAssertEqual(consumed.canonicalBytes, validator.expectedBytes)
+            let collectingCoordinator = try LAB002InboxCoordinator(
+                testContainerURL: temporaryRoot,
+                validator: validator,
+                enrollmentKeyStore: keyStore,
+                random: random,
+                testRuntimeContext: runtime,
+                testRunRoleObserver: roleObserver
+            )
+            let collectingRecovery = try await collectingCoordinator
+                .recoverWorkflowState()
+            XCTAssertEqual(
+                collectingRecovery,
+                .runInProgress
+            )
             try roleObserver.observeShareExtension()
             runtime.now = baseTime + 4
             let completionOutcome = try await coordinator
@@ -1369,14 +2759,28 @@ final class LAB002StorageTests: XCTestCase {
                     testRuntimeContext: runtime,
                     testRunRoleObserver: roleObserver
                 )
-                do {
-                    _ = try await restartedCoordinator
-                        .exportLAB002Evidence()
-                    XCTFail(
-                        "a restarted coordinator reconstructed completed evidence"
-                    )
-                } catch LAB002ObserverReason.staleOrConflictingSession {
-                }
+                let completedRecovery = try await restartedCoordinator
+                    .recoverWorkflowState()
+                XCTAssertEqual(
+                    completedRecovery,
+                    .completedRun
+                )
+                let restartedExport = try await restartedCoordinator
+                    .exportLAB002Evidence()
+                let restartedVerified = try assertValidSyntheticExport(
+                    restartedExport,
+                    expectedOrdinal: UInt8(ordinal),
+                    enrollmentPublicKey:
+                        enrollment.state.enrollmentPublicKey
+                )
+                XCTAssertEqual(
+                    restartedVerified.sessionID,
+                    verified.sessionID
+                )
+                XCTAssertEqual(
+                    restartedVerified.authorizationEnvelopeSHA256,
+                    verified.authorizationEnvelopeSHA256
+                )
             }
 
             let cleanupOutcome = try await coordinator
@@ -1415,6 +2819,14 @@ final class LAB002StorageTests: XCTestCase {
         }
         XCTAssertEqual(try storage.readCounter()?.counter, 2)
         XCTAssertFalse(try storage.hasSessionDirectory())
+
+        _ = try storage.quarantineAuthorization()
+        let replayRecovery = try await coordinator.recoverWorkflowState()
+        XCTAssertEqual(replayRecovery, .discardableAuthorization)
+        let discardReason = try await coordinator
+            .discardStaleAuthorization()
+        XCTAssertEqual(discardReason, .runPrerequisiteMismatch)
+        XCTAssertNil(try storage.readPendingAuthorization())
     }
 
     func testExportRequiresExplicitConfirmationAndPreservesFixedState()
@@ -1450,19 +2862,35 @@ final class LAB002StorageTests: XCTestCase {
                 canonicalBytes: Data("{}".utf8)
             )
         }
+        let session = try makeSessionReport(
+            enrollmentPublicKey: publicKey
+        )
+        try storage.createSession(session)
+        try storage.transitionRunLifecycle(
+            from: nil,
+            to: try LAB002RunLifecycleState(
+                buildBindingSHA256: session.buildBindingSHA256,
+                sessionID: session.sessionID,
+                runOrdinal: session.runOrdinal,
+                phase: .awaitingShareExtension
+            )
+        )
         let snapshot = LAB002CompletedSessionSnapshot(
-            collectionID: String(repeating: "b", count: 64),
-            sessionID: String(repeating: "c", count: 64),
+            collectionID: session.collectionID,
+            sessionID: session.sessionID,
             runOrdinal: 1,
             runCounter: "0000000000000001",
-            challengeSHA256: String(repeating: "d", count: 64),
+            challengeSHA256: session.challengeSHA256,
             buildBindingSHA256: build,
             enrollmentPublicKey: publicKey,
             deviceInstallationBindingSHA256:
                 String(repeating: "1", count: 64),
             documents: documents
         )
-        let evidenceStore = TestSessionEvidenceStore(snapshot: snapshot)
+        let evidenceStore = TestSessionEvidenceStore(
+            snapshot: snapshot,
+            cleanupFailuresBeforeCommit: 1
+        )
         let coordinator = try LAB002InboxCoordinator(
             testContainerURL: temporaryRoot,
             validator: TestAuthorizationValidator(),
@@ -1471,6 +2899,9 @@ final class LAB002StorageTests: XCTestCase {
             testRuntimeContext: TestRuntimeContext(build: build),
             testSessionEvidenceStore: evidenceStore
         )
+        let completionOutcome = try await coordinator
+            .completeRunAfterShareExtension()
+        XCTAssertEqual(completionOutcome, .committed)
 
         do {
             _ = try await coordinator
@@ -1530,6 +2961,23 @@ final class LAB002StorageTests: XCTestCase {
         } catch LAB002EvidenceArtifactError.explicitConfirmationRequired {
         }
         XCTAssertEqual(evidenceStore.cleanupCount, 0)
+        do {
+            _ = try await coordinator
+                .confirmExportReceivedAndCleanReports(confirmed: true)
+            XCTFail("pre-commit cleanup failure was hidden")
+        } catch LAB002ObserverReason.staleOrConflictingSession {
+        }
+        XCTAssertEqual(evidenceStore.cleanupCount, 0)
+        XCTAssertEqual(
+            try storage.readRunLifecycle()?.phase,
+            .completionCommitted
+        )
+        let retainedArtifact =
+            try await coordinator.exportLAB002Evidence()
+        XCTAssertEqual(
+            retainedArtifact,
+            artifact
+        )
         let cleanupOutcome = try await coordinator
             .confirmExportReceivedAndCleanReports(confirmed: true)
         XCTAssertEqual(cleanupOutcome, .cleaned)
@@ -1710,6 +3158,7 @@ final class LAB002StorageTests: XCTestCase {
         build: String
     ) async throws {
         let expectedRunCounter = validator.metadata.expectedRunCounter ?? 1
+        let runAuthorizationBytes = validator.expectedBytes
         validator.metadata = LAB002AuthorizationMetadata(
             kind: .installationEnrollment,
             buildBindingSHA256: build,
@@ -1718,23 +3167,27 @@ final class LAB002StorageTests: XCTestCase {
             expectedRunCounter: nil,
             enrollmentFacts: TestAuthorizationValidator.enrollmentFacts()
         )
+        validator.expectedBytes = Data("enrollment".utf8)
         let source = temporaryRoot.appendingPathComponent("enrollment.json")
-        try Data("valid".utf8).write(to: source)
+        try validator.expectedBytes.write(to: source)
         try await coordinator.importAuthorization(from: source)
         _ = try await coordinator.confirmInstallationEnrollment()
         validator.metadata = LAB002AuthorizationMetadata(
             kind: .collectionRun,
             buildBindingSHA256: build,
-            notBefore: 1_000,
-            notAfter: 1_900,
+            notBefore: 1_500,
+            notAfter: 2_400,
             expectedRunCounter: expectedRunCounter,
             runFacts: TestAuthorizationValidator.runFacts(
                 counter: expectedRunCounter
             )
         )
+        validator.expectedBytes = runAuthorizationBytes
     }
 
-    private func makeSessionReport() throws -> LAB002SessionReport {
+    private func makeSessionReport(
+        enrollmentPublicKey: String = String(repeating: "2", count: 64)
+    ) throws -> LAB002SessionReport {
         try LAB002SessionReport(
             observerRevision: "lab002-observer-v1",
             buildBindingSHA256: String(repeating: "a", count: 64),
@@ -1745,7 +3198,7 @@ final class LAB002StorageTests: XCTestCase {
             authorizationEnvelopeSHA256: String(repeating: "c", count: 64),
             authorizationNotAfter: 1_900,
             deviceEnrollmentBindingSHA256: String(repeating: "f", count: 64),
-            enrollmentPublicKey: String(repeating: "2", count: 64),
+            enrollmentPublicKey: enrollmentPublicKey,
             deviceInstallationBindingSHA256: String(repeating: "1", count: 64),
             environment: LAB002SessionEnvironment(
                 hardwareModel: "iPhone17,1",

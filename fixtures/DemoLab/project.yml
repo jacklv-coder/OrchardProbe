@@ -10,6 +10,7 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEMO_LAB_APP_BUNDLE_ID: com.example.orchardprobe.demolab
     DEMO_LAB_APP_GROUP_ID: group.com.example.orchardprobe.demolab
+    DEMO_LAB_AUTHORIZATION_PUBLIC_KEY: ""
     DEMO_LAB_BUILD_BINDING_SHA256: ""
     DEMO_LAB_FRAMEWORK_BUNDLE_ID: com.example.orchardprobe.demolab.framework
     DEMO_LAB_IDENTITY_NONCE: ""

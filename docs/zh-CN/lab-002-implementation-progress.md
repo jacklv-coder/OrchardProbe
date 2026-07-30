@@ -1,6 +1,6 @@
 # LAB-002 实现进度台账
 
-状态：**检查点 2 正在本地实现分支开发**
+状态：**检查点 2 正在 PR #59 做最终远端验证**
 
 本文用于跟踪 [LAB-002](lab-002-oracle-design.md) 检查点 2 的实现进度，不把尚未
 合并的工作描述成 `main` 已具备的能力。只有一个完整实现 PR 通过 Codex CR、所需 CI
@@ -15,7 +15,7 @@
 | 2B | 闭合 Schema 与完整 Host 工件链 | `完成` | 全部 18 种 Wire 形式、精确 Enrollment/Run/两轮验证链、对抗 Fixture、完整本地门禁和最终 Codex CR 均通过且没有剩余 P1/P2 |
 | 2C | DemoLab 状态协调器与零参数观察器 | `完成` | 下文 2C.1–2C.5 已按顺序完成；不接受调用者选择的目标、区间、路径、PID 或地址 |
 | 2D | 合成与 Simulator 验证 | `完成` | 下文 2D.1–2D.4 矩阵现已覆盖完整两轮生命周期、三个 Role、所有构建出的 Simulator Slice、负向状态/崩溃/重放边界，并明确 Simulator 只能得到 `inconclusive` |
-| 2E | 文档、最终 CR、CI、PR 与合并 | `planned` | 更新中英双语架构/用户 Runbook 与兼容性模板；解决全部 P1/P2，通过所有门禁，复核 PR 后合并 |
+| 2E | 文档、最终 CR、CI、PR 与合并 | `进行中` | PR #59 首轮 CI 已通过；生产授权验签、可操作真机流程、签名 Archive Capability 注入、中断/持久化不确定性 Review 修复、全部本地门禁及最终 Push 前 CR 均已完成；剩余 Push、远端 CI/Review、合并前 CR 与合并 |
 
 ## 当前已验证事实
 
@@ -29,6 +29,29 @@
 - 本地完整门禁通过：CLI 单元测试 5 项、CLI 集成测试 17 项、Core 测试 171 项、
   Fixture 集成测试 1 项、Schema 测试 9 项，以及格式化、Clippy 警告即错误和相对
   基线的 Diff 检查。
+- PR #59 是检查点 2 的实现 PR，首轮必需 CI 已全部通过。远端 Review 随后发现的
+  3 个 P1 属于生产接线缺口，而不是协议失败：App 缺少生产授权验证器、Coordinator
+  动作无法从 UI 触达、Archive Lane 仍保留通用 App Group。2E 已纳入全部修复；
+  后续本地 CR 对中断恢复和不确定持久化状态发现的 1 个 P1、3 个 P2 也已关闭。下一轮
+  最终复核又发现 3 个 P2：Run Window 早于保留 Enrollment Receipt、提交前 Cleanup
+  失败被错误终止，以及精确持久 Receipt 在 Authorization 过期后失去恢复优先级。
+  三项均已加入专项回归。随后最终 CR 又发现 2 个 P2 恢复缺口：Enrollment Receipt
+  缺失时错误显示 Ready，以及提交前 Completion 错误把状态卡死在
+  `completion_pending`。两项现已分别在正确边界失败关闭或回滚，并加入专项回归；
+  最新 CR 又发现 2 个 P1 绑定/恢复窗口缺口和 1 个 P2 弱公钥缺口：Run
+  Acknowledgement 未保留登记时的 Target-manifest Digest、窗口外 Authorization
+  可能被卡住，以及 Apple 侧校验未拒绝全部 Ed25519 低阶公钥。三项均已修复并加入
+  专项回归；随后 CR 又发现 1 个 P1 失败关闭 UI 缺口和 1 个 P2 Receipt 交接缺口：
+  持久状态恢复失败时可能仍保留陈旧重试控件，且用户确认保存 Enrollment Receipt
+  前导入 Run 会让 Receipt 从 UI 消失。两项现已通过终止式恢复处理和明确的
+  Receipt 保存确认门禁关闭并加入回归；下一轮 CR 又发现 1 个 P1 持久 Session
+  缺口：进行中或已完成恢复未重新验证持久 Enrollment 证明。现已要求认证 Receipt、
+  Installation State/Key/Binding、Enrollment-control Tuple 与精确 Counter 全部
+  一致后才允许恢复或导出，并加入两项回归；最新 Push 前 CR 还发现中断后的
+  `session.json.tmp` 虽可读取但未在观察前提升为正式 Session，现已补齐该原子发布恢复
+  并加入端到端回归；Simulator Suite 现为 65 项测试。双架构 Fixture Build、完整
+  Rust/Schema 门禁和 Fastlane 无签名 Fixture Lane 也已通过。修复后门禁与 Codex
+  复核、远端 CI 和 PR Review 清零前禁止合并。
 - 最终 2A 专项 Codex CR 已复核 Segment 重叠、经典/链式 Fixup、链式 Import 名称、
   动态重定位表、区段边界和非公开 CLI 边界，未发现可执行的 P1/P2。
 - 设备无关成功状态明确命名为 `consistent_synthetic_evidence`；它不是 LAB-002 Go，
@@ -148,8 +171,10 @@
   与专项 CR 均通过，没有剩余可执行 P1/P2。
 - 2C.5 现在只会在已认证 Authorization、Build、Environment、Device-only Key、
   Nonce 与 Installation Binding 全部一致后构造精确的签名 Enrollment Receipt，
-  返回完整的物理选择 Fingerprint，并且只通过内存中的系统 Share Item 暴露固定
-  Receipt。已完成 Run 会重新验证为不可变的四文档 Snapshot，严格采用
+  返回完整的物理选择 Fingerprint，显示全部 64 个 Hex 字符供 Host 比对，并把
+  Fingerprint 与精确签名 Receipt 原子保留以供崩溃恢复；Receipt 只通过系统 Share
+  Item 对外暴露。恢复时会重新验证规范 Receipt、Host Authorization/Receipt 签名、
+  Build、Enrollment Key、Authorization Digest 与重新计算的 Fingerprint。已完成 Run 会重新验证为不可变的四文档 Snapshot，严格采用
   Session/Main/Framework/Share 顺序；每份规范文档 Digest 与独立 Export Domain 的
   Ed25519 签名都匹配冻结 Host Schema。Actor 会保留完全相同的 Export 字节，直到
   用户另行明确确认。Cleanup 会两次重验精确 Snapshot，只移除固定的已完成报告子树，
@@ -242,3 +267,16 @@ Simulator 的签名/保护证据明确分类为 `inconclusive`。
 | 2D.2 | 执行完整两轮合成设备生命周期 | `完成` | 45 项 Simulator 测试全部通过；确定性端到端测试使用真实固定存储、Enrollment State、Session/Report Store、签名、四文档 Export、Cleanup 与跨两次互异 Run 保留的 Counter，既有对抗测试闭合改写、乱序、崩溃恢复、重放与提交后不确定边界；三个固定 Role 均保持 `inconclusive` |
 | 2D.3 | 在 CI 中串联 XCTest、构建产物清单与 Host 验证 | `完成` | DemoLab CI 选择一台可用 iPhone Simulator，运行全部 45 项 Swift 测试，构建 Debug/Release 双 Slice 产物，验证三个 Role 的全部 12 个 Role/配置/Slice 区间，并运行 26 项封闭 Host 链；Host 与 Runtime 的配套回归均按文件支持的 Segment 前缀约束 Xcode 26 chained starts，不再把尾部零填充 VM 页误当成已序列化 fixup 页 |
 | 2D.4 | 执行完整本地门禁与 Codex CR | `完成` | Debug/Release 双 Slice Build、45 项 Simulator 测试、全部 12 个产物区间、5 项 CLI 单测 + 17 项 CLI 集成测试 + 171 项 Core 测试 + 1 项产物 Fixture + 9 项 Schema 测试、格式化、Clippy、YAML/Diff 检查、中英双语文档及最终 Codex CR 均通过且没有剩余可执行 P1/P2 |
+
+## 当前 2E 完成计划
+
+2E 会把检查点 2 作为一个整体完成审查。它不授权或执行签名 Archive、TestFlight
+上传、App 安装或物理设备观察。
+
+| 顺序 | 工作项 | 状态 | 退出门禁 |
+|---:|---|---|---|
+| 2E.1 | 关闭生产授权验证 | `完成` | App 读取一个编译期固定的 32 字节 Ed25519 授权公钥，拒绝非规范、未知字段或 Enrollment/Run 交叉绑定不一致的 Envelope，验证精确域分离签名，只派生闭合 Metadata；4 项 Simulator 专项测试与 Debug 双架构 Build 通过 |
+| 2E.2 | 暴露固定设备流程 | `完成` | 单一线性 SwiftUI 流程导入签名 JSON，由验证后的 Metadata 选择 Enrollment 或 Run，显示并持久恢复完整 Device-selection Fingerprint 及其 Receipt，调用固定 App/Framework/Share Role，只经系统 Share Sheet 导出；可恢复中断的 Authorization Publication，为 Enrollment 以及 Run Key/Binding/Counter 前置条件不匹配提供明确丢弃入口，并在固定报告清理前要求明确确认已收到导出 |
+| 2E.3 | 绑定签名 Archive Capability 并更新操作文档 | `完成` | Archive Lane 现在要求校验后的本机 App Group 与固定授权公钥输入，把二者注入生成的签名 Build；中英文文档已同步精确操作流程 |
+| 2E.4 | 重复本地门禁与 Codex CR | `完成` | 65 项 Simulator 测试均通过，包括终止态重启、临时 Session 发布、严格/时钟偏差窗口恢复、持久 Enrollment 证明、Target Manifest、Experiment、Enrollment Binding 与弱公钥回归；Debug/Release 双 Slice Build、全部 12 个产物区间、完整 Rust/Schema 测试、格式化、Clippy、Ruby 语法、Diff 检查和 Fastlane 无签名 Fixture Lane 均通过；最终 Push 前 Codex CR 未发现可执行的 P1/P2 |
+| 2E.5 | Push、重复远端 CI/Review 并合并 | `进行中` | 只通过 SSH Push 已审查 Commit，要求全部检查与 Review Thread 清零，执行合并前 Codex CR，Squash Merge PR #59 并 Fast-forward 本地 `main`；Issue #55 为检查点 3–5 保持开启 |

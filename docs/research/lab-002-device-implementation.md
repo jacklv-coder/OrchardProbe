@@ -19,11 +19,50 @@ DemoLab exposes only these user actions:
 | Action | Input | Effect |
 |---|---|---|
 | Import LAB-002 authorization | One URL supplied by the system document picker | Copies at most one closed, canonical enrollment or run envelope into the fixed inbox |
-| Confirm installation enrollment | None | Consumes one valid installation envelope and creates the fixed enrollment state exactly once |
+| Confirm installation enrollment | None | Consumes one valid installation envelope, creates the fixed enrollment state exactly once, and displays the complete device-selection fingerprint beside the shareable receipt |
 | Start clean LAB-002 run | None | Consumes one valid run envelope, commits its exact next counter, and starts the fixed three-role session |
-| Discard stale LAB-002 authorization | None | Removes only a fixed inbox record proven malformed, expired, or build-mismatched |
+| Discard unusable LAB-002 authorization | None | Removes only a fixed inbox record proven malformed, expired, build-mismatched, incompatible with enrollment state, or inconsistent with the durable enrollment key, installation binding, or next counter |
 | Export LAB-002 evidence | None | Constructs one fixed signed four-document export and presents the system share sheet |
 | Confirm export received and clean reports | One explicit Boolean UI confirmation | Rehashes the constructed export and removes only its matching completed report subtree |
+
+The production UI exposes those actions as one three-step workflow:
+
+1. Tap **Choose authorization JSON** and select the fresh Host-signed
+   enrollment or run envelope. DemoLab validates canonical encoding, the
+   complete closed field set, all acknowledgement/core bindings, the compiled
+   authorization Key ID, and the exact Ed25519 signature before publishing the
+   bounded inbox record. The verified operation selects the next UI path; the
+   user does not choose an arbitrary operation.
+2. For enrollment, tap **Confirm enrollment and export receipt**, compare all
+   64 displayed fingerprint hex characters with the Host, then save
+   `device-enrollment-receipt-v1.json` from the system share sheet and tap
+   **I saved the enrollment receipt**. DemoLab keeps run-authorization import
+   locked until that explicit confirmation. For a run, tap **Start clean run**,
+   then **Open Share panel and choose DemoLab Share**.
+   In Apple's share panel select the first-party **DemoLab Share** extension,
+   wait for its success text, tap **Done**, and return to DemoLab.
+3. For a run, tap **Complete run and export evidence** and save
+   `lab-002-session-export-v1.json`. Only after the Host has safely received
+   that exact file may the user choose **Confirm receipt and clean reports**
+   and accept the explicit destructive confirmation.
+
+While an authorization or run is active, DemoLab disables new imports. On
+launch it re-reads only the fixed inbox/state/session records: it restores a
+pending operation or durable enrollment receipt, resumes an in-progress run at
+the Share step, or reconstructs a completed signed export so it can be shared
+and explicitly cleaned. Restoring an enrollment receipt requires the save
+confirmation again; a failed durable-state recovery makes the UI terminal
+rather than leaving stale retry controls active. A malformed, expired,
+wrong-build, or enrollment-state-incompatible inbox record exposes only
+**Discard unusable authorization**; the same action refuses to remove a valid
+authorization whose prerequisites match the current installation.
+
+The checked-in build deliberately has an empty authorization public key and a
+generic App Group. It can compile and run device-free tests, but production
+coordination fails closed. A reviewed signed archive must inject the registered
+first-party App Group and the 32-byte lowercase-hex authorization public key
+that signs the Host envelopes. The same App Group must be present in the app
+and share-extension entitlements.
 
 The document-picker URL exists only at the import boundary. It is never stored
 in a report, forwarded to an observer, accepted by Host/Core, or reused after
@@ -164,6 +203,36 @@ returns `committedDurabilityUncertain` instead of a retryable error. Missing,
 repeated, completed, temporary, late, replaced, or conflicting pre-commit state
 is unchanged and fails closed.
 
+The coordinator also persists one closed run-lifecycle record before each
+irreversible boundary: observing main/framework, awaiting the Share Extension,
+completion pending, completion committed, cleanup pending, and cleanup
+committed. Relaunch accepts only the exact session/lifecycle pair appropriate
+to that phase. An observer failure, completion with uncertain durability, or
+cleanup with uncertain durability therefore remains a terminal failed run
+after relaunch instead of being reconstructed as an actionable retry. A
+quarantined interrupted run remains recoverable only while its exact signed
+authorization, session, counter, and lifecycle still agree; its persisted
+creation time uses the same signed window plus bounded clock-skew rule as the
+original Start.
+
+Recovery of an in-progress or completed session also revalidates the durable
+installation state, authenticated enrollment receipt, device key and
+installation binding, enrollment-control tuple, and exact committed counter.
+Missing, corrupted, or inconsistent enrollment proof returns the terminal
+failed-run state; a session/lifecycle pair alone can never resume or export.
+
+Before Run 1 consumes its authorization, the coordinator also pins a closed
+enrollment-control tuple containing the build binding, experiment identifier,
+and device-enrollment binding. Every later recovery, discard decision, and
+Run 2 start revalidates the retained signed enrollment authorization/receipt
+and requires the same tuple. It also recovers the authorized-target manifest
+digest from that signed enrollment acknowledgement and requires the run
+acknowledgement to name the same digest. The signed run window must also start
+no earlier than the retained enrollment receipt's `created_at`; an
+authorization that predates the enrolled installation is discardable and
+cannot advance the counter. A run from another manifest, experiment, or
+enrollment is handled the same way.
+
 ### Signed receipt, export, and cleanup
 
 Checkpoint 2C.5 closes both device-signed egress artifacts under the frozen
@@ -178,8 +247,21 @@ resulting canonical enrollment-receipt core is framed as the frozen receipt
 domain, 4-byte big-endian length, and exact core bytes, then signed by the
 device-only Ed25519 enrollment key. The returned full 64-hex device-selection
 fingerprint binds the authorization-envelope digest, enrollment public key,
-installation binding, and device-selection nonce. The fixed authorization is
-deleted only after the receipt has been constructed successfully.
+installation binding, and device-selection nonce. Before consuming the fixed
+authorization, DemoLab atomically persists one fixed owner-only recovery record
+containing the exact Host-signed authorization, signed receipt, and complete
+device-selection fingerprint.
+Relaunch verifies its canonical form, build, enrollment public key, signature,
+authorization-envelope signature/digest, and recomputed fingerprint before
+displaying the same fingerprint and offering the identical receipt through the
+system share sheet again. If receipt persistence completed but deletion of the
+exact quarantined enrollment authorization did not, this authenticated
+receipt/envelope match is recovered before applying the envelope's later
+expiry; only that exact descriptor-matched authorization is then deleted.
+If installation state exists without a verified recovery receipt, recovery is
+terminal unless that same quarantined enrollment authorization is still
+available to finish the interrupted receipt commit. It is never reported as a
+fresh ready installation.
 
 Export first obtains an exact completed snapshot under the coordinator lock; a
 collecting session may be completed once, but malformed or conflicting state
@@ -188,16 +270,16 @@ cannot be converted into exportable evidence. The snapshot contains exactly
 `share-extension.json` in that order. Each entry retains its exact canonical
 document and SHA-256. The canonical export core is framed with its distinct
 frozen export domain and signed by the same enrollment key. Both signed
-artifacts have fixed `.json` names and are held in memory behind an
-`NSItemProvider`; production egress is a system `UIActivityViewController`, not
+artifacts have fixed `.json` names. The enrollment receipt has one durable
+private recovery copy; the presented receipt and session export use an
+`NSItemProvider`. Production egress is a system `UIActivityViewController`, not
 an arbitrary output URL, filesystem path, network request, pasteboard, or
 caller-supplied filename.
 
 The actor retains the first constructed export and returns identical bytes on
-repeat presentation within that coordinator lifetime. A new coordinator must
-not reconstruct an export from a session already marked complete: termination
-after completion but before confirmed receipt is therefore a fail-closed
-No-Go, not an opportunity to produce different signed bytes. Cleanup requires
+repeat presentation within that coordinator lifetime. After relaunch, a new
+coordinator revalidates the immutable completed snapshot and constructs a new
+valid signature over the same semantic export. Cleanup requires
 a separate explicit `true` confirmation, the retained export, and two fresh
 exact completed-snapshot validations under the same lock. It unlinks only the
 four fixed report files, flushes that directory, removes only the empty
@@ -208,7 +290,11 @@ retried as if nothing happened. Enrollment key/state, installation nonce, run
 counter, inbox, root, and coordinator lock are never cleanup targets. A crash,
 partial receipt, signature mismatch, missing required export, or uncertain
 cleanup makes that exact controlled experiment No-Go; cleanup cannot reset it
-into a passing retry.
+into a passing retry. A synchronous cleanup error before the first successful
+unlink is different: the coordinator atomically restores
+`completion_committed`, retains the exact constructed export, and permits the
+same explicitly confirmed cleanup to be attempted again. Failure to durably
+restore that pre-commit state remains terminal.
 
 ## Fixed production container
 
@@ -227,7 +313,10 @@ lab-002-v1/
     authorization-quarantine-v1.json
   state/
     installation-nonce-v1.json
+    enrollment-receipt-recovery-v1.json
+    enrollment-control-v1.json
     run-counter-v1.json
+    run-lifecycle-v1.json
   reports/
     current/
       session.json
@@ -242,9 +331,11 @@ The enrollment key is not a file: it uses one fixed Keychain service/account/
 access-group tuple.
 
 `coordinator.lock`, `inbox`, and `state` survive report cleanup.
-`installation-nonce-v1.json`, `run-counter-v1.json`, and the enrollment key are
-removed only by app deletion or a separately reviewed experiment teardown;
-normal Start, Export, Discard, and Cleanup cannot reset them.
+`installation-nonce-v1.json`, `enrollment-receipt-recovery-v1.json`,
+`enrollment-control-v1.json`, `run-counter-v1.json`,
+`run-lifecycle-v1.json`, and the enrollment key are removed only by app
+deletion or a separately reviewed experiment teardown; normal Start, Export,
+Discard, and Cleanup cannot reset them.
 
 ## Serialized state transitions
 
@@ -258,14 +349,16 @@ operation holds the exclusive coordinator lock.
 absent --Import valid/exclusive--> imported
 imported --identity-checked rename--> quarantined
 quarantined --valid Confirm/Start--> consumed
-quarantined --proven stale/malformed/build-mismatch--> discarded
+quarantined --proven stale/malformed/build/prerequisite mismatch--> discarded
 ```
 
 An unexpected quarantine, lock failure, non-regular file, symlink, entry/
-descriptor identity mismatch, partial write, duplicate import, or crash residue
-is a blocking failure. It is never repaired automatically. The sole narrow
-exception is the explicit authenticated Enrollment resume below; it revalidates
-the exact already-quarantined envelope and cannot be invoked by a run.
+descriptor identity mismatch, duplicate import, or conflicting crash residue
+is a blocking failure. A sole fixed owner-only authorization temporary file is
+promoted under the coordinator lock and then validated or made explicitly
+discardable. The other narrow exception is the authenticated Enrollment resume
+below; it revalidates the exact already-quarantined envelope and cannot be
+invoked by a run.
 
 ### Enrollment
 
@@ -305,16 +398,22 @@ collecting_main
 idle
 ```
 
-The counter is durably incremented before `session.json` is created. The exact
-validated authorization remains quarantined until both records are durable.
-If interruption occurs after the counter commit or during atomic session
-publication, only that already-quarantined authorization may resume the
-matching transaction; a newly imported replay is restored and rejected.
-Recovery accepts only the exact counter plus complete or staged canonical
-session facts. Each role report is exclusively created once and never
-overwritten. Missing, duplicate, out-of-order, expired, or conflicting state
-makes the exact experiment fail; incomplete/failed evidence cannot be cleaned
-and retried into a passing result.
+The immutable collecting `session.json` and matching
+`observing_main_and_framework` lifecycle are durably published before the
+counter commit. The exact validated authorization remains quarantined until
+all three records are durable. A committed counter is accepted for recovery
+only when that same quarantined authorization matches the pre-observation
+session and lifecycle; quarantine by itself cannot turn a completed replay
+into a resumable transaction. Recovery also accepts the pre-counter crash
+window only with those exact staged canonical facts. Each role report is
+exclusively created once and never overwritten. Before the session replacement
+commit point, a synchronous completion error such as the share-extension
+report not having arrived restores the lifecycle from `completion_pending` to
+`awaiting_share_extension`, so the same run can finish after the required
+report arrives. Failure to durably restore that state is terminal. Durable
+missing, duplicate, out-of-order, expired, or conflicting state makes the
+exact experiment fail; incomplete/failed evidence cannot be cleaned and
+retried into a passing result.
 
 ## Storage invariants
 
@@ -328,15 +427,17 @@ The implementation must:
 - use bounded full reads and exact canonical decoding before acting;
 - create owner-only same-directory temporary files exclusively, fully write
   and flush them, publish without replacement, then fsync the directory;
-- reject existing destination, temporary, quarantine, or unexpected entries;
+- reject conflicting destination, temporary, quarantine, or unexpected
+  entries; recover only the fixed authorization/receipt atomic temporary when
+  it is the sole owner-only publication candidate;
 - set complete file protection while locked and exclude state/reports from
   backup;
 - never overwrite a role report, silently reset a counter, delete a current
   valid authorization, or clean an unexported/mismatched session.
 
 Surface limits remain those in the reviewed schema contract: 16 KiB control
-documents, 1 KiB fixed state records, 32 KiB role reports, 16 KiB session
-reports, and 512 KiB signed exports.
+documents, 1 KiB fixed state records, one 64 KiB private enrollment-recovery
+record, 32 KiB role reports, 16 KiB session reports, and 512 KiB signed exports.
 
 ## Production and test dependencies
 

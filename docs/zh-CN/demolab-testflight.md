@@ -115,6 +115,20 @@ PR #51 已合并该修复。`1.0 (2)` 候选来自干净的合并 Commit
 本身覆盖全部 Build；本次没有创建或修改测试组、启用公开链接、外部分发、
 Beta App Review 或 App Store 提交。
 
+## LAB-002 本机 Archive 配置
+
+以下值只从仓库外的私有 Shell 配置加载，不得写入 Git、Issue、PR 或构建日志：
+
+| 变量 | 用途 |
+|---|---|
+| `DEMO_LAB_APP_BUNDLE_ID` | 已注册的首方主 App ID。 |
+| `DEMO_LAB_SHARE_BUNDLE_ID` | 已注册且位于主 ID 下的 Share Extension App ID。 |
+| `DEMO_LAB_APP_GROUP_ID` | 已同时启用在主 App ID 与 Share Extension App ID 上的首方 App Group。Archive Lane 拒绝仓库内 `group.com.example.*` 默认值，并把精确 Group 注入两者的 Entitlement 与 Info.plist。 |
+| `DEMO_LAB_TEAM_ID` | Xcode 签名所用 10 字符 Apple Developer Team ID。 |
+| `DEMO_LAB_BUILD_BINDING_SHA256` | 已评审预构建步骤生成的精确 64 位小写 Hex Build Binding；Lane 不生成默认值。 |
+| `DEMO_LAB_IDENTITY_NONCE` | 同一步骤生成的精确 64 位小写 Hex 私有 Target-manifest Nonce。 |
+| `DEMO_LAB_AUTHORIZATION_PUBLIC_KEY` | Authorized-target Manifest 中精确 64 位小写 Hex、非弱 Ed25519 公钥；Archive Lane 与 App 会拒绝全部 8 种已编码低阶点。App 固定通过校验的值，只接受匹配私钥签署的 Host Enrollment/Run Envelope；私钥绝不进入 Xcode 或 Fastlane。 |
+
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
 ```sh

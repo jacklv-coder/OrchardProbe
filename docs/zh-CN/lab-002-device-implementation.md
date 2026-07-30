@@ -17,11 +17,43 @@ DemoLab 只提供以下用户动作：
 | 动作 | 输入 | 效果 |
 |---|---|---|
 | Import LAB-002 authorization | 系统文档选择器提供的一个 URL | 最多复制一份闭合、规范的 Enrollment 或 Run Envelope 到固定 Inbox |
-| Confirm installation enrollment | 无 | 消费一份有效安装 Envelope，只创建一次固定 Enrollment 状态 |
+| Confirm installation enrollment | 无 | 消费一份有效安装 Envelope，只创建一次固定 Enrollment 状态，并在可分享 Receipt 旁显示完整 Device-selection Fingerprint |
 | Start clean LAB-002 run | 无 | 消费一份有效 Run Envelope，提交其精确下一 Counter，并启动固定三 Role Session |
-| Discard stale LAB-002 authorization | 无 | 只删除已证明畸形、过期或 Build 不匹配的固定 Inbox 记录 |
+| Discard unusable LAB-002 authorization | 无 | 只删除已证明畸形、过期、Build/Enrollment State 不匹配，或与持久 Enrollment Key、Installation Binding、下一 Counter 不一致的固定 Inbox 记录 |
 | Export LAB-002 evidence | 无 | 构造一份固定的四文档签名 Export，并展示系统 Share Sheet |
 | Confirm export received and clean reports | 一个明确的 Boolean UI 确认 | 重新计算已构造 Export，且只删除其匹配的已完成报告子树 |
+
+生产 UI 把这些动作收敛成一个三步流程：
+
+1. 点击 **Choose authorization JSON**，选择 Host 新签名的 Enrollment 或 Run
+   Envelope。DemoLab 会先验证规范编码、完整闭合字段集、Acknowledgement/Core
+   全部交叉绑定、编译期 Authorization Key ID 以及精确 Ed25519 签名，然后才发布
+   有界 Inbox 记录。下一条 UI 路径由验证后的 Operation 决定，用户不能任意选择
+   操作类型。
+2. Enrollment 时点击 **Confirm enrollment and export receipt**，先把显示的全部
+   64 个 Fingerprint Hex 字符与 Host 比对，再从系统 Share Sheet 保存
+   `device-enrollment-receipt-v1.json`，并点击
+   **I saved the enrollment receipt**。在这次明确确认前，DemoLab 会锁定 Run
+   Authorization 导入。Run 时先点击
+   **Start clean run**，再点击 **Open Share panel and choose DemoLab Share**；
+   在 Apple 系统面板选择首方 **DemoLab Share** Extension，看到成功提示后点击
+   **Done** 返回 DemoLab。
+3. Run 时点击 **Complete run and export evidence**，保存
+   `lab-002-session-export-v1.json`。只有 Host 已安全收到这一个精确文件后，才可
+   点击 **Confirm receipt and clean reports** 并接受明确的破坏性确认。
+
+Authorization 或 Run 处于活动状态时，DemoLab 会禁用新导入。App 启动时只重新读取
+固定 Inbox/State/Session 记录：恢复待处理 Operation 或持久 Enrollment Receipt、
+从 Share 步骤继续进行中的 Run，或重建已完成的签名 Export，以便再次分享并明确
+清理。恢复 Enrollment Receipt 后必须再次确认已保存；如果持久状态恢复本身失败，
+UI 会进入终止状态，不会保留陈旧的重试控件。Malformed、Expired、Wrong-build
+或与当前 Enrollment State 不兼容的 Inbox 记录只会暴露 **Discard unusable
+authorization**；同一动作拒绝删除前置条件匹配的当前有效 Authorization。
+
+仓库内默认 Build 故意保留空授权公钥和通用 App Group；它可以编译并运行无设备
+测试，但生产 Coordinator 会失败关闭。经过评审的签名 Archive 必须注入已注册的
+首方 App Group，以及用于签署 Host Envelope 的 32 字节小写 Hex 授权公钥；App 与
+Share Extension 的 Entitlement 必须包含同一个 App Group。
 
 文档选择 URL 只存在于 Import 边界。它不会写入报告、传给 Observer、由 Host/Core
 接受，也不会在有界复制后复用。其他生产初始化器或方法都不得接受 URL、Path、
@@ -132,6 +164,29 @@ Flush、No-follow 原子替换和目录 Flush，只把 `session.json` 改写为�
 复核失败返回 `committedDurabilityUncertain`，不能伪装成可重试错误。缺失、重复、
 已完成、临时、超时、被替换或冲突的提交前状态都保持不变并失败关闭。
 
+Coordinator 还会在每个不可逆边界前持久保存一份闭合 Run Lifecycle Record：
+观察 Main/Framework、等待 Share Extension、完成待提交、完成已提交、清理待提交和
+清理已提交。重启只接受与当前 Phase 精确匹配的 Session/Lifecycle 组合。因此
+Observer 失败、完成持久化不确定或清理持久化不确定都会在重启后继续保持终止失败
+状态，不能被重新解释成可操作的重试。只有精确签名 Authorization、Session、
+Counter 与 Lifecycle 仍一致时，Quarantine 中断 Run 才可恢复；持久化 Creation
+Time 使用与原 Start 相同的签名窗口加有界时钟偏差规则。
+
+恢复进行中或已完成 Session 时，还会重新验证持久 Installation State、已认证
+Enrollment Receipt、设备 Key 与 Installation Binding、Enrollment-control Tuple
+以及精确已提交 Counter。任何登记证明缺失、损坏或不一致都会返回终止 Failed-run；
+仅有 Session/Lifecycle 对绝不能恢复或导出。
+
+Run 1 消费 Authorization 前，Coordinator 还会固定一份闭合 Enrollment Control
+元组，包含 Build Binding、Experiment ID 与 Device-enrollment Binding。后续每次
+恢复、Discard 判断和 Run 2 Start 都会重验留存的签名 Enrollment
+Authorization/Receipt，并要求元组完全相同；还会从签名 Enrollment
+Acknowledgement 恢复 Authorized-target Manifest Digest，要求 Run
+Acknowledgement 指向完全相同的 Digest。签名 Run Window 的 `not_before`
+还不得早于保留 Enrollment Receipt 的 `created_at`；早于已登记 Installation 的
+Authorization，以及来自其他 Manifest、Experiment 或 Enrollment 的 Run 都只能
+丢弃，不能推进 Counter。
+
 ### 签名 Receipt、Export 与 Cleanup
 
 检查点 2C.5 按冻结的 Host/Core Schema 闭合两种设备签名出口工件。Confirm
@@ -143,20 +198,31 @@ Environment 必须先完全匹配，才能创建 Installation State。构造 Rec
 冻结 Receipt Domain、4 字节大端长度和精确 Core 字节进行分帧，并由 Device-only
 Ed25519 Enrollment Key 签名。返回的完整 64 位 Hex Device-selection Fingerprint
 绑定 Authorization-envelope Digest、Enrollment Public Key、Installation Binding
-和 Device-selection Nonce。只有成功构造 Receipt 后才删除固定 Authorization。
+和 Device-selection Nonce。消费固定 Authorization 之前，DemoLab 会先把精确签名
+精确 Host 签名 Authorization、Receipt 与完整 Device-selection Fingerprint 放入
+一个固定、Owner-only 的 Recovery Record 并原子持久化。重启后只有重新验证其规范
+形式、Build、Enrollment Public Key、Receipt/Authorization 签名与 Digest，并重新
+计算 Fingerprint 成功，才会显示相同 Fingerprint，并再次通过系统 Share Sheet
+提供完全相同的 Receipt。若 Receipt 已持久化、但精确的隔离 Enrollment
+Authorization 尚未删除，重启会在处理 Envelope 后续过期之前优先验证这组
+Receipt/Envelope；验证成功后只删除那一份 Descriptor 身份匹配的 Authorization。
+如果 Installation State 已存在但没有可验证的恢复 Receipt，只有同一份隔离中的
+Enrollment Authorization 仍可完成中断的 Receipt 提交时才允许恢复；否则恢复必须
+终止失败，绝不能显示为全新的 Ready Installation。
 
 Export 会先在 Coordinator Lock 下取得精确的 Completed Snapshot；Collecting
 Session 最多可完成一次，但畸形或冲突状态不能转换为可导出证据。Snapshot 按固定顺序
 精确包含 `session.json`、`main-app.json`、`framework.json` 与
 `share-extension.json`，每个 Entry 保留精确规范文档及其 SHA-256。规范 Export Core
 使用不同的冻结 Export Domain 分帧，再由同一 Enrollment Key 签名。两种签名工件都
-使用固定 `.json` 文件名，并只以内存 `NSItemProvider` 保存；生产出口是系统
+使用固定 `.json` 文件名。Enrollment Receipt 在私有固定 State 路径保留一份可恢复
+副本；展示 Receipt 与 Session Export 时使用 `NSItemProvider`。生产出口是系统
 `UIActivityViewController`，而不是任意输出 URL、文件系统 Path、网络请求、
 Pasteboard 或调用者提供的 Filename。
 
 Actor 会在同一个 Coordinator 生命周期内保留首次构造的 Export，重复展示返回完全
-相同的字节。新的 Coordinator 不得从已经标记为 Complete 的 Session 重建 Export；
-因此在完成后、确认收到前终止进程会失败关闭为 No-Go，不能借此生成另一份签名字节。
+相同的字节。重启后，新 Coordinator 会重新验证不可变 Completed Snapshot，并为语义
+相同的 Export 构造一个新的有效签名。
 Cleanup 必须同时具备单独且明确的 `true` 确认、已保留 Export，并在同一把 Lock 下
 两次重新验证完全相同的 Completed Snapshot。它只 Unlink 四个固定报告文件，Flush
 该目录，只移除已空的 `reports/current`，再 Flush `reports`。首次成功 Unlink 是
@@ -165,6 +231,9 @@ Cleanup 提交点；其后的 Unlink、Flush、身份检查或目录移除失败
 Installation Nonce、Run Counter、Inbox、Root 与 Coordinator Lock 都永远不是
 Cleanup 目标。Crash、部分 Receipt、签名不匹配、缺失必需 Export 或不确定 Cleanup
 都会使该轮受控实验成为 No-Go；Cleanup 不能把它重置成一次可通过的重试。
+如果同步 Cleanup 错误发生在首次成功 Unlink 之前，则尚未跨越提交点：Coordinator
+会原子恢复 `completion_committed`，保留精确的已构造 Export，并允许用户再次明确
+确认同一 Cleanup。若该提交前状态无法持久恢复，仍按终止失败处理。
 
 ## 固定生产 Container
 
@@ -182,7 +251,10 @@ lab-002-v1/
     authorization-quarantine-v1.json
   state/
     installation-nonce-v1.json
+    enrollment-receipt-recovery-v1.json
+    enrollment-control-v1.json
     run-counter-v1.json
+    run-lifecycle-v1.json
   reports/
     current/
       session.json
@@ -196,9 +268,10 @@ lab-002-v1/
 Service/Account/Access Group 元组。
 
 `coordinator.lock`、`inbox` 和 `state` 在报告清理后继续存在。
-`installation-nonce-v1.json`、`run-counter-v1.json` 和 Enrollment Key 只能随 App
-删除，或由另行评审的实验拆除动作移除；普通 Start、Export、Discard、Cleanup
-不能重置它们。
+`installation-nonce-v1.json`、`enrollment-receipt-recovery-v1.json`、
+`enrollment-control-v1.json`、`run-counter-v1.json`、
+`run-lifecycle-v1.json` 和 Enrollment Key 只能随 App 删除，或由另行评审的实验
+拆除动作移除；普通 Start、Export、Discard、Cleanup 不能重置它们。
 
 ## 串行状态迁移
 
@@ -211,12 +284,14 @@ Main App 的 Import、Confirm Enrollment、Start、Discard、Export 与 Cleanup 
 absent --Import valid/exclusive--> imported
 imported --identity-checked rename--> quarantined
 quarantined --valid Confirm/Start--> consumed
-quarantined --proven stale/malformed/build-mismatch--> discarded
+quarantined --proven stale/malformed/build/prerequisite-mismatch--> discarded
 ```
 
 意外 Quarantine、Lock 失败、非普通文件、Symlink、目录项/Descriptor 身份不匹配、
-部分写、重复 Import 或崩溃残留都会阻塞，绝不自动修复。唯一的窄例外是下述显式、
-已认证的 Enrollment Resume；它会重新验证同一份已隔离 Envelope，Run 无法调用。
+重复 Import 或冲突的崩溃残留都会阻塞。若仅存在固定、Owner-only 的 Authorization
+Temporary，Coordinator 会在锁内把它提升为正式文件，再验证或暴露明确丢弃入口。
+另一个窄例外是下述显式、已认证的 Enrollment Resume；它会重新验证同一份已隔离
+Envelope，Run 无法调用。
 
 ### Enrollment
 
@@ -252,9 +327,16 @@ collecting_main
 idle
 ```
 
-Counter 在创建 `session.json` 前持久提交。崩溃可以消耗 Counter，但不能重用它。
-每个 Role Report 只能排他创建一次且不可覆盖。缺失、重复、顺序错误、过期或冲突
-状态都会使精确实验失败；不完整/失败证据不能清理后重试成通过结果。
+不可变 Collecting `session.json` 与匹配的 `observing_main_and_framework`
+Lifecycle 会先于 Counter Commit 持久发布；精确验证后的 Authorization 会保持在
+Quarantine，直到三项记录全部持久。只有同一份隔离 Authorization 同时匹配观察前
+Session 与 Lifecycle 时，恢复才接受已提交 Counter；仅凭 Quarantine 不能把已完成
+Run 的 Replay 变成可恢复事务。Counter 尚未提交的崩溃窗口也只接受这些精确暂存的
+规范事实。每个 Role Report 只能排他创建一次且不可覆盖。在替换 Session 的提交点
+之前，如果 Share Extension Report 尚未到达等同步 Completion 错误发生，Lifecycle
+会从 `completion_pending` 恢复到 `awaiting_share_extension`，所需 Report 到达后仍
+可完成同一轮 Run；若该恢复无法持久提交则终止失败。持久状态中的缺失、重复、顺序
+错误、过期或冲突都会使精确实验失败；不完整/失败证据不能清理后重试成通过结果。
 
 ## 存储不变量
 
@@ -266,13 +348,15 @@ Counter 在创建 `session.json` 前持久提交。崩溃可以消耗 Counter，
 - 采取有界完整读取，并在动作前完成精确规范解码；
 - 在同目录排他创建 Owner-only 临时文件，完整写入和 Flush，无替换发布，再 Fsync
   目录；
-- 拒绝已存在的目标、临时文件、Quarantine 或意外目录项；
+- 拒绝相互冲突的目标、临时文件、Quarantine 或意外目录项；只有固定
+  Authorization/Receipt Atomic Temporary 是唯一 Owner-only 发布候选时才恢复；
 - 在锁定时使用 Complete File Protection，并将状态/报告排除备份；
 - 永不覆盖 Role Report、静默重置 Counter、删除当前有效授权，或清理未 Export/
   不匹配 Session。
 
 各 Surface 上限沿用已评审 Schema 契约：Control 文档 16 KiB、固定 State 记录
-1 KiB、Role Report 32 KiB、Session Report 16 KiB、签名 Export 512 KiB。
+1 KiB、一个私有 Enrollment Recovery Record 64 KiB、Role Report 32 KiB、
+Session Report 16 KiB、签名 Export 512 KiB。
 
 ## 生产与测试依赖
 

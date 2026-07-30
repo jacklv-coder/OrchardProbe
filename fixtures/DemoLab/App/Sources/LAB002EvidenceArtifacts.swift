@@ -1,3 +1,4 @@
+import CoreFoundation
 import CryptoKit
 import Foundation
 import SwiftUI
@@ -13,7 +14,7 @@ enum LAB002EvidenceArtifactError: Error {
 }
 
 struct LAB002ShareArtifact: Equatable {
-    enum Kind {
+    enum Kind: Equatable {
         case enrollmentReceipt
         case sessionExport
 
@@ -109,6 +110,15 @@ struct LAB002EnrollmentCompletion {
     let state: LAB002InstallationState
     let receipt: LAB002ShareArtifact
     let deviceSelectionFingerprintSHA256: String
+}
+
+struct LAB002RecoveredEnrollmentReceipt {
+    let artifact: LAB002ShareArtifact
+    let authorizationEnvelope: Data
+    let authorizationEnvelopeSHA256: String
+    let deviceSelectionFingerprintSHA256: String
+    let deviceInstallationBindingSHA256: String
+    let receiptCreatedAt: Int64
 }
 
 struct LAB002ConstructedSessionExport {
@@ -283,6 +293,169 @@ enum LAB002EvidenceArtifactBuilder {
         )
     }
 
+    static func enrollmentReceiptRecoveryRecord(
+        artifact: LAB002ShareArtifact,
+        authorizationEnvelope: Data,
+        deviceSelectionFingerprintSHA256: String
+    ) throws -> Data {
+        guard artifact.kind == .enrollmentReceipt,
+              !authorizationEnvelope.isEmpty,
+              authorizationEnvelope.count <= LAB002Limit.controlDocument,
+              let authorizationText = String(
+                  data: authorizationEnvelope,
+                  encoding: .utf8
+              ),
+              isLowerHex(deviceSelectionFingerprintSHA256, count: 64),
+              let receiptText = String(
+                  data: artifact.canonicalBytes,
+                  encoding: .utf8
+              )
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        return try canonical(
+            [
+                "authorization_envelope_canonical": authorizationText,
+                "device_selection_fingerprint_sha256":
+                    deviceSelectionFingerprintSHA256,
+                "receipt_canonical": receiptText,
+                "schema":
+                    "orchardprobe.lab002.enrollment-receipt-recovery.v1",
+            ],
+            maximum: LAB002Limit.enrollmentRecovery
+        )
+    }
+
+    static func recoverEnrollmentReceipt(
+        recoveryRecordBytes: Data,
+        expectedState: LAB002InstallationState,
+        authorizationMetadata: LAB002AuthorizationMetadata,
+        expectedDeviceInstallationBindingSHA256: String,
+        expectedEnvironment: LAB002SessionEnvironment
+    ) throws -> LAB002RecoveredEnrollmentReceipt {
+        let recovery = try enrollmentRecoveryFields(recoveryRecordBytes)
+        guard authorizationMetadata.kind == .installationEnrollment,
+              authorizationMetadata.expectedRunCounter == nil,
+              authorizationMetadata.buildBindingSHA256
+                == expectedState.buildBindingSHA256,
+              let facts = authorizationMetadata.enrollmentFacts,
+              expectedEnvironment == facts.expectedEnvironment,
+              isLowerHex(
+                  expectedDeviceInstallationBindingSHA256,
+                  count: 64
+              ),
+              let signed = try JSONSerialization.jsonObject(
+                  with: recovery.receiptCanonical,
+                  options: []
+              ) as? [String: Any],
+              signed.count == 5,
+              signed["schema"] as? String
+                == "orchardprobe.lab002.device-enrollment-receipt.v1",
+              signed["profile"] as? String == LAB002SessionReport.profile,
+              let publicKeyHex = signed["enrollment_public_key"] as? String,
+              publicKeyHex == expectedState.enrollmentPublicKey,
+              let signatureHex = signed["signature"] as? String,
+              let unsignedText =
+                signed["unsigned_receipt_canonical"] as? String,
+              let unsignedBytes = unsignedText.data(using: .utf8),
+              try canonical(
+                  signed,
+                  maximum: LAB002Limit.controlDocument
+              ) == recovery.receiptCanonical,
+              let unsigned = try JSONSerialization.jsonObject(
+                  with: unsignedBytes,
+                  options: []
+              ) as? [String: Any],
+              unsigned.count == 12,
+              unsigned["schema"] as? String
+                == "orchardprobe.lab002.device-enrollment-receipt-core.v1",
+              unsigned["profile"] as? String == LAB002SessionReport.profile,
+              unsigned["authorization_policy_version"] as? String
+                == facts.authorizationPolicyVersion,
+              unsigned["build_binding_sha256"] as? String
+                == expectedState.buildBindingSHA256,
+              unsigned["enrollment_public_key"] as? String == publicKeyHex,
+              unsigned["acknowledgement_sha256"] as? String
+                == facts.acknowledgementSHA256,
+              unsigned["enrollment_challenge_response"] as? String
+                == facts.enrollmentChallenge,
+              unsigned["experiment_id"] as? String == facts.experimentID,
+              let createdAt = integer(unsigned["created_at"]),
+              createdAt >= authorizationMetadata.notBefore,
+              createdAt <= authorizationMetadata.notAfter,
+              let receiptEnvironment = sessionEnvironment(
+                  unsigned["environment"]
+              ),
+              receiptEnvironment == expectedEnvironment,
+              let authorizationEnvelopeSHA256 =
+                unsigned["authorization_envelope_sha256"] as? String,
+              isLowerHex(authorizationEnvelopeSHA256, count: 64),
+              Data(
+                  SHA256.hash(data: recovery.authorizationEnvelope)
+              ).hexLowercase
+                == authorizationEnvelopeSHA256,
+              let deviceInstallationBindingSHA256 =
+                unsigned["device_installation_binding_sha256"] as? String,
+              deviceInstallationBindingSHA256
+                == expectedDeviceInstallationBindingSHA256,
+              try canonical(
+                  unsigned,
+                  maximum: LAB002Limit.controlDocument
+              ) == unsignedBytes,
+              isLowerHex(signatureHex, count: 128),
+              let publicKeyBytes = decodeHex(publicKeyHex),
+              let signature = decodeHex(signatureHex),
+              publicKeyBytes.count == 32,
+              signature.count == 64
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        let publicKey = try Curve25519.Signing.PublicKey(
+            rawRepresentation: publicKeyBytes
+        )
+        guard publicKey.isValidSignature(
+            signature,
+            for: try framed(
+                domain: enrollmentReceiptDomain,
+                canonicalBytes: unsignedBytes
+            )
+        ) else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        let expectedFingerprint = try deviceSelectionFingerprint(
+            authorizationEnvelopeSHA256: authorizationEnvelopeSHA256,
+            enrollmentPublicKey: publicKeyHex,
+            deviceInstallationBindingSHA256:
+                deviceInstallationBindingSHA256,
+            deviceSelectionNonce: facts.deviceSelectionNonce
+        )
+        guard expectedFingerprint
+                == recovery.deviceSelectionFingerprintSHA256
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        return try LAB002RecoveredEnrollmentReceipt(
+            artifact: LAB002ShareArtifact(
+                kind: .enrollmentReceipt,
+                canonicalBytes: recovery.receiptCanonical
+            ),
+            authorizationEnvelope: recovery.authorizationEnvelope,
+            authorizationEnvelopeSHA256: authorizationEnvelopeSHA256,
+            deviceSelectionFingerprintSHA256:
+                recovery.deviceSelectionFingerprintSHA256,
+            deviceInstallationBindingSHA256:
+                deviceInstallationBindingSHA256,
+            receiptCreatedAt: createdAt
+        )
+    }
+
+    static func enrollmentAuthorizationEnvelope(
+        recoveryRecordBytes: Data
+    ) throws -> Data {
+        try enrollmentRecoveryFields(recoveryRecordBytes)
+            .authorizationEnvelope
+    }
+
     static func sessionExport(
         snapshot: LAB002CompletedSessionSnapshot,
         signingKey: any LAB002EnrollmentSigningKey
@@ -384,7 +557,7 @@ enum LAB002EvidenceArtifactBuilder {
         )
     }
 
-    private static func deviceSelectionFingerprint(
+    static func deviceSelectionFingerprint(
         authorizationEnvelopeSHA256: String,
         enrollmentPublicKey: String,
         deviceInstallationBindingSHA256: String,
@@ -438,6 +611,81 @@ enum LAB002EvidenceArtifactBuilder {
         return bytes
     }
 
+    private static func enrollmentRecoveryFields(
+        _ bytes: Data
+    ) throws -> (
+        authorizationEnvelope: Data,
+        receiptCanonical: Data,
+        deviceSelectionFingerprintSHA256: String
+    ) {
+        guard bytes.count <= LAB002Limit.enrollmentRecovery,
+              let recovery = try JSONSerialization.jsonObject(
+                  with: bytes,
+                  options: []
+              ) as? [String: Any],
+              recovery.count == 4,
+              recovery["schema"] as? String
+                == "orchardprobe.lab002.enrollment-receipt-recovery.v1",
+              let receiptText = recovery["receipt_canonical"] as? String,
+              let receiptCanonical = receiptText.data(using: .utf8),
+              !receiptCanonical.isEmpty,
+              receiptCanonical.count <= LAB002Limit.controlDocument,
+              let authorizationText =
+                recovery["authorization_envelope_canonical"] as? String,
+              let authorizationEnvelope = authorizationText.data(using: .utf8),
+              !authorizationEnvelope.isEmpty,
+              authorizationEnvelope.count <= LAB002Limit.controlDocument,
+              let deviceSelectionFingerprintSHA256 =
+                recovery["device_selection_fingerprint_sha256"] as? String,
+              isLowerHex(deviceSelectionFingerprintSHA256, count: 64),
+              try canonical(
+                  recovery,
+                  maximum: LAB002Limit.enrollmentRecovery
+              ) == bytes
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        return (
+            authorizationEnvelope,
+            receiptCanonical,
+            deviceSelectionFingerprintSHA256
+        )
+    }
+
+    private static func integer(_ value: Any?) -> Int64? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              !CFNumberIsFloatType(number)
+        else {
+            return nil
+        }
+        let integer = number.int64Value
+        return NSNumber(value: integer) == number ? integer : nil
+    }
+
+    private static func sessionEnvironment(
+        _ value: Any?
+    ) -> LAB002SessionEnvironment? {
+        guard let object = value as? [String: Any],
+              Set(object.keys) == [
+                  "hardware_model",
+                  "ios_build",
+                  "ios_product_version",
+              ],
+              let hardwareModel = object["hardware_model"] as? String,
+              let iosBuild = object["ios_build"] as? String,
+              let iosProductVersion =
+                object["ios_product_version"] as? String
+        else {
+            return nil
+        }
+        return try? LAB002SessionEnvironment(
+            hardwareModel: hardwareModel,
+            iosProductVersion: iosProductVersion,
+            iosBuild: iosBuild
+        )
+    }
+
     private static func isCanonicalJSONObject(_ bytes: Data) throws -> Bool {
         let object = try JSONSerialization.jsonObject(with: bytes)
         guard JSONSerialization.isValidJSONObject(object) else {
@@ -462,6 +710,21 @@ enum LAB002EvidenceArtifactBuilder {
 
     private static func decodeLowerHex(_ value: String) -> Data? {
         guard isLowerHex(value, count: 64) else { return nil }
+        var result = Data()
+        var index = value.startIndex
+        while index < value.endIndex {
+            let next = value.index(index, offsetBy: 2)
+            guard let byte = UInt8(value[index..<next], radix: 16) else {
+                return nil
+            }
+            result.append(byte)
+            index = next
+        }
+        return result
+    }
+
+    private static func decodeHex(_ value: String) -> Data? {
+        guard value.utf8.count % 2 == 0 else { return nil }
         var result = Data()
         var index = value.startIndex
         while index < value.endIndex {

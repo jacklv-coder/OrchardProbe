@@ -14,9 +14,14 @@ The checked-in identifiers remain generic. The maintainer-only `LAB-001`
 Fastlane lane overrides them from local environment variables for one
 first-party signed build; no Apple team or registered identifier is committed.
 The checked-in App Group is likewise the generic
-`group.com.example.orchardprobe.demolab`; a future reviewed signed LAB-002
-build must replace it with the registered first-party group for both the app
-and share extension. The main app's fixed Keychain access group is one explicit
+`group.com.example.orchardprobe.demolab`; the controlled signed archive now
+requires and injects the registered first-party group for both the app and
+share extension. It also requires the reviewed Host authorization public key,
+rejects all eight encoded Ed25519 low-order points, and compiles the accepted
+key into the app, so the production validator accepts only exact canonical
+enrollment/run envelopes signed by that pinned Ed25519 key. The checked-in
+public-key setting is empty and production coordination therefore fails closed
+in an ordinary fixture build. The main app's fixed Keychain access group is one explicit
 build setting shared by its entitlement and Info.plist. The controlled signed
 lane injects the full Team ID plus bundle identifier instead of relying on
 `AppIdentifierPrefix` expansion; its enrollment key is non-synchronizable and
@@ -40,15 +45,45 @@ precomputed binding/nonce, requires the frozen 40-hex LAB-002 source-commit
 wire form, and injects those values plus the fixed observer revision into the
 compiled Info.plist; it does not invent defaults. A valid run authorization is
 fully validated against those compiled facts, enrollment continuity, the
-current installation binding, environment, and exact next counter before it
-can consume authorization or counter state. It then exclusively persists one
+current installation binding, retained authorized-target manifest,
+experiment/enrollment binding, and exact next counter before it can consume
+authorization or counter state. It
+then exclusively persists one
 bounded canonical `reports/current/session.json`; an existing session rejects
-the run before either state is consumed. Runtime caller-controlled overrides
-are available only through the Debug test initializer.
+the run before either state is consumed. Fixed enrollment-control and
+run-lifecycle records make observer failure, completion uncertainty, and
+cleanup uncertainty terminal across relaunch while preserving only the exact
+quarantined pre-observation recovery path. Runtime caller-controlled
+overrides are available only through the Debug test initializer.
 See the
 [controlled TestFlight runbook](../../docs/development/demolab-testflight.md).
 The branch-local LAB-002 app/extension capability, fixed-container, and state
 machine boundary is documented in the
+[device implementation contract](../../docs/research/lab-002-device-implementation.md).
+
+## Device workflow
+
+The signed LAB-002 build presents one three-step screen:
+
+1. choose the fresh Host-signed authorization JSON;
+2. complete the operation selected by that verified authorization—either
+   enroll, compare the displayed full device-selection fingerprint with the
+   Host, and share the receipt; or start a run and select **DemoLab Share**
+   from Apple's share panel; and
+3. share the generated session-export JSON, then explicitly confirm receipt
+   before DemoLab removes only the completed report subtree.
+
+New imports remain disabled until the pending operation finishes. Relaunching
+the app restores the fixed pending authorization, durable enrollment
+receipt/fingerprint recovery record,
+collecting session, or completed export. An interrupted atomic authorization
+publication is promoted from its fixed owner-only temporary name. A proven
+malformed, expired, wrong-build, or enrollment/run-prerequisite-incompatible
+authorization exposes the destructive discard action so the operator can
+import the required authorization.
+
+The exact button order, output filenames, and failure-closed configuration
+requirements are in the
 [device implementation contract](../../docs/research/lab-002-device-implementation.md).
 
 ## Safety boundary

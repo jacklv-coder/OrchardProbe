@@ -77,6 +77,11 @@ struct LAB002RunAuthorization {
     let resumedAfterPersistence: Bool
 }
 
+struct LAB002PendingAuthorization {
+    let bytes: Data
+    let isQuarantined: Bool
+}
+
 struct LAB002CounterRecord {
     static let schema = "orchardprobe.lab002.run-counter-state.v1"
 
@@ -241,6 +246,127 @@ final class LAB002FixedStorage {
         )
     }
 
+    func persistEnrollmentReceipt(_ bytes: Data) throws {
+        guard bytes.count <= LAB002Limit.enrollmentRecovery else {
+            throw LAB002StorageError.oversized(
+                LAB002FixedName.enrollmentReceiptRecovery
+            )
+        }
+        try writeAtomic(
+            directory: stateDirectory,
+            directoryURL: stateURL,
+            destination: LAB002FixedName.enrollmentReceiptRecovery,
+            temporary: LAB002FixedName.enrollmentReceiptRecoveryTemporary,
+            bytes: bytes,
+            replacing: nil
+        )
+    }
+
+    func readEnrollmentReceipt() throws -> Data? {
+        try recoverAtomicPublication(
+            directory: stateDirectory,
+            destination: LAB002FixedName.enrollmentReceiptRecovery,
+            temporary: LAB002FixedName.enrollmentReceiptRecoveryTemporary
+        )
+        guard try entryIdentity(
+            directory: stateDirectory,
+            name: LAB002FixedName.enrollmentReceiptRecovery
+        ) != nil
+        else {
+            return nil
+        }
+        let descriptor = try openRegularFile(
+            directory: stateDirectory,
+            name: LAB002FixedName.enrollmentReceiptRecovery
+        )
+        let descriptorIdentity = try identity(descriptor)
+        let entry = try requireMatchingEntry(
+            directory: stateDirectory,
+            name: LAB002FixedName.enrollmentReceiptRecovery,
+            descriptorIdentity: descriptorIdentity
+        )
+        guard entry.isRegularOwnerOnly else {
+            throw LAB002StorageError.unsafeEntry(
+                LAB002FixedName.enrollmentReceiptRecovery
+            )
+        }
+        return try Self.readBounded(
+            descriptor,
+            maximum: LAB002Limit.enrollmentRecovery,
+            label: LAB002FixedName.enrollmentReceiptRecovery
+        )
+    }
+
+    func createEnrollmentControl(
+        _ record: LAB002EnrollmentControlState
+    ) throws {
+        try writeAtomic(
+            directory: stateDirectory,
+            directoryURL: stateURL,
+            destination: LAB002FixedName.enrollmentControl,
+            temporary: LAB002FixedName.enrollmentControlTemporary,
+            bytes: try record.canonicalData(),
+            replacing: nil
+        )
+    }
+
+    func readEnrollmentControl()
+        throws -> LAB002EnrollmentControlState?
+    {
+        guard let stored = try readFixedState(
+            name: LAB002FixedName.enrollmentControl,
+            temporary: LAB002FixedName.enrollmentControlTemporary
+        ) else {
+            return nil
+        }
+        return try LAB002EnrollmentControlState(
+            canonicalBytes: stored.bytes
+        )
+    }
+
+    func readRunLifecycle() throws -> LAB002RunLifecycleState? {
+        guard let stored = try readFixedState(
+            name: LAB002FixedName.runLifecycle,
+            temporary: LAB002FixedName.runLifecycleTemporary
+        ) else {
+            return nil
+        }
+        return try LAB002RunLifecycleState(canonicalBytes: stored.bytes)
+    }
+
+    func transitionRunLifecycle(
+        from expected: LAB002RunLifecycleState?,
+        to replacement: LAB002RunLifecycleState
+    ) throws {
+        let stored = try readFixedState(
+            name: LAB002FixedName.runLifecycle,
+            temporary: LAB002FixedName.runLifecycleTemporary
+        )
+        if let expected {
+            guard let stored,
+                  try LAB002RunLifecycleState(
+                      canonicalBytes: stored.bytes
+                  ) == expected
+            else {
+                throw LAB002StorageError.counterMismatch
+            }
+        } else {
+            guard stored == nil else {
+                throw LAB002StorageError.existingEntry(
+                    LAB002FixedName.runLifecycle
+                )
+            }
+        }
+        try writeAtomic(
+            directory: stateDirectory,
+            directoryURL: stateURL,
+            destination: LAB002FixedName.runLifecycle,
+            temporary: LAB002FixedName.runLifecycleTemporary,
+            bytes: try replacement.canonicalData(),
+            replacing: stored?.identity
+        )
+    }
+
     func quarantineAuthorization() throws -> LAB002QuarantinedAuthorization {
         guard try entryIdentity(
             directory: inboxDirectory,
@@ -396,6 +522,87 @@ final class LAB002FixedStorage {
             directory: inboxDirectory,
             name: LAB002FixedName.authorizationQuarantine
         ) != nil
+    }
+
+    func readPendingAuthorization() throws -> LAB002PendingAuthorization? {
+        try recoverAtomicPublication(
+            directory: inboxDirectory,
+            destination: LAB002FixedName.authorization,
+            temporary: LAB002FixedName.authorizationTemporary
+        )
+        let hasPublished = try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorization
+        ) != nil
+        let hasQuarantined = try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        ) != nil
+        guard !(hasPublished && hasQuarantined) else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.authorization
+            )
+        }
+        guard hasPublished || hasQuarantined else {
+            return nil
+        }
+        let name = hasQuarantined
+            ? LAB002FixedName.authorizationQuarantine
+            : LAB002FixedName.authorization
+        let descriptor = try openRegularFile(
+            directory: inboxDirectory,
+            name: name
+        )
+        let descriptorIdentity = try identity(descriptor)
+        _ = try requireMatchingEntry(
+            directory: inboxDirectory,
+            name: name,
+            descriptorIdentity: descriptorIdentity
+        )
+        return LAB002PendingAuthorization(
+            bytes: try Self.readBounded(
+                descriptor,
+                maximum: LAB002Limit.controlDocument,
+                label: name
+            ),
+            isQuarantined: hasQuarantined
+        )
+    }
+
+    func quarantineAuthorizationForDiscard()
+        throws -> LAB002QuarantinedAuthorization
+    {
+        guard try hasQuarantinedAuthorization() else {
+            return try quarantineAuthorization()
+        }
+        guard try entryIdentity(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorization
+        ) == nil
+        else {
+            throw LAB002StorageError.existingEntry(
+                LAB002FixedName.authorization
+            )
+        }
+        let descriptor = try openRegularFile(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine
+        )
+        let descriptorIdentity = try identity(descriptor)
+        _ = try requireMatchingEntry(
+            directory: inboxDirectory,
+            name: LAB002FixedName.authorizationQuarantine,
+            descriptorIdentity: descriptorIdentity
+        )
+        return LAB002QuarantinedAuthorization(
+            bytes: try Self.readBounded(
+                descriptor,
+                maximum: LAB002Limit.controlDocument,
+                label: LAB002FixedName.authorizationQuarantine
+            ),
+            descriptor: descriptor,
+            identity: descriptorIdentity
+        )
     }
 
     func restoreAuthorization(_ record: LAB002QuarantinedAuthorization) throws {
@@ -821,6 +1028,44 @@ final class LAB002FixedStorage {
         }
     }
 
+    private func readFixedState(
+        name: String,
+        temporary: String
+    ) throws -> (bytes: Data, identity: LAB002FileIdentity)? {
+        try recoverAtomicPublication(
+            directory: stateDirectory,
+            destination: name,
+            temporary: temporary
+        )
+        guard try entryIdentity(
+            directory: stateDirectory,
+            name: name
+        ) != nil else {
+            return nil
+        }
+        let descriptor = try openRegularFile(
+            directory: stateDirectory,
+            name: name
+        )
+        let descriptorIdentity = try identity(descriptor)
+        let entry = try requireMatchingEntry(
+            directory: stateDirectory,
+            name: name,
+            descriptorIdentity: descriptorIdentity
+        )
+        guard entry.isRegularOwnerOnly else {
+            throw LAB002StorageError.unsafeEntry(name)
+        }
+        return (
+            try Self.readBounded(
+                descriptor,
+                maximum: LAB002Limit.fixedState,
+                label: name
+            ),
+            descriptorIdentity
+        )
+    }
+
     private func rename(
         directory: LAB002FileDescriptor,
         source: String,
@@ -988,6 +1233,53 @@ final class LAB002FixedStorage {
             throw LAB002StorageError.io("fstat", errno)
         }
         return LAB002FileIdentity(value)
+    }
+
+    private func recoverAtomicPublication(
+        directory: LAB002FileDescriptor,
+        destination: String,
+        temporary: String
+    ) throws {
+        let destinationIdentity = try entryIdentity(
+            directory: directory,
+            name: destination
+        )
+        guard let temporaryIdentity = try entryIdentity(
+            directory: directory,
+            name: temporary
+        ) else {
+            return
+        }
+        guard destinationIdentity == nil else {
+            throw LAB002StorageError.existingEntry(destination)
+        }
+        let descriptor = try openRegularFile(
+            directory: directory,
+            name: temporary
+        )
+        let descriptorIdentity = try identity(descriptor)
+        let entry = try requireMatchingEntry(
+            directory: directory,
+            name: temporary,
+            descriptorIdentity: descriptorIdentity
+        )
+        guard entry == temporaryIdentity,
+              entry.isRegularOwnerOnly
+        else {
+            throw LAB002StorageError.unsafeEntry(temporary)
+        }
+        try rename(
+            directory: directory,
+            source: temporary,
+            destination: destination,
+            exclusive: true
+        )
+        try sync(directory, label: destination)
+        _ = try requireMatchingEntry(
+            directory: directory,
+            name: destination,
+            descriptorIdentity: descriptorIdentity
+        )
     }
 
     private func writeAll(

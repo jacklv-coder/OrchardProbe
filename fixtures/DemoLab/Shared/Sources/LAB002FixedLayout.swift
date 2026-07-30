@@ -10,6 +10,15 @@ enum LAB002FixedName {
     static let state = "state"
     static let installationNonce = "installation-nonce-v1.json"
     static let installationNonceTemporary = "installation-nonce-v1.json.tmp"
+    static let enrollmentReceiptRecovery =
+        "enrollment-receipt-recovery-v1.json"
+    static let enrollmentReceiptRecoveryTemporary =
+        "enrollment-receipt-recovery-v1.json.tmp"
+    static let enrollmentControl = "enrollment-control-v1.json"
+    static let enrollmentControlTemporary =
+        "enrollment-control-v1.json.tmp"
+    static let runLifecycle = "run-lifecycle-v1.json"
+    static let runLifecycleTemporary = "run-lifecycle-v1.json.tmp"
     static let counter = "run-counter-v1.json"
     static let counterTemporary = "run-counter-v1.json.tmp"
     static let reports = "reports"
@@ -27,6 +36,7 @@ enum LAB002FixedName {
 enum LAB002Limit {
     static let controlDocument = 16 * 1024
     static let fixedState = 1024
+    static let enrollmentRecovery = 64 * 1024
     static let sessionReport = 16 * 1024
     static let roleReport = 32 * 1024
     static let signedExport = 512 * 1024

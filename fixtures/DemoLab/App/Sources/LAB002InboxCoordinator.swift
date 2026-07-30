@@ -4,7 +4,7 @@ import DemoFramework
 import Foundation
 import UIKit
 
-enum LAB002AuthorizationKind {
+enum LAB002AuthorizationKind: Equatable {
     case installationEnrollment
     case collectionRun
 }
@@ -40,6 +40,7 @@ struct LAB002AuthorizationMetadata {
 struct LAB002VerifiedEnrollmentFacts {
     let acknowledgementSHA256: String
     let authorizationPolicyVersion: String
+    let authorizedTargetManifestSHA256: String
     let enrollmentChallenge: String
     let experimentID: String
     let deviceSelectionNonce: String
@@ -47,6 +48,8 @@ struct LAB002VerifiedEnrollmentFacts {
 }
 
 struct LAB002VerifiedRunFacts {
+    let experimentID: String
+    let authorizedTargetManifestSHA256: String
     let collectionID: String
     let runOrdinal: UInt8
     let challengeSHA256: String
@@ -108,6 +111,22 @@ enum LAB002DiscardReason {
     case malformed
     case expired
     case buildMismatch
+    case enrollmentRequired
+    case alreadyEnrolled
+    case runPrerequisiteMismatch
+}
+
+enum LAB002WorkflowRecoveryState: Equatable {
+    case ready
+    case enrollmentReceipt(
+        LAB002ShareArtifact,
+        fingerprintSHA256: String
+    )
+    case pendingAuthorization(LAB002AuthorizationKind)
+    case discardableAuthorization
+    case runInProgress
+    case completedRun
+    case failedRun
 }
 
 struct LAB002ConsumedRunAuthorization {
@@ -309,15 +328,237 @@ actor LAB002InboxCoordinator {
     }
     #endif
 
-    func importAuthorization(from selectedDocumentURL: URL) throws {
+    @discardableResult
+    func importAuthorization(
+        from selectedDocumentURL: URL
+    ) throws -> LAB002AuthorizationMetadata {
         let bytes = try storage.readExternalDocument(
             selectedDocumentURL,
             maximum: LAB002Limit.controlDocument
         )
-        _ = try validator.validate(bytes)
+        let metadata = try validator.validate(bytes)
         try storage.withCoordinatorLock {
             try storage.publishAuthorization(bytes)
         }
+        return metadata
+    }
+
+    func recoverWorkflowState() throws -> LAB002WorkflowRecoveryState {
+        let state: LAB002WorkflowRecoveryState =
+            try storage.withCoordinatorLock {
+                let pending = try storage.readPendingAuthorization()
+                let installationState = try storage.readInstallationState()
+                let lifecycle = try storage.readRunLifecycle()
+                if let lifecycle,
+                   lifecycle.buildBindingSHA256
+                    != runtimeContext.buildBindingSHA256
+                {
+                    return .failedRun
+                }
+                if lifecycle?.phase == .cleanupPending {
+                    return .failedRun
+                }
+                let session = try storage.readRecoverableSession()
+                let recoveredReceipt = try storage
+                    .readEnrollmentReceipt()
+                    .map {
+                        guard let installationState else {
+                            throw LAB002EnrollmentError.notEnrolled
+                        }
+                        let authorizationEnvelope =
+                            try LAB002EvidenceArtifactBuilder
+                            .enrollmentAuthorizationEnvelope(
+                                recoveryRecordBytes: $0
+                            )
+                        let metadata = try validator.validate(
+                            authorizationEnvelope
+                        )
+                        guard metadata.kind == .installationEnrollment,
+                              metadata.buildBindingSHA256
+                                == installationState.buildBindingSHA256,
+                              installationState.buildBindingSHA256
+                                == runtimeContext.buildBindingSHA256,
+                              let facts = metadata.enrollmentFacts
+                        else {
+                            throw LAB002EvidenceArtifactError.invalidArtifact
+                        }
+                        let environment = try runtimeContext
+                            .currentEnvironment()
+                        guard environment == facts.expectedEnvironment else {
+                            throw LAB002EvidenceArtifactError.invalidArtifact
+                        }
+                        let installationBinding = try runtimeContext
+                            .deviceInstallationBinding(
+                                state: installationState
+                            )
+                        let recovered =
+                            try LAB002EvidenceArtifactBuilder
+                            .recoverEnrollmentReceipt(
+                                recoveryRecordBytes: $0,
+                                expectedState: installationState,
+                                authorizationMetadata: metadata,
+                                expectedDeviceInstallationBindingSHA256:
+                                    installationBinding,
+                                expectedEnvironment: environment
+                            )
+                        return recovered
+                    }
+
+                if let session {
+                    if let pending {
+                        guard pending.isQuarantined,
+                              session.state == .collecting,
+                              lifecycle == nil
+                                || lifecycleMatches(
+                                    lifecycle,
+                                    session: session,
+                                    phase: .observingMainAndFramework
+                                ),
+                              let metadata = try? validator.validate(
+                                  pending.bytes
+                              ),
+                              metadata.kind == .collectionRun,
+                              let installationState,
+                              try quarantinedRunMatchesSession(
+                                  pending,
+                                  metadata: metadata,
+                                  session: session,
+                                  installationState: installationState
+                              )
+                        else {
+                            throw LAB002ObserverReason
+                                .staleOrConflictingSession
+                        }
+                        return .pendingAuthorization(.collectionRun)
+                    }
+                    guard let installationState else {
+                        return .failedRun
+                    }
+                    do {
+                        guard try persistedSessionMatchesEnrollment(
+                            session,
+                            installationState: installationState
+                        ) else {
+                            return .failedRun
+                        }
+                    } catch {
+                        return .failedRun
+                    }
+                    switch session.state {
+                    case .collecting:
+                        return lifecycleMatches(
+                            lifecycle,
+                            session: session,
+                            phase: .awaitingShareExtension
+                        ) ? .runInProgress : .failedRun
+                    case .complete:
+                        return lifecycleMatches(
+                            lifecycle,
+                            session: session,
+                            phase: .completionCommitted
+                        ) ? .completedRun : .failedRun
+                    case .failed:
+                        return .failedRun
+                    }
+                }
+
+                guard let pending else {
+                    if let lifecycle,
+                       lifecycle.phase != .cleanupCommitted
+                    {
+                        return .failedRun
+                    }
+                    if let recoveredReceipt {
+                        return .enrollmentReceipt(
+                            recoveredReceipt.artifact,
+                            fingerprintSHA256: recoveredReceipt
+                                .deviceSelectionFingerprintSHA256
+                        )
+                    }
+                    if installationState != nil {
+                        return .failedRun
+                    }
+                    return .ready
+                }
+                guard let metadata = try? validator.validate(pending.bytes)
+                else {
+                    return .discardableAuthorization
+                }
+                if let recoveredReceipt,
+                   pending.isQuarantined,
+                   metadata.kind == .installationEnrollment,
+                   Data(SHA256.hash(data: pending.bytes)).hexLowercase
+                    == recoveredReceipt.authorizationEnvelopeSHA256
+                {
+                    let persisted =
+                        try storage.quarantineEnrollmentAuthorization()
+                    try storage.deleteAuthorization(persisted.quarantined)
+                    return .enrollmentReceipt(
+                        recoveredReceipt.artifact,
+                        fingerprintSHA256: recoveredReceipt
+                            .deviceSelectionFingerprintSHA256
+                    )
+                }
+                let now = try runtimeContext.currentUnixTime()
+                let duration =
+                    metadata.notAfter.subtractingReportingOverflow(
+                        metadata.notBefore
+                    )
+                let latest =
+                    metadata.notAfter.addingReportingOverflow(
+                        Self.allowedClockSkew
+                    )
+                let earliest =
+                    metadata.notBefore.subtractingReportingOverflow(
+                        Self.allowedClockSkew
+                    )
+                let enrollmentOutsideExactWindow =
+                    metadata.kind == .installationEnrollment
+                        && (now < metadata.notBefore
+                            || now > metadata.notAfter)
+                if metadata.buildBindingSHA256
+                    != runtimeContext.buildBindingSHA256
+                    || duration.overflow
+                    || duration.partialValue != 900
+                    || earliest.overflow
+                    || latest.overflow
+                    || now < earliest.partialValue
+                    || now > latest.partialValue
+                    || enrollmentOutsideExactWindow
+                {
+                    return .discardableAuthorization
+                }
+                if metadata.kind == .collectionRun {
+                    guard let installationState else {
+                        return .discardableAuthorization
+                    }
+                    if try !runAuthorizationPrerequisitesMatch(
+                        metadata,
+                        installationState: installationState,
+                        allowCommittedCounter: false,
+                        pinBindingIfMissing: false
+                    ) {
+                        return .discardableAuthorization
+                    }
+                } else if let installationState {
+                    guard pending.isQuarantined,
+                          try enrollmentAuthorizationCanResume(
+                              metadata,
+                              installationState: installationState,
+                              now: now
+                          )
+                    else {
+                        return .discardableAuthorization
+                    }
+                }
+                return .pendingAuthorization(metadata.kind)
+            }
+        if state == .completedRun {
+            completedSessionThisCoordinator =
+                try sessionEvidenceStore.completedSnapshot()
+            constructedSessionExport = nil
+        }
+        return state
     }
 
     func startCleanRun() throws -> LAB002ConsumedRunAuthorization {
@@ -374,6 +615,16 @@ actor LAB002InboxCoordinator {
                 }
                 throw LAB002StorageError.counterMismatch
             }
+            let nextCounter = currentCounter.addingReportingOverflow(1)
+            guard !nextCounter.overflow else {
+                throw LAB002StorageError.counterExhausted
+            }
+            guard nextCounter.partialValue == expectedCounter
+                    || pending.resumedAfterPersistence
+                        && currentCounter == expectedCounter
+            else {
+                throw LAB002StorageError.counterMismatch
+            }
             let recoverableSession = try storage.readRecoverableSession()
             let sessionID = try recoverableSession?.sessionID
                 ?? random.bytes(count: 32).hexLowercase
@@ -403,23 +654,68 @@ actor LAB002InboxCoordinator {
                 buildNumber: runtimeContext.runBuildFacts.buildNumber,
                 state: .collecting
             )
+            guard try runAuthorizationPrerequisitesMatch(
+                metadata,
+                installationState: continuity.state,
+                allowCommittedCounter: pending.resumedAfterPersistence
+                    && recoverableSession != nil,
+                pinBindingIfMissing: true
+            ) else {
+                throw LAB002CoordinatorError.invalidRuntimeContext
+            }
             if let recoverableSession {
                 guard pending.resumedAfterPersistence,
-                      currentCounter == expectedCounter,
                       recoverableSession == report
                 else {
                     throw LAB002StorageError.counterMismatch
                 }
-            } else if currentCounter == expectedCounter {
-                guard pending.resumedAfterPersistence else {
-                    throw LAB002StorageError.counterMismatch
-                }
             } else {
-                guard !hasSessionDirectory else {
+                guard currentCounter != expectedCounter,
+                      !hasSessionDirectory
+                else {
                     throw LAB002StorageError.existingEntry(
                         LAB002FixedName.currentReports
                     )
                 }
+            }
+            try storage.createOrRecoverSession(report)
+            let observingLifecycle = try LAB002RunLifecycleState(
+                buildBindingSHA256: buildBindingSHA256,
+                sessionID: report.sessionID,
+                runOrdinal: report.runOrdinal,
+                phase: .observingMainAndFramework
+            )
+            let priorLifecycle = try storage.readRunLifecycle()
+            if let priorLifecycle,
+               lifecycleMatches(
+                   priorLifecycle,
+                   session: report,
+                   phase: .observingMainAndFramework
+               ),
+               pending.resumedAfterPersistence
+            {
+                // The authorization is still quarantined, so observation
+                // could not have started before this safe resume.
+            } else {
+                if expectedCounter == 1 {
+                    guard priorLifecycle == nil else {
+                        throw LAB002StorageError.counterMismatch
+                    }
+                } else {
+                    guard let priorLifecycle,
+                          priorLifecycle.phase == .cleanupCommitted,
+                          priorLifecycle.runOrdinal + 1
+                            == report.runOrdinal
+                    else {
+                        throw LAB002StorageError.counterMismatch
+                    }
+                }
+                try storage.transitionRunLifecycle(
+                    from: priorLifecycle,
+                    to: observingLifecycle
+                )
+            }
+            if currentCounter != expectedCounter {
                 try storage.validateExpectedCounter(
                     expected: expectedCounter,
                     buildBindingSHA256: buildBindingSHA256
@@ -429,7 +725,6 @@ actor LAB002InboxCoordinator {
                     buildBindingSHA256: buildBindingSHA256
                 )
             }
-            try storage.createOrRecoverSession(report)
             try storage.deleteAuthorization(quarantined)
             return LAB002ConsumedRunAuthorization(
                 canonicalBytes: quarantined.bytes,
@@ -437,6 +732,26 @@ actor LAB002InboxCoordinator {
             )
         }
         try runRoleObserver.observeMainAndFramework()
+        try storage.withCoordinatorLock {
+            guard let session = try storage.readSession(),
+                  session.authorizationEnvelopeSHA256
+                    == Data(
+                        SHA256.hash(data: consumed.canonicalBytes)
+                    ).hexLowercase
+            else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            let observing = try requiredLifecycle(
+                matching: session,
+                phase: .observingMainAndFramework
+            )
+            try storage.transitionRunLifecycle(
+                from: observing,
+                to: try observing.changingPhase(
+                    to: .awaitingShareExtension
+                )
+            )
+        }
         return consumed
     }
 
@@ -444,12 +759,75 @@ actor LAB002InboxCoordinator {
         throws -> LAB002SessionCompletionOutcome
     {
         let completedAt = try runtimeContext.currentUnixTime()
-        let outcome = try sessionEvidenceStore.complete(at: completedAt)
-        if outcome == .committed {
-            completedSessionThisCoordinator =
-                try sessionEvidenceStore.completedSnapshot()
+        try storage.withCoordinatorLock {
+            guard let session = try storage.readSession(),
+                  session.state == .collecting
+            else {
+                throw LAB002ObserverReason.staleOrConflictingSession
+            }
+            let awaiting = try requiredLifecycle(
+                matching: session,
+                phase: .awaitingShareExtension
+            )
+            let pending = try awaiting.changingPhase(
+                to: .completionPending
+            )
+            try storage.transitionRunLifecycle(
+                from: awaiting,
+                to: pending
+            )
         }
-        return outcome
+        let outcome: LAB002SessionCompletionOutcome
+        do {
+            outcome = try sessionEvidenceStore.complete(at: completedAt)
+        } catch let completionError {
+            do {
+                try storage.withCoordinatorLock {
+                    guard let session = try storage.readSession(),
+                          session.state == .collecting
+                    else {
+                        throw LAB002ObserverReason
+                            .staleOrConflictingSession
+                    }
+                    let pending = try requiredLifecycle(
+                        matching: session,
+                        phase: .completionPending
+                    )
+                    try storage.transitionRunLifecycle(
+                        from: pending,
+                        to: try pending.changingPhase(
+                            to: .awaitingShareExtension
+                        )
+                    )
+                }
+            } catch {
+                throw error
+            }
+            throw completionError
+        }
+        guard outcome == .committed else {
+            return outcome
+        }
+        do {
+            let snapshot = try sessionEvidenceStore.completedSnapshot()
+            try storage.withCoordinatorLock {
+                let pending = try requiredLifecycle(
+                    matching: snapshot,
+                    phase: .completionPending
+                )
+                try storage.transitionRunLifecycle(
+                    from: pending,
+                    to: try pending.changingPhase(
+                        to: .completionCommitted
+                    )
+                )
+            }
+            completedSessionThisCoordinator = snapshot
+            return .committed
+        } catch {
+            completedSessionThisCoordinator = nil
+            return .committedDurabilityUncertain
+        }
     }
 
     func confirmInstallationEnrollment() throws -> LAB002EnrollmentCompletion {
@@ -509,6 +887,14 @@ actor LAB002InboxCoordinator {
                     environment: environment,
                     createdAt: now
                 )
+            let recoveryRecord = try LAB002EvidenceArtifactBuilder
+                .enrollmentReceiptRecoveryRecord(
+                    artifact: receipt.artifact,
+                    authorizationEnvelope: quarantined.bytes,
+                    deviceSelectionFingerprintSHA256:
+                        receipt.deviceSelectionFingerprintSHA256
+                )
+            try storage.persistEnrollmentReceipt(recoveryRecord)
             try storage.deleteAuthorization(quarantined)
             return LAB002EnrollmentCompletion(
                 state: continuity.state,
@@ -523,22 +909,14 @@ actor LAB002InboxCoordinator {
         if let constructedSessionExport {
             return constructedSessionExport.artifact
         }
-        let snapshot: LAB002CompletedSessionSnapshot
-        if let completedSessionThisCoordinator {
-            let current = try sessionEvidenceStore.completedSnapshot()
-            guard current == completedSessionThisCoordinator else {
-                throw LAB002ObserverReason.staleOrConflictingSession
-            }
-            snapshot = current
-        } else {
-            let completedAt = try runtimeContext.currentUnixTime()
-            let outcome = try sessionEvidenceStore.complete(at: completedAt)
-            guard outcome == .committed else {
-                throw LAB002ObserverReason.staleOrConflictingSession
-            }
-            snapshot = try sessionEvidenceStore.completedSnapshot()
-            completedSessionThisCoordinator = snapshot
+        guard let completedSessionThisCoordinator else {
+            throw LAB002ObserverReason.staleOrConflictingSession
         }
+        let current = try sessionEvidenceStore.completedSnapshot()
+        guard current == completedSessionThisCoordinator else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        let snapshot = current
         let continuity = try enrollment.loadForRun(
             buildBindingSHA256: snapshot.buildBindingSHA256
         )
@@ -564,17 +942,68 @@ actor LAB002InboxCoordinator {
         guard let constructedSessionExport else {
             throw LAB002EvidenceArtifactError.exportNotConstructed
         }
-        let outcome = try sessionEvidenceStore.cleanup(
-            expectedSnapshot: constructedSessionExport.snapshot
-        )
+        let cleanupPending = try storage.withCoordinatorLock {
+            let completed = try requiredLifecycle(
+                matching: constructedSessionExport.snapshot,
+                phase: .completionCommitted
+            )
+            let pending = try completed.changingPhase(
+                to: .cleanupPending
+            )
+            try storage.transitionRunLifecycle(
+                from: completed,
+                to: pending
+            )
+            return pending
+        }
+        let outcome: LAB002CleanupOutcome
+        do {
+            outcome = try sessionEvidenceStore.cleanup(
+                expectedSnapshot: constructedSessionExport.snapshot
+            )
+        } catch {
+            do {
+                try storage.withCoordinatorLock {
+                    try storage.transitionRunLifecycle(
+                        from: cleanupPending,
+                        to: try cleanupPending.changingPhase(
+                            to: .completionCommitted
+                        )
+                    )
+                }
+            } catch {
+                completedSessionThisCoordinator = nil
+                self.constructedSessionExport = nil
+                throw error
+            }
+            throw error
+        }
         completedSessionThisCoordinator = nil
         self.constructedSessionExport = nil
-        return outcome
+        guard outcome == .cleaned else {
+            return outcome
+        }
+        do {
+            try storage.withCoordinatorLock {
+                try storage.transitionRunLifecycle(
+                    from: cleanupPending,
+                    to: try cleanupPending.changingPhase(
+                        to: .cleanupCommitted
+                    )
+                )
+            }
+            return .cleaned
+        } catch {
+            return .cleanedDurabilityUncertain
+        }
     }
 
     func discardStaleAuthorization() throws -> LAB002DiscardReason {
         try storage.withCoordinatorLock {
-            let quarantined = try storage.quarantineAuthorization()
+            let wasQuarantined =
+                try storage.hasQuarantinedAuthorization()
+            let quarantined =
+                try storage.quarantineAuthorizationForDiscard()
             let metadata: LAB002AuthorizationMetadata
             do {
                 metadata = try validator.validate(quarantined.bytes)
@@ -600,17 +1029,386 @@ actor LAB002InboxCoordinator {
             let latest = metadata.notAfter.addingReportingOverflow(
                 Self.allowedClockSkew
             )
-            guard !latest.overflow else {
+            let earliest = metadata.notBefore.subtractingReportingOverflow(
+                Self.allowedClockSkew
+            )
+            guard !earliest.overflow, !latest.overflow else {
                 try storage.deleteAuthorization(quarantined)
                 return .malformed
             }
-            if now > latest.partialValue {
+            let enrollmentOutsideExactWindow =
+                metadata.kind == .installationEnrollment
+                    && (now < metadata.notBefore
+                        || now > metadata.notAfter)
+            if now < earliest.partialValue
+                || now > latest.partialValue
+                || enrollmentOutsideExactWindow
+            {
                 try storage.deleteAuthorization(quarantined)
                 return .expired
+            }
+            let installationState = try storage.readInstallationState()
+            let matchingPreObservationTransaction =
+                if wasQuarantined,
+                   metadata.kind == .collectionRun,
+                   let installationState
+                {
+                    try quarantinedRunHasMatchingPreObservationTransaction(
+                        bytes: quarantined.bytes,
+                        metadata: metadata,
+                        installationState: installationState
+                    )
+                } else {
+                    false
+                }
+            if metadata.kind == .collectionRun
+                && installationState == nil
+            {
+                try storage.deleteAuthorization(quarantined)
+                return .enrollmentRequired
+            }
+            if metadata.kind == .installationEnrollment,
+               installationState != nil
+            {
+                try storage.deleteAuthorization(quarantined)
+                return .alreadyEnrolled
+            }
+            if metadata.kind == .collectionRun,
+               let installationState,
+               try !runAuthorizationPrerequisitesMatch(
+                   metadata,
+                   installationState: installationState,
+                   allowCommittedCounter:
+                    matchingPreObservationTransaction,
+                   pinBindingIfMissing: false
+               )
+            {
+                try storage.deleteAuthorization(quarantined)
+                return .runPrerequisiteMismatch
             }
             try storage.restoreAuthorization(quarantined)
             throw LAB002CoordinatorError.authorizationStillValid
         }
+    }
+
+    private func runAuthorizationPrerequisitesMatch(
+        _ metadata: LAB002AuthorizationMetadata,
+        installationState: LAB002InstallationState,
+        allowCommittedCounter: Bool,
+        pinBindingIfMissing: Bool
+    ) throws -> Bool {
+        guard installationState.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256,
+              let expectedCounter = metadata.expectedRunCounter,
+              let runFacts = metadata.runFacts,
+              let expectedOrdinal = UInt8(exactly: expectedCounter),
+              runFacts.runOrdinal == expectedOrdinal
+        else {
+            throw LAB002CoordinatorError.invalidRuntimeContext
+        }
+        guard installationState.enrollmentPublicKey
+                == runFacts.enrollmentPublicKey
+        else {
+            return false
+        }
+        let enrolled = try verifiedEnrollmentContinuity(
+            installationState: installationState
+        )
+        guard enrolled.facts.experimentID == runFacts.experimentID,
+              enrolled.facts.authorizedTargetManifestSHA256
+                == runFacts.authorizedTargetManifestSHA256,
+              metadata.notBefore >= enrolled.receiptCreatedAt
+        else {
+            return false
+        }
+        let installationBinding = try runtimeContext
+            .deviceInstallationBinding(state: installationState)
+        guard installationBinding
+                == runFacts.expectedDeviceInstallationBindingSHA256
+        else {
+            return false
+        }
+        let counterRecord = try storage.readCounter()
+        if let counterRecord,
+           counterRecord.buildBindingSHA256
+            != runtimeContext.buildBindingSHA256
+        {
+            throw LAB002StorageError.counterMismatch
+        }
+        let currentCounter = counterRecord?.counter ?? 0
+        let nextCounter = currentCounter.addingReportingOverflow(1)
+        guard !nextCounter.overflow else {
+            throw LAB002StorageError.counterExhausted
+        }
+        let counterMatches =
+            nextCounter.partialValue == expectedCounter
+            || allowCommittedCounter && currentCounter == expectedCounter
+        guard counterMatches else {
+            return false
+        }
+        let expectedControl = try LAB002EnrollmentControlState(
+            buildBindingSHA256: runtimeContext.buildBindingSHA256,
+            experimentID: enrolled.facts.experimentID,
+            deviceEnrollmentBindingSHA256:
+                runFacts.deviceEnrollmentBindingSHA256
+        )
+        if let existing = try storage.readEnrollmentControl() {
+            return existing == expectedControl
+        }
+        guard expectedCounter == 1 else {
+            return false
+        }
+        if pinBindingIfMissing {
+            try storage.createEnrollmentControl(expectedControl)
+        }
+        return true
+    }
+
+    private func enrollmentAuthorizationCanResume(
+        _ metadata: LAB002AuthorizationMetadata,
+        installationState: LAB002InstallationState,
+        now: Int64
+    ) throws -> Bool {
+        guard metadata.kind == .installationEnrollment,
+              metadata.expectedRunCounter == nil,
+              let facts = metadata.enrollmentFacts,
+              metadata.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256,
+              installationState.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256
+        else {
+            return false
+        }
+        try validateWindow(metadata, now: now)
+        guard now >= metadata.notBefore,
+              now <= metadata.notAfter,
+              try runtimeContext.currentEnvironment()
+                == facts.expectedEnvironment
+        else {
+            return false
+        }
+        let continuity = try enrollment.loadForRun(
+            buildBindingSHA256: runtimeContext.buildBindingSHA256
+        )
+        return continuity.state == installationState
+    }
+
+    private func quarantinedRunHasMatchingPreObservationTransaction(
+        bytes: Data,
+        metadata: LAB002AuthorizationMetadata,
+        installationState: LAB002InstallationState
+    ) throws -> Bool {
+        guard let session = try storage.readRecoverableSession(),
+              session.state == .collecting,
+              lifecycleMatches(
+                  try storage.readRunLifecycle(),
+                  session: session,
+                  phase: .observingMainAndFramework
+              )
+        else {
+            return false
+        }
+        return try quarantinedRunMatchesSession(
+            LAB002PendingAuthorization(
+                bytes: bytes,
+                isQuarantined: true
+            ),
+            metadata: metadata,
+            session: session,
+            installationState: installationState
+        )
+    }
+
+    private func quarantinedRunMatchesSession(
+        _ pending: LAB002PendingAuthorization,
+        metadata: LAB002AuthorizationMetadata,
+        session: LAB002SessionReport,
+        installationState: LAB002InstallationState
+    ) throws -> Bool {
+        let now = try runtimeContext.currentUnixTime()
+        try validateWindow(metadata, now: now)
+        guard metadata.kind == .collectionRun,
+              metadata.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256,
+              let expectedCounter = metadata.expectedRunCounter,
+              let facts = metadata.runFacts,
+              try runAuthorizationPrerequisitesMatch(
+                  metadata,
+                  installationState: installationState,
+                  allowCommittedCounter: true,
+                  pinBindingIfMissing: false
+              )
+        else {
+            return false
+        }
+        let environment = try runtimeContext.currentEnvironment()
+        let installationBinding = try runtimeContext
+            .deviceInstallationBinding(state: installationState)
+        return session.observerRevision
+                == runtimeContext.runBuildFacts.observerRevision
+            && session.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256
+            && session.collectionID == facts.collectionID
+            && session.runOrdinal == facts.runOrdinal
+            && session.challengeSHA256 == facts.challengeSHA256
+            && session.acknowledgementSHA256
+                == facts.acknowledgementSHA256
+            && session.authorizationEnvelopeSHA256
+                == Data(SHA256.hash(data: pending.bytes)).hexLowercase
+            && session.authorizationNotAfter == metadata.notAfter
+            && session.deviceEnrollmentBindingSHA256
+                == facts.deviceEnrollmentBindingSHA256
+            && session.enrollmentPublicKey == facts.enrollmentPublicKey
+            && session.deviceInstallationBindingSHA256
+                == installationBinding
+            && session.environment == environment
+            && session.runCounter
+                == String(format: "%016llx", expectedCounter)
+            && isInsideSkewWindow(
+                session.createdAt,
+                metadata: metadata
+            )
+            && session.sourceCommit
+                == runtimeContext.runBuildFacts.sourceCommit
+            && session.marketingVersion
+                == runtimeContext.runBuildFacts.marketingVersion
+            && session.buildNumber
+                == runtimeContext.runBuildFacts.buildNumber
+    }
+
+    private func verifiedEnrollmentContinuity(
+        installationState: LAB002InstallationState
+    ) throws -> (
+        facts: LAB002VerifiedEnrollmentFacts,
+        receiptCreatedAt: Int64
+    ) {
+        guard let recovery = try storage.readEnrollmentReceipt()
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        let authorizationEnvelope =
+            try LAB002EvidenceArtifactBuilder
+            .enrollmentAuthorizationEnvelope(
+                recoveryRecordBytes: recovery
+            )
+        let metadata = try validator.validate(authorizationEnvelope)
+        guard metadata.kind == .installationEnrollment,
+              metadata.buildBindingSHA256
+                == installationState.buildBindingSHA256,
+              installationState.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256,
+              let facts = metadata.enrollmentFacts
+        else {
+            throw LAB002EvidenceArtifactError.invalidArtifact
+        }
+        let environment = try runtimeContext.currentEnvironment()
+        let installationBinding = try runtimeContext
+            .deviceInstallationBinding(state: installationState)
+        let recovered =
+            try LAB002EvidenceArtifactBuilder.recoverEnrollmentReceipt(
+                recoveryRecordBytes: recovery,
+                expectedState: installationState,
+                authorizationMetadata: metadata,
+                expectedDeviceInstallationBindingSHA256:
+                    installationBinding,
+                expectedEnvironment: environment
+            )
+        return (facts, recovered.receiptCreatedAt)
+    }
+
+    private func persistedSessionMatchesEnrollment(
+        _ session: LAB002SessionReport,
+        installationState: LAB002InstallationState
+    ) throws -> Bool {
+        let continuity = try enrollment.loadForRun(
+            buildBindingSHA256: runtimeContext.buildBindingSHA256
+        )
+        guard continuity.state == installationState else {
+            return false
+        }
+        let enrolled = try verifiedEnrollmentContinuity(
+            installationState: installationState
+        )
+        let installationBinding = try runtimeContext
+            .deviceInstallationBinding(state: installationState)
+        guard let control = try storage.readEnrollmentControl(),
+              let counter = try storage.readCounter()
+        else {
+            return false
+        }
+        return installationState.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256
+            && installationState.enrollmentPublicKey
+                == session.enrollmentPublicKey
+            && installationBinding
+                == session.deviceInstallationBindingSHA256
+            && control.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256
+            && control.experimentID == enrolled.facts.experimentID
+            && control.deviceEnrollmentBindingSHA256
+                == session.deviceEnrollmentBindingSHA256
+            && counter.buildBindingSHA256
+                == runtimeContext.buildBindingSHA256
+            && counter.counter == UInt64(session.runOrdinal)
+    }
+
+    private func lifecycleMatches(
+        _ lifecycle: LAB002RunLifecycleState?,
+        session: LAB002SessionReport,
+        phase: LAB002RunLifecyclePhase
+    ) -> Bool {
+        lifecycle?.buildBindingSHA256 == session.buildBindingSHA256
+            && lifecycle?.sessionID == session.sessionID
+            && lifecycle?.runOrdinal == session.runOrdinal
+            && lifecycle?.phase == phase
+    }
+
+    private func requiredLifecycle(
+        matching session: LAB002SessionReport,
+        phase: LAB002RunLifecyclePhase
+    ) throws -> LAB002RunLifecycleState {
+        guard let lifecycle = try storage.readRunLifecycle(),
+              lifecycleMatches(
+                  lifecycle,
+                  session: session,
+                  phase: phase
+              )
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return lifecycle
+    }
+
+    private func requiredLifecycle(
+        matching snapshot: LAB002CompletedSessionSnapshot,
+        phase: LAB002RunLifecyclePhase
+    ) throws -> LAB002RunLifecycleState {
+        guard let lifecycle = try storage.readRunLifecycle(),
+              lifecycle.buildBindingSHA256
+                == snapshot.buildBindingSHA256,
+              lifecycle.sessionID == snapshot.sessionID,
+              lifecycle.runOrdinal == snapshot.runOrdinal,
+              lifecycle.phase == phase
+        else {
+            throw LAB002ObserverReason.staleOrConflictingSession
+        }
+        return lifecycle
+    }
+
+    private func isInsideSkewWindow(
+        _ time: Int64,
+        metadata: LAB002AuthorizationMetadata
+    ) -> Bool {
+        let earliest = metadata.notBefore.subtractingReportingOverflow(
+            Self.allowedClockSkew
+        )
+        let latest = metadata.notAfter.addingReportingOverflow(
+            Self.allowedClockSkew
+        )
+        return !earliest.overflow
+            && !latest.overflow
+            && time >= earliest.partialValue
+            && time <= latest.partialValue
     }
 
     private func validateWindow(
