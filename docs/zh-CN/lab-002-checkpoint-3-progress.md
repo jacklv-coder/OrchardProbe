@@ -25,7 +25,7 @@
 | 顺序 | 切片 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3B.1 | 安全消费 3A 工件 | `完成；PR #63 已合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量。纯设备无关回归、Codex CR、GitHub Codex Review 与 CI 已通过；[PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 已合并为 `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
-| 3B.2 | Archive/IPA Oracle 闭合 | `等待最终 P1 修复 CR/CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
+| 3B.2 | Archive/IPA Oracle 闭合 | `P2 Zero-fill 与逐 Entry IPA 重哈希修复已在本地验证；等待最终 CR/CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
 | 3B.3 | Evidence 与 Upload Gate | `等待 3B.2 合并` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
 
 ### 3B.2 顺序执行门禁
@@ -35,16 +35,16 @@
 | 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
 | 3B.2.2 | Archive/IPA 一致性 | `完成` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
-| 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；等待最终 P1 修复 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
+| 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；两项 P2 回归已通过；等待最终 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换、逐 Entry IPA 变更与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
 最终完成 P1/P2 修复的 3B.2 Helper 已从 Commit
-`b30f7ef222d9947e49573b6cdd96349f32cb2014` 的只读源码快照独立构建两次，
-产物字节完全一致；随后恢复强制白名单路径的第三次构建也通过。登记 Tuple 为：
+`985bf4bfced637bb9b714ab5234f143689ef8ed2` 的只读源码快照独立构建两次，
+产物字节完全一致。登记 Tuple 为：
 Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot SHA-256
-`c1e7a22fb329d10cbeed1a45d9df038eac9776865c4f210540e5627d2d03b717`，
-Size `1884192`，SHA-256
-`e8cf678b089174a449893febf18f6af784d07580af3691f8a9f97327b6599c00`，
-CDHash `5e69eb5cbb4995d031a7237ceaa9fdde7cd1e433`。该 Helper 会返回仍持有的
+`eec04c9944ae097f18f406f4e7154b37179b17f394dda2c834b679c27afedb5e`，
+Size `1884368`，SHA-256
+`d34536a3d9f115654adfcc093100edfdce744d7b644b9470d8252d6de28c3e9b`，
+CDHash `6b11abec1e8fa47d23f9c9e460e0d5b698d1319d`。该 Helper 会返回仍持有的
 最终 Archive App Root 的 Device/Inode，使 Fastlane 能把最终 Evidence 与发布复核
 绑定到 Helper 实际测量的精确目录，而不是可替换的 Pathname。
 
