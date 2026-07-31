@@ -4934,7 +4934,7 @@ def lab002_indeterminate_publication_marker_path(output_root, run_directory)
   )
 end
 
-def publish_lab002_indeterminate_publication_marker!(
+def publish_lab002_publication_gate!(
   output_handle:,
   output_root:,
   output_identity:,
@@ -4953,21 +4953,70 @@ def publish_lab002_indeterminate_publication_marker!(
     marker_path,
     {
       "schema" => "orchardprobe.lab002.publication-indeterminate.v1",
-      "status" => "indeterminate",
+      "status" => "pending_or_indeterminate",
       "run_name" => File.basename(run_directory),
       "run_device" => staging_identity.fetch(1).to_s,
       "run_inode" => staging_identity.fetch(2).to_s,
       "note" =>
-        "The final directory rename completed, but descriptor-bound final " \
-        "validation did not. Reconcile this exact run identity before retry.",
+        "Publication is not committed until this gate is removed after " \
+        "descriptor-bound final validation. If retained, reconcile this " \
+        "exact run identity before retry.",
     },
-    "LAB-002 indeterminate publication marker"
+    "LAB-002 publication gate"
   )
-  marker_file.flock(File::LOCK_UN)
-  marker_file.close
-  marker_path
-ensure
-  marker_file&.close unless marker_file&.closed?
+  [marker_file, marker_path]
+rescue
+  marker_file&.flock(File::LOCK_UN)
+  marker_file&.close
+  raise
+end
+
+def remove_lab002_publication_gate!(
+  output_handle:,
+  output_root:,
+  output_identity:,
+  marker_file:,
+  marker_path:
+)
+  verify_locked_directory!(
+    output_handle,
+    output_root,
+    output_identity,
+    "DEMO_LAB_OUTPUT_DIR"
+  )
+  unless File.dirname(marker_path) == output_root &&
+         /\A\.demolab-staging-published-indeterminate-[A-Za-z0-9._-]+\.json\z/
+           .match?(File.basename(marker_path))
+    UI.user_error!("LAB-002 publication gate path is invalid.")
+  end
+  verify_private_record_path_identity!(
+    marker_path,
+    marker_file,
+    "LAB-002 publication gate"
+  )
+  result = DemoLabDarwin.unlinkat(
+    output_handle.fileno,
+    File.basename(marker_path),
+    0
+  )
+  unless result.zero?
+    UI.user_error!("Unable to remove the validated LAB-002 publication gate.")
+  end
+  unless marker_file.stat.nlink.zero? &&
+         !File.exist?(marker_path) &&
+         !File.symlink?(marker_path)
+    UI.user_error!("LAB-002 publication gate removal is indeterminate.")
+  end
+  begin
+    output_handle.fsync
+  rescue SystemCallError
+    UI.important(
+      "The validated LAB-002 publication gate was removed, but its parent " \
+      "directory sync could not be confirmed; a crash may conservatively " \
+      "restore the retry gate."
+    )
+  end
+  true
 end
 
 def publish_verified_lab002_staged_run!(
@@ -4987,6 +5036,8 @@ def publish_verified_lab002_staged_run!(
 )
   held_files = []
   archive_app_handle = nil
+  publication_gate_file = nil
+  publication_gate_path = nil
   publication_renamed = false
   expected_names = [
     File.basename(archive_path),
@@ -5138,6 +5189,25 @@ def publish_verified_lab002_staged_run!(
     "DEMO_LAB_OUTPUT_DIR"
   )
 
+  publication_gate_file, publication_gate_path =
+    publish_lab002_publication_gate!(
+      output_handle: output_handle,
+      output_root: output_root,
+      output_identity: output_identity,
+      run_directory: run_directory,
+      staging_identity: staging_identity
+    )
+  verify_private_record_path_identity!(
+    publication_gate_path,
+    publication_gate_file,
+    "LAB-002 publication gate"
+  )
+  verify_locked_directory!(
+    output_handle,
+    output_root,
+    output_identity,
+    "DEMO_LAB_OUTPUT_DIR"
+  )
   rename_exclusive_no_follow!(
     staging_directory,
     run_directory,
@@ -5191,19 +5261,22 @@ def publish_verified_lab002_staged_run!(
     output_identity,
     "DEMO_LAB_OUTPUT_DIR"
   )
+  remove_lab002_publication_gate!(
+    output_handle: output_handle,
+    output_root: output_root,
+    output_identity: output_identity,
+    marker_file: publication_gate_file,
+    marker_path: publication_gate_path
+  )
+  publication_gate_file.flock(File::LOCK_UN)
+  publication_gate_file.close
+  publication_gate_file = nil
   true
 rescue => error
   if publication_renamed
-    marker_path = publish_lab002_indeterminate_publication_marker!(
-      output_handle: output_handle,
-      output_root: output_root,
-      output_identity: output_identity,
-      run_directory: run_directory,
-      staging_identity: staging_identity
-    )
     UI.important(
       "Retained an indeterminate published DemoLab run for reconciliation: " \
-      "#{run_directory} (marker: #{marker_path})"
+      "#{run_directory} (gate: #{publication_gate_path})"
     )
   end
   if [
@@ -5220,6 +5293,8 @@ ensure
     handle&.close unless handle&.closed?
   end
   archive_app_handle&.close unless archive_app_handle&.closed?
+  publication_gate_file&.flock(File::LOCK_UN)
+  publication_gate_file&.close
 end
 
 def write_pre_upload_evidence(
@@ -6735,6 +6810,7 @@ platform :ios do
       oracle
       evidence
       extra
+      marker_conflict
       post_publish_ipa
     ].each do |replacement|
       Dir.mktmpdir(
@@ -6864,6 +6940,16 @@ platform :ios do
           "Final staging regression output root"
         )
         run_directory = File.join(container, "published")
+        conflicting_marker_path = nil
+        if replacement == "marker_conflict"
+          conflicting_marker_path =
+            lab002_indeterminate_publication_marker_path(
+              container,
+              run_directory
+            )
+          File.write(conflicting_marker_path, "existing-retry-gate")
+          File.chmod(0o400, conflicting_marker_path)
+        end
         publication_changed = false
         substitution_rejected = false
         with_locked_private_directory(
@@ -6917,6 +7003,16 @@ platform :ios do
                  File.directory?(run_directory) &&
                  !File.exist?(staging_directory)
             UI.user_error!("A valid final staging run was not published.")
+          end
+        elsif replacement == "marker_conflict"
+          unless substitution_rejected &&
+                 !publication_changed &&
+                 File.directory?(staging_directory) &&
+                 !File.exist?(run_directory) &&
+                 File.file?(conflicting_marker_path)
+            UI.user_error!(
+              "A failed publication-gate reservation allowed publication."
+            )
           end
         elsif replacement == "post_publish_ipa"
           marker_path = lab002_indeterminate_publication_marker_path(

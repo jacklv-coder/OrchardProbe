@@ -244,9 +244,11 @@ Archive App、IPA、六个 Archive Source、Oracle 和序列化 Evidence 的只�
 再从发布后的新路径逐个复核所有已持有 Descriptor，成功后才返回。纯设备无关回归会
 发布一份合法 Fixture，并拒绝 IPA、Archive Source、整个 Archive App Root、Oracle、
 Evidence 的替换以及额外顶层 Entry 注入。它还会在目录重命名后替换 IPA，并要求生成
-一个仅所有者可读写的 `.demolab-staging-published-indeterminate-*.json` 同级标记，
-其中绑定预期发布目录的 Device/Inode。现有 Retained-staging 扫描会识别该标记，因此
-最终复核失败会进入明确的人工核对路径，不会静默遗留未经验证的最终 Run Directory。
+一个仅所有者可读写的 `.demolab-staging-published-indeterminate-*.json` 同级 Gate，
+其中绑定预期发布目录的 Device/Inode。该 Gate 必须在目录重命名前排他创建；创建失败
+会阻止发布，只有全部重命名后 Descriptor 复核通过才会删除。现有 Retained-staging
+扫描会识别遗留 Gate，因此最终复核失败会进入明确的人工核对路径，不会静默遗留未经
+验证的最终 Run Directory。
 
 只有三个 Role 全部通过后，Helper 才会编码规范
 `orchardprobe.lab002.oracle.v1` 记录，将其绑定到已认证 Source、Version/Build、

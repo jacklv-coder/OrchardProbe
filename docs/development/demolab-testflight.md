@@ -254,11 +254,14 @@ directory identity returned by the private oracle helper. Its final publisher
 keeps read-only descriptors open for the IPA, six Archive sources, oracle, and
 evidence while it rehashes them, performs Darwin's exclusive no-follow
 directory rename, and revalidates every descriptor through the published path
-before returning success. If that post-rename validation fails, the lane writes
-an owner-only `.demolab-staging-published-indeterminate-*.json` sibling marker
-bound to the expected run device/inode. The normal retained-staging gate then
-blocks every retry until the operator reconciles that exact published run and
-its marker. Concurrent controlled
+before returning success. Immediately before the rename, the lane atomically
+reserves an owner-only
+`.demolab-staging-published-indeterminate-*.json` sibling gate bound to the
+expected run device/inode. The gate is removed only after all descriptor-bound
+post-rename checks pass. A gate reservation failure therefore prevents the
+rename, while any later failure leaves a durable retry block for the normal
+retained-staging scan until the operator reconciles that exact published run.
+Concurrent controlled
 invocations therefore cannot share, mix, or overwrite build output; an
 existing final directory is never reused. A replaced or permission-weakened
 directory is rejected and malformed evidence prevents publication without
