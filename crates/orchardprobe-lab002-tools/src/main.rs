@@ -940,6 +940,7 @@ fn create_oracle(
                 "exported IPA inventory changed while reading fixed executable {path}"
             ));
         }
+        verify_ipa_source_after_entry_read(&mut ipa_file, &ipa_identity, &ipa_sha256, path)?;
         temporary
             .seek(SeekFrom::Start(0))
             .map_err(|error| format!("could not rewind fixed IPA executable {path}: {error}"))?;
@@ -976,6 +977,7 @@ fn create_oracle(
                 "exported IPA inventory changed while reading fixed Info.plist {path}"
             ));
         }
+        verify_ipa_source_after_entry_read(&mut ipa_file, &ipa_identity, &ipa_sha256, path)?;
         ipa_identities.push(
             parse_info_plist(&bytes)
                 .map_err(|error| format!("IPA Info.plist identity is invalid: {error}"))?,
@@ -1648,6 +1650,22 @@ fn verify_stable_file_digest(
         return Err(format!("{label} bytes changed during oracle generation"));
     }
     Ok(())
+}
+
+fn verify_ipa_source_after_entry_read(
+    file: &mut File,
+    expected_identity: &StableFileIdentity,
+    expected_sha256: &str,
+    entry_path: &str,
+) -> Result<(), String> {
+    verify_stable_file_digest(
+        file,
+        expected_identity,
+        MAX_IPA_BYTES,
+        "exported IPA",
+        expected_sha256,
+    )
+    .map_err(|error| format!("{error} after reading {entry_path}"))
 }
 
 #[derive(Debug)]
@@ -4075,6 +4093,32 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("bytes changed during oracle generation"));
+    }
+
+    #[test]
+    fn per_entry_ipa_rehash_detects_drift_before_the_next_entry() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("DemoLab-3.ipa");
+        fs::write(&path, b"reviewed-ipa").unwrap();
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        let identity = stable_file_identity(&file, 64, "test IPA").unwrap();
+        let digest = hash_stable_file(&mut file, &identity, 64, "test IPA").unwrap();
+
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(b"transient-ip").unwrap();
+        file.sync_data().unwrap();
+        let error = verify_ipa_source_after_entry_read(
+            &mut file,
+            &identity,
+            &digest,
+            "Payload/DemoLab.app/DemoLab",
+        )
+        .unwrap_err();
+        assert!(error.contains("after reading Payload/DemoLab.app/DemoLab"));
     }
 
     #[test]
