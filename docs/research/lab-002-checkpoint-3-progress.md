@@ -61,8 +61,11 @@ output root outside the repository. The lane rejects a clean local commit that
 is not an ancestor of the reviewed `origin/main` ref and rechecks the same
 source immediately before generation. It compiles the helper from a read-only
 Git archive of that exact 40-hex commit in a separate private workspace. Git's
-archive stdout is piped directly to the extractor without a pathname-based
-intermediate archive, and both process statuses are required to succeed. The
+replacement refs are explicitly disabled, global and system Git configuration
+are excluded, and the extracted path/Blob OID inventory must exactly match
+`git ls-tree`; external attribute transformations are rejected. Archive stdout
+is piped directly to the extractor without a pathname-based intermediate
+archive, and both process statuses are required to succeed. The
 build does not read the mutable checkout and rehashes the complete source
 snapshot afterward. The `gemfile_lock_sha256` recorded in the Build Binding is
 derived from that same authenticated snapshot and is revalidated with it; the

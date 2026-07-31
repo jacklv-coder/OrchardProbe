@@ -1,4 +1,5 @@
 require "digest"
+require "digest/sha1"
 require "etc"
 require "fiddle/import"
 require "fcntl"
@@ -1088,6 +1089,183 @@ ensure
   file&.close unless file&.closed?
 end
 
+def lab002_reviewed_git_blob_oid!(path, object_format)
+  digest = case object_format
+           when "sha1"
+             Digest::SHA1.new
+           when "sha256"
+             Digest::SHA256.new
+           else
+             UI.user_error!("The reviewed Git object format is unsupported.")
+           end
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(path, flags) do |file|
+    before = file.stat
+    before_path = File.lstat(path)
+    unless before.file? &&
+           !before_path.symlink? &&
+           [before_path.dev, before_path.ino] == [before.dev, before.ino]
+      UI.user_error!("A reviewed snapshot file has an invalid identity.")
+    end
+    digest.update("blob #{before.size}\0")
+    while (chunk = file.read(1024 * 1024))
+      digest.update(chunk)
+    end
+    after = file.stat
+    after_path = File.lstat(path)
+    unless [
+      after.dev,
+      after.ino,
+      after.size,
+      after.mtime.to_f,
+    ] == [
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtime.to_f,
+    ] &&
+           [
+             after_path.dev,
+             after_path.ino,
+             after_path.size,
+             after_path.mtime.to_f,
+           ] == [
+             after.dev,
+             after.ino,
+             after.size,
+             after.mtime.to_f,
+           ]
+      UI.user_error!("A reviewed snapshot file changed while binding its blob.")
+    end
+  end
+  digest.hexdigest
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to bind a reviewed snapshot file safely.")
+end
+
+def lab002_stream_reviewed_source_archive!(
+  source_repository,
+  source_root,
+  source_commit,
+  snapshot_paths
+)
+  archive_environment = sanitized_dynamic_loader_environment(
+    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }.merge(
+      "GIT_CONFIG_COUNT" => "0",
+      "GIT_CONFIG_GLOBAL" => "/dev/null",
+      "GIT_CONFIG_NOSYSTEM" => "1",
+      "GIT_OPTIONAL_LOCKS" => "0"
+    )
+  )
+  object_format, format_stderr, format_status = Open3.capture3(
+    archive_environment,
+    "/usr/bin/git",
+    "--no-replace-objects",
+    "rev-parse",
+    "--show-object-format",
+    chdir: source_repository,
+    unsetenv_others: true
+  )
+  object_format = object_format.strip
+  unless format_status.success? &&
+         format_stderr.empty? &&
+         %w[sha1 sha256].include?(object_format)
+    UI.user_error!("Unable to identify the reviewed Git object format.")
+  end
+  tree_output, tree_stderr, tree_status = Open3.capture3(
+    archive_environment,
+    "/usr/bin/git",
+    "--no-replace-objects",
+    "ls-tree",
+    "-r",
+    "-z",
+    "--full-tree",
+    source_commit,
+    "--",
+    *snapshot_paths,
+    chdir: source_repository,
+    unsetenv_others: true
+  )
+  entries = tree_output.b.split("\0", -1)
+  unless tree_status.success? &&
+         tree_stderr.empty? &&
+         entries.pop == ""
+    UI.user_error!("Unable to inventory the reviewed Git source tree.")
+  end
+  oid_pattern = object_format == "sha1" ? "[0-9a-f]{40}" : "[0-9a-f]{64}"
+  expected_blobs = entries.to_h do |entry|
+    match = /\A(?:100644|100755) blob (#{oid_pattern})\t(.+)\z/m.match(entry)
+    unless match
+      UI.user_error!("The reviewed Git source tree has an unsupported entry.")
+    end
+    relative = match[2].dup.force_encoding(Encoding::UTF_8)
+    components = relative.split("/")
+    unless relative.valid_encoding? &&
+           !relative.start_with?("/") &&
+           components.all? { |component|
+             !component.empty? && !%w[. ..].include?(component)
+           }
+      UI.user_error!("The reviewed Git source tree has an unsafe path.")
+    end
+    [relative, match[1]]
+  end
+  unless expected_blobs.length == entries.length && expected_blobs.any?
+    UI.user_error!("The reviewed Git source tree inventory is ambiguous.")
+  end
+  archive_statuses = Open3.pipeline(
+    [
+      archive_environment,
+      "/usr/bin/git",
+      "--no-replace-objects",
+      "-c",
+      "core.attributesFile=/dev/null",
+      "archive",
+      "--format=tar",
+      source_commit,
+      "--",
+      *snapshot_paths,
+    ],
+    [
+      archive_environment,
+      "/usr/bin/tar",
+      "-xf",
+      "-",
+      "-C",
+      source_root,
+    ],
+    chdir: source_repository,
+    unsetenv_others: true
+  )
+  unless archive_statuses.length == 2 &&
+         archive_statuses.all?(&:success?)
+    UI.user_error!(
+      "Unable to stream the reviewed LAB-002 source snapshot safely."
+    )
+  end
+  observed_blobs = {}
+  Find.find(source_root) do |path|
+    next if path == source_root
+
+    stat = File.lstat(path)
+    next if stat.directory?
+    unless stat.file? && !stat.symlink?
+      UI.user_error!("The reviewed source archive has an unsupported entry.")
+    end
+    relative = path.delete_prefix("#{source_root}#{File::SEPARATOR}")
+    unless expected_blobs.key?(relative) && !observed_blobs.key?(relative)
+      UI.user_error!("The reviewed source archive inventory diverged.")
+    end
+    observed_blobs[relative] =
+      lab002_reviewed_git_blob_oid!(path, object_format)
+  end
+  unless observed_blobs == expected_blobs
+    UI.user_error!(
+      "The reviewed source archive does not match the exact Git blobs."
+    )
+  end
+end
+
 def lab002_reviewed_source_snapshot!(workspace, source_commit)
   unless /\A[0-9a-f]{40}\z/.match?(source_commit)
     UI.user_error!("LAB-002 reviewed source commit has an invalid format.")
@@ -1105,36 +1283,12 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
     "rust-toolchain.toml",
     "crates",
   ]
-  archive_environment = sanitized_dynamic_loader_environment(
-    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }
+  lab002_stream_reviewed_source_archive!(
+    repository_root,
+    source_root,
+    source_commit,
+    snapshot_paths
   )
-  archive_statuses = Open3.pipeline(
-    [
-      archive_environment,
-      "/usr/bin/git",
-      "archive",
-      "--format=tar",
-      source_commit,
-      "--",
-      *snapshot_paths,
-    ],
-    [
-      archive_environment,
-      "/usr/bin/tar",
-      "-xf",
-      "-",
-      "-C",
-      source_root,
-    ],
-    chdir: repository_root,
-    unsetenv_others: true
-  )
-  unless archive_statuses.length == 2 &&
-         archive_statuses.all?(&:success?)
-    UI.user_error!(
-      "Unable to stream the reviewed LAB-002 source snapshot safely."
-    )
-  end
 
   required = %w[
     Cargo.toml
@@ -5024,6 +5178,172 @@ platform :ios do
             wait_thread.join
           end
         end
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-git-replace-check-",
+      external_temporary_base
+    ) do |replacement_workspace|
+      replacement_repository =
+        File.join(replacement_workspace, "repository")
+      replacement_snapshot =
+        File.join(replacement_workspace, "snapshot")
+      attribute_snapshot =
+        File.join(replacement_workspace, "attribute-snapshot")
+      Dir.mkdir(replacement_repository, 0o700)
+      Dir.mkdir(replacement_snapshot, 0o700)
+      Dir.mkdir(attribute_snapshot, 0o700)
+      command_output(
+        "/usr/bin/git",
+        "init",
+        "--quiet",
+        chdir: replacement_repository
+      )
+      original_cargo =
+        "[workspace]\nresolver = \"2\"\n# $Format:%H$\n"
+      replacement_cargo = "[workspace]\nresolver = \"1\"\n"
+      {
+        "Cargo.toml" => original_cargo,
+        "Cargo.lock" => "version = 4\n",
+        "Gemfile.lock" => "BUNDLED WITH\n   4.0.16\n",
+        "rust-toolchain.toml" =>
+          "[toolchain]\nchannel = \"1.85.0\"\n",
+      }.each do |name, content|
+        File.write(
+          File.join(replacement_repository, name),
+          content
+        )
+      end
+      replacement_crates =
+        File.join(replacement_repository, "crates")
+      Dir.mkdir(replacement_crates, 0o700)
+      File.write(
+        File.join(replacement_crates, "reviewed.txt"),
+        "reviewed\n"
+      )
+      command_output(
+        "/usr/bin/git",
+        "add",
+        "--",
+        "Cargo.toml",
+        "Cargo.lock",
+        "Gemfile.lock",
+        "rust-toolchain.toml",
+        "crates",
+        chdir: replacement_repository
+      )
+      command_output(
+        "/usr/bin/git",
+        "-c",
+        "user.name=OrchardProbe",
+        "-c",
+        "user.email=orchardprobe@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "reviewed",
+        chdir: replacement_repository
+      )
+      reviewed_commit = command_output(
+        "/usr/bin/git",
+        "rev-parse",
+        "HEAD",
+        chdir: replacement_repository
+      )
+      File.write(
+        File.join(replacement_repository, "Cargo.toml"),
+        replacement_cargo
+      )
+      command_output(
+        "/usr/bin/git",
+        "add",
+        "--",
+        "Cargo.toml",
+        chdir: replacement_repository
+      )
+      command_output(
+        "/usr/bin/git",
+        "-c",
+        "user.name=OrchardProbe",
+        "-c",
+        "user.email=orchardprobe@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "replacement",
+        chdir: replacement_repository
+      )
+      replacement_commit = command_output(
+        "/usr/bin/git",
+        "rev-parse",
+        "HEAD",
+        chdir: replacement_repository
+      )
+      command_output(
+        "/usr/bin/git",
+        "replace",
+        reviewed_commit,
+        replacement_commit,
+        chdir: replacement_repository
+      )
+      replaced_view = command_output(
+        "/usr/bin/git",
+        "show",
+        "#{reviewed_commit}:Cargo.toml",
+        chdir: replacement_repository
+      )
+      lab002_stream_reviewed_source_archive!(
+        replacement_repository,
+        replacement_snapshot,
+        reviewed_commit,
+        %w[
+          Cargo.toml
+          Cargo.lock
+          Gemfile.lock
+          rust-toolchain.toml
+          crates
+        ]
+      )
+      unless replaced_view == replacement_cargo.strip &&
+             File.binread(
+               File.join(replacement_snapshot, "Cargo.toml")
+             ) == original_cargo
+        UI.user_error!(
+          "LAB-002 reviewed source archive followed a Git replacement ref."
+        )
+      end
+      File.write(
+        File.join(
+          replacement_repository,
+          ".git",
+          "info",
+          "attributes"
+        ),
+        "Cargo.toml export-subst\n"
+      )
+      local_attributes_rejected = false
+      begin
+        lab002_stream_reviewed_source_archive!(
+          replacement_repository,
+          attribute_snapshot,
+          reviewed_commit,
+          %w[
+            Cargo.toml
+            Cargo.lock
+            Gemfile.lock
+            rust-toolchain.toml
+            crates
+          ]
+        )
+      rescue FastlaneCore::Interface::FastlaneError => error
+        local_attributes_rejected =
+          error.message.include?("does not match the exact Git blobs")
+      end
+      unless local_attributes_rejected
+        UI.user_error!(
+          "LAB-002 accepted repository-local archive attributes."
+        )
       end
     end
 
