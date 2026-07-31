@@ -132,7 +132,7 @@ struct InspectPrebuildOutput {
 #[serde(untagged)]
 enum CommandOutput {
     Prepare(PrepareOutput),
-    InspectPrebuild(InspectPrebuildOutput),
+    InspectPrebuild(Box<InspectPrebuildOutput>),
 }
 
 #[derive(Debug, Serialize)]
@@ -262,6 +262,7 @@ fn execute(
                 return Err("inspect-prebuild request schema is invalid".into());
             }
             inspect_prebuild_directory(prebuild_directory, request)
+                .map(Box::new)
                 .map(CommandOutput::InspectPrebuild)
         }
         _ => Err(
