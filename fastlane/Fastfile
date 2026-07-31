@@ -75,6 +75,14 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6b656ed7ac688a88efce668cb616a1fe88f9ee92",
       }.freeze,
     ].freeze,
+    "4c3dfcd4736aed11419a72bd5600691a246980504dc004f6f3758e35c6063771" => [
+      {
+        "size" => 1_106_176,
+        "sha256" =>
+          "6d5bf2eaa235312b261391a9f8d9602cef13e1cc78d516052e2de86e7514d3f2",
+        "cdhash" => "68d75f071ab0f0ffc790afaa4f8ffd14ea8998c7",
+      }.freeze,
+    ].freeze,
   }.freeze,
 }.freeze
 DEMO_LAB_CRATES_IO_SOURCE =
@@ -2155,8 +2163,9 @@ def prepare_lab002_private_inputs!(
     verify_selected_xcode_toolchain!(xcode_toolchain)
     acknowledgement_reader, acknowledgement_writer = IO.pipe
     result_json = nil
-    stderr = ""
+    helper_stderr = ""
     status = nil
+    publication_state = nil
     Open3.popen3(
       sanitized_dynamic_loader_environment,
       binary,
@@ -2201,7 +2210,7 @@ def prepare_lab002_private_inputs!(
       acknowledgement_writer.close
       result_json =
         stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
-      stderr =
+      helper_stderr =
         error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
       status = wait_thread.value
     ensure
@@ -2209,12 +2218,13 @@ def prepare_lab002_private_inputs!(
     end
     if result_json&.bytesize.to_i >
        DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
-       stderr.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+       helper_stderr.to_s.bytesize >
+         DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
       UI.user_error!("LAB-002 private tool output exceeded its fixed limit.")
     end
     unless status.success?
       UI.user_error!(
-        "LAB-002 private input preparation failed: #{stderr.strip}"
+        "LAB-002 private input preparation failed: #{helper_stderr.to_s.strip}"
       )
     end
     unless publication_state && !result_json.to_s.empty?
@@ -2368,7 +2378,7 @@ def inspect_lab002_private_inputs!(
       required_mode: 0o700
     )
     result_json = nil
-    stderr = ""
+    helper_stderr = ""
     status = nil
     Open3.popen3(
       sanitized_dynamic_loader_environment,
@@ -2389,18 +2399,20 @@ def inspect_lab002_private_inputs!(
       stdin.close
       result_json =
         stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
-      stderr =
+      helper_stderr =
         error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
       status = wait_thread.value
     end
     if result_json&.bytesize.to_i >
        DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
-       stderr.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+       helper_stderr.to_s.bytesize >
+         DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
       UI.user_error!("LAB-002 private tool output exceeded its fixed limit.")
     end
     unless status.success?
       UI.user_error!(
-        "LAB-002 private prebuild inspection failed: #{stderr.strip}"
+        "LAB-002 private prebuild inspection failed: " \
+        "#{helper_stderr.to_s.strip}"
       )
     end
     result = JSON.parse(result_json)
@@ -5654,6 +5666,84 @@ platform :ios do
       UI.user_error!(
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
+    end
+    Dir.mktmpdir(
+      "orchardprobe-lab002-consumption-check-",
+      external_temporary_base
+    ) do |output_root|
+      File.chmod(0o700, output_root)
+      source_commit = git_command_output("rev-parse", "HEAD")
+      output_identity = private_directory_identity!(
+        output_root,
+        "LAB-002 consumption-check output root"
+      )
+      final_name =
+        "lab002-prebuild-" \
+        "#{DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION}-" \
+        "#{DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER}-#{source_commit}"
+      prepared = nil
+      with_locked_private_directory(
+        output_root,
+        output_identity,
+        "LAB-002 consumption-check output root"
+      ) do |output_handle|
+        prepared = with_lab002_publication_rollback!(
+          output_handle,
+          final_name
+        ) do |arm_rollback|
+          prepare_lab002_private_inputs!(
+            output_root: output_root,
+            output_handle: output_handle,
+            output_identity: output_identity,
+            source_commit: source_commit,
+            marketing_version:
+              DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
+            build_number: DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER,
+            app_identifier: "com.example.orchardprobe.demolab",
+            share_identifier: "com.example.orchardprobe.demolab.share",
+            app_group_identifier: "group.com.example.orchardprobe.demolab",
+            team_identifier: "ABCDE12345",
+            xcode_toolchain: xcode_toolchain
+          ) do |state|
+            arm_rollback.call(state)
+          end
+        end
+      end
+      prebuild_directory = prepared.fetch("prebuild_directory")
+      prebuild_identity = private_directory_identity!(
+        prebuild_directory,
+        "LAB-002 consumption-check prebuild directory"
+      )
+      inspected = nil
+      with_locked_private_directory(
+        prebuild_directory,
+        prebuild_identity,
+        "LAB-002 consumption-check prebuild directory"
+      ) do |prebuild_handle|
+        inspected = inspect_lab002_private_inputs!(
+          prebuild_directory: prebuild_directory,
+          prebuild_handle: prebuild_handle,
+          prebuild_identity: prebuild_identity,
+          source_commit: source_commit,
+          marketing_version:
+            DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
+          build_number: DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER,
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          app_group_identifier: "group.com.example.orchardprobe.demolab",
+          team_identifier: "ABCDE12345",
+          xcode_toolchain: xcode_toolchain
+        )
+      end
+      unless %w[
+        authorized_target_manifest_sha256
+        build_binding_sha256
+        target_identity_set_sha256
+      ].all? { |name| inspected.fetch(name) == prepared.fetch(name) }
+        UI.user_error!(
+          "LAB-002 closed prebuild consumption changed a prepared binding."
+        )
+      end
     end
     DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS.each do |weak_key|
       weak_key_rejected = false
