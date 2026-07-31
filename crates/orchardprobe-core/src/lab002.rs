@@ -2507,12 +2507,25 @@ fn parse_preupload_code_signature<R: Read + Seek>(
         hash_offset,
         code_slot_count,
     )?;
-    let identifier = code_signature_string(code_directory, identifier_offset, dynamic_data_start)?;
     let team_offset = usize::try_from(read_be_u32(code_directory, 48, "CodeDirectory")?)
         .map_err(|_| Lab002Error::InvalidMachO("CodeDirectory team offset overflows".into()))?;
-    let team_identifier = code_signature_string(code_directory, team_offset, dynamic_data_start)?;
-    validate_bundle_identifier("code_directory_identifier", &identifier)?;
-    validate_team_identifier("code_directory_team_identifier", &team_identifier)?;
+    let identifier = code_signature_string(code_directory, identifier_offset, dynamic_data_start)?;
+    let is_linker_signed_ad_hoc = version == 0x20400 && flags == 0x0002_0002;
+    let team_identifier = if is_linker_signed_ad_hoc {
+        if team_offset != 0 || slots.contains_key(&5) || slots.contains_key(&0x1_0000) {
+            return Err(Lab002Error::InvalidMachO(
+                "linker-signed CodeDirectory has unexpected identity slots".into(),
+            ));
+        }
+        validate_bundle_identifier("code_directory_identifier", &identifier)?;
+        String::new()
+    } else {
+        let team_identifier =
+            code_signature_string(code_directory, team_offset, dynamic_data_start)?;
+        validate_bundle_identifier("code_directory_identifier", &identifier)?;
+        validate_team_identifier("code_directory_team_identifier", &team_identifier)?;
+        team_identifier
+    };
 
     let entitlements = if let Some(entitlements) = slots.get(&5) {
         if special_slot_count < 5 {
@@ -4639,8 +4652,68 @@ mod tests {
         superblob
     }
 
+    fn synthetic_linker_signed_code_signature(covered_code: &[u8]) -> Vec<u8> {
+        let code_limit = u32::try_from(covered_code.len()).unwrap();
+        let identifier = b"DemoLab.debug.dylib\0";
+        let header_length = 88_usize;
+        let hash_offset = header_length + identifier.len();
+        let code_slot_count = covered_code.len().div_ceil(4096);
+        let mut code_directory = vec![0_u8; hash_offset + code_slot_count * 32];
+        code_directory[0..4].copy_from_slice(&0xfade_0c02_u32.to_be_bytes());
+        let code_directory_length = code_directory.len() as u32;
+        code_directory[4..8].copy_from_slice(&code_directory_length.to_be_bytes());
+        code_directory[8..12].copy_from_slice(&0x20400_u32.to_be_bytes());
+        code_directory[12..16].copy_from_slice(&0x0002_0002_u32.to_be_bytes());
+        code_directory[16..20].copy_from_slice(&(hash_offset as u32).to_be_bytes());
+        code_directory[20..24].copy_from_slice(&(header_length as u32).to_be_bytes());
+        code_directory[24..28].copy_from_slice(&0_u32.to_be_bytes());
+        code_directory[28..32]
+            .copy_from_slice(&u32::try_from(code_slot_count).unwrap().to_be_bytes());
+        code_directory[32..36].copy_from_slice(&code_limit.to_be_bytes());
+        code_directory[36] = 32;
+        code_directory[37] = 2;
+        code_directory[39] = 12;
+        code_directory[header_length..header_length + identifier.len()].copy_from_slice(identifier);
+        for (index, page) in covered_code.chunks(4096).enumerate() {
+            let start = hash_offset + index * 32;
+            code_directory[start..start + 32].copy_from_slice(&Sha256::digest(page));
+        }
+
+        let code_directory_offset = 20_usize;
+        let length = code_directory_offset + code_directory.len();
+        let mut superblob = Vec::with_capacity(length);
+        append_be_u32(&mut superblob, 0xfade_0cc0);
+        append_be_u32(&mut superblob, length as u32);
+        append_be_u32(&mut superblob, 1);
+        append_be_u32(&mut superblob, 0);
+        append_be_u32(&mut superblob, code_directory_offset as u32);
+        superblob.extend_from_slice(&code_directory);
+        superblob
+    }
+
     fn add_code_signature(thin: Vec<u8>) -> Vec<u8> {
         add_code_signature_profile(thin, true, false)
+    }
+
+    fn add_linker_signed_code_signature(mut thin: Vec<u8>) -> Vec<u8> {
+        let command_count = u32::from_le_bytes(thin[16..20].try_into().unwrap());
+        let command_bytes = u32::from_le_bytes(thin[20..24].try_into().unwrap());
+        let command_at = 32 + command_bytes as usize;
+        let signature_offset = 0x800_u32;
+        thin[16..20].copy_from_slice(&(command_count + 1).to_le_bytes());
+        thin[20..24].copy_from_slice(&(command_bytes + 16).to_le_bytes());
+        thin[command_at..command_at + 4].copy_from_slice(&0x1d_u32.to_le_bytes());
+        thin[command_at + 4..command_at + 8].copy_from_slice(&16_u32.to_le_bytes());
+        thin[command_at + 8..command_at + 12].copy_from_slice(&signature_offset.to_le_bytes());
+        let initial_signature =
+            synthetic_linker_signed_code_signature(&thin[..signature_offset as usize]);
+        thin[command_at + 12..command_at + 16]
+            .copy_from_slice(&(initial_signature.len() as u32).to_le_bytes());
+        let signature = synthetic_linker_signed_code_signature(&thin[..signature_offset as usize]);
+        assert_eq!(signature.len(), initial_signature.len());
+        thin[signature_offset as usize..signature_offset as usize + signature.len()]
+            .copy_from_slice(&signature);
+        thin
     }
 
     fn add_code_signature_profile(thin: Vec<u8>, include_cms: bool, ad_hoc: bool) -> Vec<u8> {
@@ -5201,6 +5274,40 @@ mod tests {
         assert!(!signing.has_cms);
         assert!(signing.cms_signature.is_empty());
         assert!(!signing.code_directory.is_empty());
+    }
+
+    #[test]
+    fn fixed_section_parser_accepts_only_exact_linker_signed_identity_omission() {
+        let bytes = add_linker_signed_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let report = parse_fixed_sections(&mut Cursor::new(bytes.clone())).unwrap();
+        let signing = report.slices[0].signing.as_ref().unwrap();
+        assert_eq!(signing.code_directory_identifier, "DemoLab.debug.dylib");
+        assert!(signing.code_directory_team_identifier.is_empty());
+        assert!(signing.application_identifier.is_none());
+        assert!(signing.developer_team_identifier.is_none());
+        assert!(signing.application_groups.is_none());
+        assert!(signing.is_ad_hoc);
+        assert!(!signing.has_cms);
+
+        let signature_offset = 0x800_usize;
+        let code_directory_offset = signature_offset + 20;
+        let mut invalid_identifier = bytes.clone();
+        invalid_identifier[code_directory_offset + 88 + 7] = b'/';
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(invalid_identifier)),
+            Err(Lab002Error::InvalidFieldGrammar {
+                field: "code_directory_identifier"
+            })
+        ));
+
+        let mut ordinary_ad_hoc = bytes;
+        ordinary_ad_hoc[code_directory_offset + 12..code_directory_offset + 16]
+            .copy_from_slice(&0x2_u32.to_be_bytes());
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(ordinary_ad_hoc)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("string offset")
+        ));
     }
 
     #[test]
