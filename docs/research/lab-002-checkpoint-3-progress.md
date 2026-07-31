@@ -41,14 +41,18 @@ preceding row is complete.
 | 3B.2.4 | Device-free closure tests | `local tests, Codex CR, and helper reproduction complete; CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
 The final 3B.2 helper was independently built twice from the read-only source
-snapshot at commit `d5ecbdc4e797d5746f2c5a3754b977772c5c4774`; both products were
+snapshot at commit `dc08c057115b6aa01c6eea5b73d5909ae392ae21`; both products were
 byte-identical, and a third build passed after the mandatory allowlist path was
 restored. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`ac0cbd782f5d808f6895f6a94c74b3a3b8d499fe1cea7656f42e0228af073815`,
+`f0ad59f622dced9dabdfa0fefe53a0bae0a7855d821e6e03e25824e66bab44d5`,
 size `1884192`, SHA-256
-`63921c3919080251fdf984c43da57973cf3034564cc94ca543640bde953bd27e`,
-and CDHash `6c74c5e09aed91f7243e5b38580f7081a639e088`.
+`681f7b4c0bd4395f30c2cee573e21ae274e76d8f60f5ac180192f455bad96142`,
+and CDHash `9fa36c42e5090946f22793bdc32d846cbb34ab49`. The final review also
+closed the Xcode linker-signed Simulator exception to the exact ad-hoc
+CodeDirectory profile: the Team identifier is absent, the special-slot count
+is zero, and the SuperBlob contains only the primary CodeDirectory. That
+exception cannot satisfy the signed Archive/IPA oracle.
 
 ## Fixed safety boundaries
 
