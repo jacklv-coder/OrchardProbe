@@ -187,6 +187,11 @@ Held-path 身份复核。
 操作员不需要手工复制 Archive、解包 IPA 或上传 Oracle。Fastlane 通过固定继承
 Descriptor 传入已持有的 Archive 与 Run Directory；Helper 从已持有 Staging Root
 打开导出的 IPA，验证精确且有界的 ZIP 清单，再复制到 Owner-only 私有工作区中测量。
+Helper 会在测量前后递归枚举已持有的 Archive App，只接受三个 Allowlist
+可执行路径，并保留枚举过程中取得、参与测量的六个 Executable/Info.plist
+Descriptor；最终复核要求其身份与完整摘要均未变化，还会从已持有 App Root
+重新打开每个 Allowlist 路径，要求仍指向同一身份和摘要。所有 IPA Entry
+读取完成后还会重新 Hash 整个已持有 IPA，并要求与解析前记录的摘要完全一致。
 
 对于固定的主 App、Framework 与 Share Extension 三个 Role，Helper 要求 Archive 与
 IPA 的精确可执行路径以及每个 Mach-O Slice 在 Architecture、CPU Subtype、UUID、

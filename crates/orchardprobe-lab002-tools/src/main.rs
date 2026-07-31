@@ -3,8 +3,9 @@
 //! This binary is invoked by the hardened Fastlane flow. It has no device,
 //! upload, installation, decryption, or arbitrary-target operation.
 
+use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Cursor, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -50,6 +51,9 @@ const MAX_CMS_SIGNATURE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_CERTIFICATE_BUNDLE_BYTES: usize = 512 * 1024;
 const MAX_CERTIFICATE_PEM_BYTES: usize = 64 * 1024;
 const MAX_EMBEDDED_CERTIFICATES: usize = 8;
+const MAX_ARCHIVE_APP_ENTRIES: usize = 4096;
+const MAX_ARCHIVE_APP_DEPTH: usize = 16;
+const MAX_ARCHIVE_RELATIVE_PATH_BYTES: usize = 1024;
 const SYSTEM_OPENSSL_PATH: &str = "/usr/bin/openssl";
 const SYSTEM_SECURITY_PATH: &str = "/usr/bin/security";
 const SYSTEM_ROOT_KEYCHAIN_PATH: &str = "/System/Library/Keychains/SystemRootCertificates.keychain";
@@ -787,89 +791,83 @@ fn create_oracle(
         inspect_prebuild_directory(prebuild_directory, oracle_inspect_request(&request))?;
     verify_private_output_root_path(&run_directory)?;
 
-    let archive_paths: [&[&str]; 3] = [
-        &[
-            "DemoLab.xcarchive",
-            "Products",
+    let archive_app = open_directory_beneath(
+        &open_directory_beneath(
+            &open_directory_beneath(
+                &open_directory_beneath(
+                    &run_directory.directory,
+                    "DemoLab.xcarchive",
+                    "Archive product",
+                )?,
+                "Products",
+                "Archive product",
+            )?,
             "Applications",
-            "DemoLab.app",
-            "DemoLab",
-        ],
-        &[
-            "DemoLab.xcarchive",
-            "Products",
-            "Applications",
-            "DemoLab.app",
-            "Frameworks",
-            "DemoFramework.framework",
-            "DemoFramework",
-        ],
-        &[
-            "DemoLab.xcarchive",
-            "Products",
-            "Applications",
-            "DemoLab.app",
-            "PlugIns",
-            "DemoShareExtension.appex",
-            "DemoShareExtension",
-        ],
+            "Archive product",
+        )?,
+        "DemoLab.app",
+        "Archive product",
+    )?;
+    let archive_executable_paths = [
+        "DemoLab",
+        "Frameworks/DemoFramework.framework/DemoFramework",
+        "PlugIns/DemoShareExtension.appex/DemoShareExtension",
     ];
-    let archive_plist_paths: [&[&str]; 3] = [
-        &[
-            "DemoLab.xcarchive",
-            "Products",
-            "Applications",
-            "DemoLab.app",
-            "Info.plist",
-        ],
-        &[
-            "DemoLab.xcarchive",
-            "Products",
-            "Applications",
-            "DemoLab.app",
-            "Frameworks",
-            "DemoFramework.framework",
-            "Info.plist",
-        ],
-        &[
-            "DemoLab.xcarchive",
-            "Products",
-            "Applications",
-            "DemoLab.app",
-            "PlugIns",
-            "DemoShareExtension.appex",
-            "Info.plist",
-        ],
+    let archive_plist_relative_paths = [
+        "Info.plist",
+        "Frameworks/DemoFramework.framework/Info.plist",
+        "PlugIns/DemoShareExtension.appex/Info.plist",
     ];
-    let archive_reports = archive_paths
+    let retained_archive_paths = archive_executable_paths
         .iter()
-        .map(|components| {
-            let mut file = open_regular_beneath(
-                &run_directory.directory,
-                components,
-                MAX_EXECUTABLE_BYTES,
-                "Archive executable",
-            )?;
-            let report =
-                parse_stable_fixed_sections(&mut file, MAX_EXECUTABLE_BYTES, "Archive executable")?;
+        .chain(archive_plist_relative_paths.iter())
+        .copied()
+        .collect::<Vec<_>>();
+    let mut archive_snapshot = archive_app_snapshot(&archive_app, &retained_archive_paths)?;
+    let initial_archive_executables = archive_snapshot.executables;
+    if !same_paths_ignoring_order(
+        initial_archive_executables
+            .iter()
+            .map(String::as_str)
+            .collect(),
+        &archive_executable_paths,
+    ) {
+        return Err("Archive executable inventory is not the exact three roles".into());
+    }
+    let mut archive_measurements = Vec::with_capacity(retained_archive_paths.len());
+    let archive_reports = archive_executable_paths
+        .iter()
+        .map(|relative_path| {
+            let file = archive_snapshot
+                .retained_files
+                .remove(*relative_path)
+                .ok_or_else(|| {
+                    format!("Archive inventory is missing fixed executable {relative_path}")
+                })?;
+            let (report, measurement) = measure_archive_executable(file, relative_path)?;
+            archive_measurements.push(measurement);
             cryptographically_verify_report(report, "Archive")
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let archive_identities = archive_plist_paths
+    let archive_identities = archive_plist_relative_paths
         .iter()
-        .map(|components| {
-            let mut file = open_regular_beneath(
-                &run_directory.directory,
-                components,
-                MAX_INFO_PLIST_BYTES,
-                "Archive Info.plist",
-            )?;
-            let bytes =
-                read_stable_file_bytes(&mut file, MAX_INFO_PLIST_BYTES, "Archive Info.plist")?;
+        .map(|relative_path| {
+            let file = archive_snapshot
+                .retained_files
+                .remove(*relative_path)
+                .ok_or_else(|| {
+                    format!("Archive inventory is missing fixed Info.plist {relative_path}")
+                })?;
+            let (bytes, measurement) =
+                measure_archive_file(file, MAX_INFO_PLIST_BYTES, relative_path)?;
+            archive_measurements.push(measurement);
             parse_info_plist(&bytes)
                 .map_err(|error| format!("Archive Info.plist identity is invalid: {error}"))
         })
         .collect::<Result<Vec<_>, String>>()?;
+    if !archive_snapshot.retained_files.is_empty() {
+        return Err("Archive retained-file inventory was not consumed exactly once".into());
+    }
 
     let ipa_name = format!("DemoLab-{}.ipa", request.build_number);
     let mut ipa_file = open_regular_beneath(
@@ -977,7 +975,29 @@ fn create_oracle(
     if confirmed_inventory != inventory {
         return Err("exported IPA inventory changed during oracle generation".into());
     }
+    verify_stable_file_digest(
+        &mut ipa_file,
+        &ipa_identity,
+        MAX_IPA_BYTES,
+        "exported IPA",
+        &ipa_sha256,
+    )?;
     verify_stable_file(&ipa_file, &ipa_identity, "exported IPA")?;
+    for measurement in &mut archive_measurements {
+        measurement.verify_current_path(&archive_app)?;
+    }
+    let confirmed_archive_executables = archive_executable_inventory(&archive_app)?;
+    if confirmed_archive_executables != initial_archive_executables
+        || !same_paths_ignoring_order(
+            confirmed_archive_executables
+                .iter()
+                .map(String::as_str)
+                .collect(),
+            &archive_executable_paths,
+        )
+    {
+        return Err("Archive executable inventory changed during oracle generation".into());
+    }
 
     let mut roles = Vec::with_capacity(LabRole::ALL.len());
     for (index, role) in LabRole::ALL.into_iter().enumerate() {
@@ -1076,6 +1096,216 @@ fn create_oracle(
         ipa_size: ipa_identity.size,
         ipa_sha256,
     })
+}
+
+#[derive(Debug)]
+struct ArchiveAppSnapshot {
+    executables: Vec<String>,
+    retained_files: BTreeMap<String, File>,
+}
+
+fn archive_app_snapshot(
+    app_directory: &File,
+    retained_paths: &[&str],
+) -> Result<ArchiveAppSnapshot, String> {
+    fn walk(
+        directory: &File,
+        prefix: &str,
+        depth: usize,
+        entry_count: &mut usize,
+        executables: &mut Vec<String>,
+        retained_paths: &[&str],
+        retained_files: &mut BTreeMap<String, File>,
+    ) -> Result<(), String> {
+        if depth > MAX_ARCHIVE_APP_DEPTH {
+            return Err("Archive app directory depth exceeds its fixed limit".into());
+        }
+        let entries = rustix::fs::Dir::read_from(directory)
+            .map_err(|error| format!("could not open Archive app directory stream: {error}"))?;
+        for entry in entries {
+            let entry =
+                entry.map_err(|error| format!("could not enumerate Archive app: {error}"))?;
+            let name = entry.file_name().to_bytes();
+            if matches!(name, b"." | b"..") {
+                continue;
+            }
+            *entry_count = entry_count
+                .checked_add(1)
+                .ok_or_else(|| "Archive app entry count overflowed".to_owned())?;
+            if *entry_count > MAX_ARCHIVE_APP_ENTRIES {
+                return Err("Archive app entry count exceeds its fixed limit".into());
+            }
+            let name = std::str::from_utf8(name)
+                .map_err(|_| "Archive app entry name is not valid UTF-8".to_owned())?;
+            if name.is_empty() || name.contains('/') {
+                return Err("Archive app contains an unsafe entry name".into());
+            }
+            let relative = if prefix.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            if relative.len() > MAX_ARCHIVE_RELATIVE_PATH_BYTES {
+                return Err("Archive app relative path exceeds its fixed limit".into());
+            }
+            let stat = rustix::fs::statat(directory, name, rustix::fs::AtFlags::SYMLINK_NOFOLLOW)
+                .map_err(|error| {
+                format!("could not inspect Archive app entry {relative}: {error}")
+            })?;
+            match rustix::fs::FileType::from_raw_mode(stat.st_mode) {
+                rustix::fs::FileType::Directory => {
+                    let child = open_directory_beneath(directory, name, "Archive app")?;
+                    walk(
+                        &child,
+                        &relative,
+                        depth + 1,
+                        entry_count,
+                        executables,
+                        retained_paths,
+                        retained_files,
+                    )?;
+                }
+                rustix::fs::FileType::RegularFile => {
+                    let descriptor = rustix::fs::openat(
+                        directory,
+                        name,
+                        rustix::fs::OFlags::RDONLY
+                            | rustix::fs::OFlags::NONBLOCK
+                            | rustix::fs::OFlags::NOFOLLOW
+                            | rustix::fs::OFlags::CLOEXEC,
+                        rustix::fs::Mode::empty(),
+                    )
+                    .map_err(|error| {
+                        format!("could not open Archive app entry {relative}: {error}")
+                    })?;
+                    let file = File::from(descriptor);
+                    let metadata = file.metadata().map_err(|error| {
+                        format!("could not recheck Archive app entry {relative}: {error}")
+                    })?;
+                    if !metadata.is_file()
+                        || metadata.uid() != rustix::process::geteuid().as_raw()
+                        || metadata.mode() & 0o022 != 0
+                    {
+                        return Err(format!("Archive app entry {relative} has unsafe metadata"));
+                    }
+                    if metadata.mode() & 0o111 != 0 {
+                        executables.push(relative.clone());
+                    }
+                    if retained_paths.contains(&relative.as_str())
+                        && retained_files.insert(relative.clone(), file).is_some()
+                    {
+                        return Err(format!(
+                            "Archive app contains duplicate retained path {relative}"
+                        ));
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "Archive app entry {relative} is not a regular file or directory"
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    let mut entry_count = 0;
+    let mut executables = Vec::new();
+    let mut retained_files = BTreeMap::new();
+    walk(
+        app_directory,
+        "",
+        0,
+        &mut entry_count,
+        &mut executables,
+        retained_paths,
+        &mut retained_files,
+    )?;
+    executables.sort();
+    Ok(ArchiveAppSnapshot {
+        executables,
+        retained_files,
+    })
+}
+
+fn archive_executable_inventory(app_directory: &File) -> Result<Vec<String>, String> {
+    Ok(archive_app_snapshot(app_directory, &[])?.executables)
+}
+
+#[derive(Debug)]
+struct ArchiveFileMeasurement {
+    file: File,
+    identity: StableFileIdentity,
+    maximum_size: u64,
+    relative_path: String,
+    sha256: String,
+}
+
+impl ArchiveFileMeasurement {
+    fn verify_current_path(&mut self, app_directory: &File) -> Result<(), String> {
+        let label = format!("Archive file {}", self.relative_path);
+        verify_stable_file_digest(
+            &mut self.file,
+            &self.identity,
+            self.maximum_size,
+            &label,
+            &self.sha256,
+        )?;
+        let components = self.relative_path.split('/').collect::<Vec<_>>();
+        let mut current =
+            open_regular_beneath(app_directory, &components, self.maximum_size, &label)?;
+        let current_identity = stable_file_identity(&current, self.maximum_size, &label)?;
+        if current_identity != self.identity {
+            return Err(format!(
+                "{label} path no longer names the measured Archive file"
+            ));
+        }
+        verify_stable_file_digest(
+            &mut current,
+            &self.identity,
+            self.maximum_size,
+            &label,
+            &self.sha256,
+        )
+    }
+}
+
+fn measure_archive_file(
+    mut file: File,
+    maximum_size: u64,
+    relative_path: &str,
+) -> Result<(Vec<u8>, ArchiveFileMeasurement), String> {
+    let label = format!("Archive file {relative_path}");
+    let identity = stable_file_identity(&file, maximum_size, &label)?;
+    let bytes = read_stable_file_bytes(&mut file, maximum_size, &label)?;
+    let sha256 = lower_hex(&Sha256::digest(&bytes));
+    verify_stable_file_digest(&mut file, &identity, maximum_size, &label, &sha256)?;
+    Ok((
+        bytes,
+        ArchiveFileMeasurement {
+            file,
+            identity,
+            maximum_size,
+            relative_path: relative_path.into(),
+            sha256,
+        },
+    ))
+}
+
+fn measure_archive_executable(
+    file: File,
+    relative_path: &str,
+) -> Result<(FixedSectionReport, ArchiveFileMeasurement), String> {
+    let (bytes, measurement) = measure_archive_file(file, MAX_EXECUTABLE_BYTES, relative_path)?;
+    let mut cursor = Cursor::new(bytes.as_slice());
+    let report = parse_fixed_sections(&mut cursor)
+        .map_err(|error| format!("Archive executable {relative_path} is invalid: {error}"))?;
+    if report.file_size != bytes.len() as u64 {
+        return Err(format!(
+            "Archive executable {relative_path} parser size does not match its retained bytes"
+        ));
+    }
+    Ok((report, measurement))
 }
 
 fn same_paths_ignoring_order(mut observed: Vec<&str>, expected: &[&str]) -> bool {
@@ -1228,21 +1458,18 @@ fn hash_stable_file(
     Ok(lower_hex(&digest.finalize()))
 }
 
-fn parse_stable_fixed_sections(
+fn verify_stable_file_digest(
     file: &mut File,
+    expected_identity: &StableFileIdentity,
     maximum_size: u64,
     label: &str,
-) -> Result<FixedSectionReport, String> {
-    let identity = stable_file_identity(file, maximum_size, label)?;
-    file.seek(SeekFrom::Start(0))
-        .map_err(|error| format!("could not rewind {label}: {error}"))?;
-    let report =
-        parse_fixed_sections(file).map_err(|error| format!("{label} is invalid: {error}"))?;
-    if report.file_size != identity.size {
-        return Err(format!("{label} parser size does not match its held file"));
+    expected_sha256: &str,
+) -> Result<(), String> {
+    let observed = hash_stable_file(file, expected_identity, maximum_size, label)?;
+    if observed != expected_sha256 {
+        return Err(format!("{label} bytes changed during oracle generation"));
     }
-    verify_stable_file(file, &identity, label)?;
-    Ok(report)
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -3411,6 +3638,150 @@ mod tests {
             vec!["main", "framework", "unexpected"],
             &expected,
         ));
+    }
+
+    #[test]
+    fn archive_executable_inventory_rejects_unexpected_executables() {
+        let root = TempDir::new().unwrap();
+        let app = root.path().join("DemoLab.app");
+        let framework = app.join("Frameworks/DemoFramework.framework");
+        let extension = app.join("PlugIns/DemoShareExtension.appex");
+        fs::create_dir_all(&framework).unwrap();
+        fs::create_dir_all(&extension).unwrap();
+        let expected = [
+            (app.join("DemoLab"), b"main".as_slice()),
+            (framework.join("DemoFramework"), b"framework".as_slice()),
+            (
+                extension.join("DemoShareExtension"),
+                b"extension".as_slice(),
+            ),
+        ];
+        for (path, bytes) in &expected {
+            fs::write(path, bytes).unwrap();
+            fs::set_permissions(path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        }
+        fs::write(app.join("Info.plist"), b"metadata").unwrap();
+        let app_directory = File::open(&app).unwrap();
+        assert_eq!(
+            archive_executable_inventory(&app_directory).unwrap(),
+            vec![
+                "DemoLab",
+                "Frameworks/DemoFramework.framework/DemoFramework",
+                "PlugIns/DemoShareExtension.appex/DemoShareExtension",
+            ]
+        );
+
+        let unexpected = app.join("unexpected-tool");
+        fs::write(&unexpected, b"unexpected").unwrap();
+        fs::set_permissions(
+            &unexpected,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let observed = archive_executable_inventory(&app_directory).unwrap();
+        assert!(observed.iter().any(|path| path == "unexpected-tool"));
+        assert!(!same_paths_ignoring_order(
+            observed.iter().map(String::as_str).collect(),
+            &[
+                "DemoLab",
+                "Frameworks/DemoFramework.framework/DemoFramework",
+                "PlugIns/DemoShareExtension.appex/DemoShareExtension",
+            ],
+        ));
+    }
+
+    #[test]
+    fn archive_snapshot_binds_inventory_and_measurements_to_held_app() {
+        let root = TempDir::new().unwrap();
+        let app = root.path().join("DemoLab.app");
+        fs::create_dir(&app).unwrap();
+        let main = app.join("DemoLab");
+        fs::write(&main, b"reviewed-main").unwrap();
+        fs::set_permissions(&main, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+        fs::write(app.join("Info.plist"), b"reviewed-plist").unwrap();
+
+        let app_directory = File::open(&app).unwrap();
+        let mut snapshot =
+            archive_app_snapshot(&app_directory, &["DemoLab", "Info.plist"]).unwrap();
+        let moved = root.path().join("reviewed.app");
+        fs::rename(&app, &moved).unwrap();
+        fs::create_dir(&app).unwrap();
+        let replacement = app.join("replacement-tool");
+        fs::write(&replacement, b"replacement").unwrap();
+        fs::set_permissions(
+            &replacement,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.executables, vec!["DemoLab"]);
+        let mut retained_main = snapshot.retained_files.remove("DemoLab").unwrap();
+        let mut retained_bytes = Vec::new();
+        retained_main.read_to_end(&mut retained_bytes).unwrap();
+        assert_eq!(retained_bytes, b"reviewed-main");
+        assert_eq!(
+            archive_executable_inventory(&app_directory).unwrap(),
+            vec!["DemoLab"]
+        );
+        assert_eq!(
+            archive_executable_inventory(&File::open(&app).unwrap()).unwrap(),
+            vec!["replacement-tool"]
+        );
+    }
+
+    #[test]
+    fn archive_measurement_rejects_current_path_replacement() {
+        let root = TempDir::new().unwrap();
+        let app = root.path().join("DemoLab.app");
+        fs::create_dir(&app).unwrap();
+        let plist = app.join("Info.plist");
+        fs::write(&plist, b"reviewed-plist").unwrap();
+        let app_directory = File::open(&app).unwrap();
+        let mut snapshot = archive_app_snapshot(&app_directory, &["Info.plist"]).unwrap();
+        let retained = snapshot.retained_files.remove("Info.plist").unwrap();
+        let (_bytes, mut measurement) = measure_archive_file(retained, 64, "Info.plist").unwrap();
+
+        fs::rename(&plist, app.join("old-Info.plist")).unwrap();
+        fs::write(&plist, b"replaced-plist").unwrap();
+        let error = measurement.verify_current_path(&app_directory).unwrap_err();
+        assert!(error.contains("path no longer names"));
+    }
+
+    #[test]
+    fn stable_file_digest_detects_same_identity_content_drift() {
+        let root = TempDir::new().unwrap();
+        let path = root.path().join("DemoLab-3.ipa");
+        fs::write(&path, b"first").unwrap();
+        let mut file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&path)
+            .unwrap();
+        let initial_identity = stable_file_identity(&file, 64, "test IPA").unwrap();
+        let initial_digest =
+            hash_stable_file(&mut file, &initial_identity, 64, "test IPA").unwrap();
+        verify_stable_file_digest(
+            &mut file,
+            &initial_identity,
+            64,
+            "test IPA",
+            &initial_digest,
+        )
+        .unwrap();
+
+        file.seek(SeekFrom::Start(0)).unwrap();
+        file.write_all(b"other").unwrap();
+        file.sync_data().unwrap();
+        let changed_identity = stable_file_identity(&file, 64, "test IPA").unwrap();
+        let error = verify_stable_file_digest(
+            &mut file,
+            &changed_identity,
+            64,
+            "test IPA",
+            &initial_digest,
+        )
+        .unwrap_err();
+        assert!(error.contains("bytes changed during oracle generation"));
     }
 
     #[test]

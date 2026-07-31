@@ -238,7 +238,14 @@ or upload an oracle. Fastlane passes held Archive and run-directory
 descriptors on fixed inherited file descriptors, while the helper opens the
 exported IPA from the held staging root, validates the exact bounded ZIP
 inventory, and copies it into an owner-only private workspace before
-measurement.
+measurement. It recursively enumerates the held Archive app before and after
+measurement, accepts exactly the three allowlisted executable paths, and
+retains the six enumerated executable/Info.plist descriptors used for
+measurement. Their identities and complete digests must remain unchanged
+through the final recheck, and every current allowlisted path must reopen to
+that same retained identity and digest. The helper also rehashes the complete
+held IPA after every entry read and requires that digest to equal the one
+captured before parsing.
 
 For each of the fixed main-app, framework, and share-extension roles, the
 helper requires the exact Archive and IPA executable paths and every Mach-O
