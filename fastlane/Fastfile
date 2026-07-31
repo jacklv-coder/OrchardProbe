@@ -77,6 +77,8 @@ DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA =
   "orchardprobe.lab002.prebuild-result.v1"
 DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA =
   "orchardprobe.lab002.published-directory.v1"
+DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
+DEMO_LAB_LAB002_CDHASH_BYTES = 20
 DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
 DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES = %w[
@@ -126,6 +128,7 @@ module DemoLabDarwin
   extern "int openat(int, const char *, int, unsigned int)"
   extern "int renamex_np(const char *, const char *, unsigned int)"
   extern "int unlinkat(int, const char *, int)"
+  extern "int csops(int, unsigned int, void *, size_t)"
 
   RENAME_EXCL = 0x00000004
   RENAME_NOFOLLOW_ANY = 0x00000010
@@ -1222,6 +1225,144 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to create the private Cargo build sandbox.")
 end
 
+def lab002_read_exact_at!(file, offset, length, label)
+  unless offset.is_a?(Integer) &&
+         length.is_a?(Integer) &&
+         offset >= 0 &&
+         length >= 0 &&
+         offset <= file.stat.size &&
+         length <= file.stat.size - offset
+    UI.user_error!("#{label} is outside the private helper.")
+  end
+  file.seek(offset, IO::SEEK_SET)
+  bytes = file.read(length)
+  unless bytes&.bytesize == length
+    UI.user_error!("#{label} is truncated in the private helper.")
+  end
+  bytes
+end
+
+def lab002_private_tool_cdhash!(file)
+  header = lab002_read_exact_at!(file, 0, 32, "Mach-O header")
+  fields = header.unpack("V8")
+  unless fields.fetch(0) == 0xfeedfacf
+    UI.user_error!("The private LAB-002 helper is not a thin 64-bit Mach-O.")
+  end
+  command_count = fields.fetch(4)
+  command_bytes = fields.fetch(5)
+  unless command_count.positive? &&
+         command_count <= 256 &&
+         command_bytes >= command_count * 8 &&
+         command_bytes <= 1024 * 1024
+    UI.user_error!("The private LAB-002 helper load commands are invalid.")
+  end
+  commands =
+    lab002_read_exact_at!(file, 32, command_bytes, "Mach-O load commands")
+  command_offset = 0
+  signature_range = nil
+  command_count.times do
+    if command_offset > commands.bytesize - 8
+      UI.user_error!("The private LAB-002 helper load commands are truncated.")
+    end
+    command, command_size =
+      commands.byteslice(command_offset, 8).unpack("V2")
+    unless command_size >= 8 &&
+           command_offset <= commands.bytesize - command_size
+      UI.user_error!("The private LAB-002 helper load command is invalid.")
+    end
+    if command == 0x1d
+      unless command_size == 16 && signature_range.nil?
+        UI.user_error!("The private LAB-002 helper signature command is invalid.")
+      end
+      _, _, data_offset, data_size =
+        commands.byteslice(command_offset, 16).unpack("V4")
+      signature_range = [data_offset, data_size]
+    end
+    command_offset += command_size
+  end
+  unless command_offset == commands.bytesize && signature_range
+    UI.user_error!("The private LAB-002 helper signature is missing.")
+  end
+
+  signature = lab002_read_exact_at!(
+    file,
+    signature_range.fetch(0),
+    signature_range.fetch(1),
+    "Mach-O code signature"
+  )
+  unless signature.bytesize >= 12
+    UI.user_error!("The private LAB-002 helper code signature is truncated.")
+  end
+  magic, signature_length, blob_count =
+    signature.byteslice(0, 12).unpack("N3")
+  unless magic == 0xfade0cc0 &&
+         signature_length >= 12 &&
+         signature_length <= signature.bytesize &&
+         blob_count.positive? &&
+         blob_count <= 32 &&
+         12 + blob_count * 8 <= signature_length
+    UI.user_error!("The private LAB-002 helper superblob is invalid.")
+  end
+
+  cdhashes = []
+  blob_count.times do |index|
+    entry_offset = 12 + index * 8
+    _, blob_offset =
+      signature.byteslice(entry_offset, 8).unpack("N2")
+    next if blob_offset > signature_length - 8
+
+    blob_magic, blob_length =
+      signature.byteslice(blob_offset, 8).unpack("N2")
+    next unless blob_magic == 0xfade0c02 &&
+                blob_length >= 40 &&
+                blob_offset <= signature_length - blob_length
+
+    code_directory = signature.byteslice(blob_offset, blob_length)
+    hash_size = code_directory.getbyte(36)
+    hash_type = code_directory.getbyte(37)
+    next unless hash_size == 32 && hash_type == 2
+
+    cdhashes << Digest::SHA256.digest(code_directory)
+      .byteslice(0, DEMO_LAB_LAB002_CDHASH_BYTES)
+      .unpack1("H*")
+  end
+  unless cdhashes.length == 1
+    UI.user_error!(
+      "The private LAB-002 helper must have one SHA-256 CodeDirectory."
+    )
+  end
+  cdhashes.fetch(0)
+ensure
+  file.rewind if file
+end
+
+def lab002_private_tool_identity!(binary)
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(binary, flags) do |file|
+    opened = file.stat
+    linked = File.lstat(binary)
+    unless opened.file? &&
+           opened.uid == Process.uid &&
+           (opened.mode & 0o777) == 0o500 &&
+           !linked.symlink? &&
+           [linked.dev, linked.ino] == [opened.dev, opened.ino] &&
+           opened.size.positive? &&
+           opened.size <= 32 * 1024 * 1024
+      UI.user_error!("The private LAB-002 tool product is invalid.")
+    end
+    [
+      opened.dev,
+      opened.ino,
+      opened.size,
+      digest_open_file(file),
+      lab002_private_tool_cdhash!(file),
+    ]
+  end
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to inspect the private LAB-002 tool safely.")
+end
+
 def build_lab002_private_tool(source_commit)
   workspace = nil
   vendor_workspace = nil
@@ -1323,13 +1464,7 @@ def build_lab002_private_tool(source_commit)
     UI.user_error!("The private LAB-002 tool product is invalid.")
   end
   File.chmod(0o500, binary)
-  locked_stat = File.stat(binary)
-  identity = [
-    locked_stat.dev,
-    locked_stat.ino,
-    locked_stat.size,
-    Digest::SHA256.file(binary).hexdigest,
-  ]
+  identity = lab002_private_tool_identity!(binary)
   [binary, workspace, identity, gemfile_lock_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   FileUtils.rm_rf(workspace) if workspace
@@ -1349,22 +1484,85 @@ end
 
 def verify_lab002_private_tool!(binary, workspace, identity)
   resolved = File.realpath(binary)
-  stat = File.stat(resolved)
   unless resolved.start_with?("#{File.realpath(workspace)}#{File::SEPARATOR}") &&
-         stat.file? &&
-         stat.uid == Process.uid &&
-         (stat.mode & 0o777) == 0o500 &&
-         [
-           stat.dev,
-           stat.ino,
-           stat.size,
-           Digest::SHA256.file(resolved).hexdigest,
-         ] == identity
+         lab002_private_tool_identity!(resolved) == identity
     UI.user_error!("The private LAB-002 tool changed during use.")
   end
   true
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   UI.user_error!("Unable to revalidate the private LAB-002 tool safely.")
+end
+
+def verify_running_lab002_private_tool!(pid, identity)
+  unless pid.is_a?(Integer) &&
+         pid.positive? &&
+         identity.is_a?(Array) &&
+         identity.length == 5 &&
+         identity.fetch(0).is_a?(Integer) &&
+         identity.fetch(1).is_a?(Integer) &&
+         /\A[0-9a-f]{40}\z/.match?(identity.fetch(4).to_s)
+    UI.user_error!("The running LAB-002 helper identity is invalid.")
+  end
+  lsof = pinned_executable("/usr/sbin/lsof", "System lsof")
+  stdout, stderr, status = Open3.capture3(
+    sanitized_dynamic_loader_environment,
+    lsof.fetch("path"),
+    "-a",
+    "-p",
+    pid.to_s,
+    "-d",
+    "txt",
+    "-F",
+    "ftDi",
+    unsetenv_others: true
+  )
+  unless status.success? && stderr.empty?
+    UI.user_error!("Unable to inspect the running LAB-002 helper image.")
+  end
+
+  records = []
+  current = nil
+  stdout.each_line do |line|
+    line = line.chomp
+    case line.byteslice(0, 1)
+    when "f"
+      records << current if current
+      current = {}
+    when "t"
+      current["type"] = line.byteslice(1..) if current
+    when "D"
+      current["device"] = Integer(line.byteslice(1..), 0) if current
+    when "i"
+      current["inode"] = Integer(line.byteslice(1..), 10) if current
+    end
+  rescue ArgumentError
+    UI.user_error!("The running LAB-002 helper image record is invalid.")
+  end
+  records << current if current
+  matching_images = records.select do |record|
+    record["type"] == "REG" &&
+      record["device"] == identity.fetch(0) &&
+      record["inode"] == identity.fetch(1)
+  end
+
+  running_cdhash = "\0".b * DEMO_LAB_LAB002_CDHASH_BYTES
+  csops_result = DemoLabDarwin.csops(
+    pid,
+    DEMO_LAB_LAB002_CS_OPS_CDHASH,
+    running_cdhash,
+    running_cdhash.bytesize
+  )
+  unless csops_result.zero? &&
+         matching_images.length == 1 &&
+         running_cdhash.unpack1("H*") == identity.fetch(4) &&
+         pinned_executable("/usr/sbin/lsof", "System lsof") == lsof
+    UI.user_error!(
+      "The running LAB-002 helper does not match the verified image."
+    )
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ESRCH
+  UI.user_error!("Unable to bind the running LAB-002 helper safely.")
 end
 
 def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
@@ -1509,6 +1707,7 @@ def prepare_lab002_private_inputs!(
       close_others: true
     ) do |stdin, stdout, error_stream, wait_thread|
       acknowledgement_reader.close
+      verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
       stdin.write(JSON.generate(request))
       stdin.close
       identity_line = stdout.gets&.chomp
@@ -1526,6 +1725,7 @@ def prepare_lab002_private_inputs!(
                             }
                           end
       if publication_state
+        verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
         yield(publication_state) if block_given?
         acknowledgement_writer.write("A")
       else
@@ -4699,6 +4899,131 @@ platform :ios do
         UI.user_error!(
           "LAB-002 interrupt rollback did not clean and propagate."
         )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-running-helper-check-",
+      external_temporary_base
+    ) do |helper_workspace|
+      File.chmod(0o700, helper_workspace)
+      blocking_source = File.join(helper_workspace, "blocking.c")
+      replacement_source = File.join(helper_workspace, "replacement.c")
+      helper_path = File.join(helper_workspace, "helper")
+      replacement_path = File.join(helper_workspace, "replacement-helper")
+      File.write(
+        blocking_source,
+        "#include <unistd.h>\n" \
+        "int main(void) { char value; " \
+        "return read(0, &value, 1) == 1 ? 0 : 1; }\n"
+      )
+      File.write(
+        replacement_source,
+        "#include <unistd.h>\n" \
+        "int main(void) { char value; " \
+        "return read(0, &value, 1) == 1 ? 0 : 2; }\n"
+      )
+      clang_path = command_output("/usr/bin/xcrun", "--find", "clang")
+      clang = pinned_executable(
+        clang_path,
+        "Selected Xcode clang",
+        required_root: File.dirname(File.dirname(File.dirname(clang_path)))
+      )
+      codesign = pinned_executable(
+        "/usr/bin/codesign",
+        "System codesign"
+      )
+      macos_sdk = command_output(
+        "/usr/bin/xcrun",
+        "--sdk",
+        "macosx",
+        "--show-sdk-path"
+      )
+      command_output(
+        clang.fetch("path"),
+        "-isysroot",
+        macos_sdk,
+        blocking_source,
+        "-o",
+        helper_path
+      )
+      command_output(
+        codesign.fetch("path"),
+        "--force",
+        "--sign",
+        "-",
+        "--timestamp=none",
+        helper_path
+      )
+      unless pinned_executable(
+        "/usr/bin/codesign",
+        "System codesign"
+      ) == codesign
+        UI.user_error!("System codesign changed during the regression.")
+      end
+      File.chmod(0o500, helper_path)
+      helper_identity = lab002_private_tool_identity!(helper_path)
+      command_output(
+        clang.fetch("path"),
+        "-isysroot",
+        macos_sdk,
+        replacement_source,
+        "-o",
+        replacement_path
+      )
+      command_output(
+        codesign.fetch("path"),
+        "--force",
+        "--sign",
+        "-",
+        "--timestamp=none",
+        replacement_path
+      )
+      unless pinned_executable(
+        "/usr/bin/codesign",
+        "System codesign"
+      ) == codesign
+        UI.user_error!("System codesign changed during the regression.")
+      end
+      File.chmod(0o500, replacement_path)
+      replacement_identity =
+        lab002_private_tool_identity!(replacement_path)
+
+      Open3.popen3(
+        sanitized_dynamic_loader_environment,
+        replacement_path,
+        close_others: true
+      ) do |stdin, stdout, stderr, wait_thread|
+        replacement_rejected = false
+        begin
+          verify_running_lab002_private_tool!(
+            wait_thread.pid,
+            replacement_identity
+          )
+          begin
+            verify_running_lab002_private_tool!(
+              wait_thread.pid,
+              helper_identity
+            )
+          rescue FastlaneCore::Interface::FastlaneError
+            replacement_rejected = true
+          end
+          stdin.write("x")
+          stdin.close
+          unless wait_thread.value.success? &&
+                 replacement_rejected &&
+                 stdout.read.empty? &&
+                 stderr.read.empty?
+            UI.user_error!(
+              "LAB-002 running helper identity regression failed."
+            )
+          end
+        ensure
+          unless wait_thread.join(0)
+            Process.kill("TERM", wait_thread.pid)
+            wait_thread.join
+          end
+        end
       end
     end
 

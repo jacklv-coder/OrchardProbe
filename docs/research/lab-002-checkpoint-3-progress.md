@@ -92,7 +92,13 @@ result or root revalidation fails. Before writing any private bytes, the helper
 reports the unique staging name and its device/inode identity in a flushed
 non-secret first-line record. Fastlane arms rollback from that record before
 acknowledging the helper over a dedicated inherited pipe; the helper cannot
-write private bytes until that acknowledgement arrives. Fastlane then removes
+write private bytes until that acknowledgement arrives. Before sending the
+request and again before that acknowledgement, Fastlane binds the running PID
+to the verified Helper: system `lsof` must report the expected executable
+device/inode, and Darwin `csops` must report the SHA-256 CodeDirectory CDHash
+parsed from the held, fully hashed Mach-O. A pathname replacement therefore
+cannot impersonate the reviewed Helper by restoring the original path.
+Fastlane then removes
 the identity-matching staging or final entry on any later failure, including an
 interrupted helper, malformed result, or operator `Ctrl-C`; an `Interrupt`
 continues to propagate after rollback. Before reporting success, the helper

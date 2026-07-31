@@ -73,7 +73,11 @@ Result 或输出根复核失败，它会相对该 Descriptor 删除本次发布�
 Helper 会在写入任何私有字节前，通过已 Flush 的非秘密首行记录返回唯一 Staging
 名称及其 Device/Inode 身份。Fastlane 会在检查进程状态或解析结果 JSON 前据此
 启用 Rollback，再通过专用继承 Pipe 向 Helper 确认；Helper 收到确认前不能写入
-私有字节。此后 Helper 中断、结果畸形或操作员按 `Ctrl-C` 都会清理身份匹配的
+私有字节。Fastlane 在发送请求前及确认 Rollback 前还会把运行中 PID 绑定到已验证
+Helper：系统 `lsof` 必须返回预期可执行映像的 Device/Inode，Darwin `csops`
+必须返回从完整 Hash 的 Mach-O CodeDirectory 解析出的 SHA-256 CDHash。因此即使
+路径被替换后恢复，也无法冒充受评审 Helper。此后 Helper 中断、结果畸形或操作员
+按 `Ctrl-C` 都会清理身份匹配的
 Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper 报告成功前还会
 相对 Parent Descriptor 重新打开最终入口，要求其 Device/Inode 仍等于 Staging
 身份；Fastlane 解析 Helper Result 后也会从所持输出根 Descriptor 独立重开最终
