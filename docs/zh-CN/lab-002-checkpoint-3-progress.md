@@ -50,10 +50,11 @@
 目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
 会拒绝尚未成为受评审 `origin/main` 祖先的干净本地 Commit，并在生成前再次核对
 同一 Source。Helper 只从该精确 40-hex Commit 的只读 Git Archive 快照构建；
-快照位于独立私有 Workspace，不读取可变 Worktree，并在构建后重新 Hash 完整源码
-树。Build Binding 记录的 `gemfile_lock_sha256` 也只从同一认证快照派生并随快照
-复核，Lane 不会 Hash 可变 Worktree 中的 `Gemfile.lock`。Helper 构建绝不读取
-`~/.cargo/registry/src` 中可变的已解包源码；
+Git Archive 的标准输出直接以无路径中间归档的 Pipe 交给 Extractor，且两个进程
+状态都必须成功。快照位于独立私有 Workspace，不读取可变 Worktree，并在构建后
+重新 Hash 完整源码树。Build Binding 记录的 `gemfile_lock_sha256` 也只从同一
+认证快照派生并随快照复核，Lane 不会 Hash 可变 Worktree 中的 `Gemfile.lock`。
+Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
 它按快照内 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
 归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
 Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让

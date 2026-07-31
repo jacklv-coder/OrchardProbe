@@ -1094,22 +1094,44 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
     "LAB-002 reviewed source workspace"
   )
   source_root = File.join(workspace, "reviewed-source")
-  archive = File.join(workspace, "reviewed-source.tar")
   Dir.mkdir(source_root, 0o700)
-  git_command_output(
-    "archive",
-    "--format=tar",
-    "--output=#{archive}",
-    source_commit,
-    "--",
+  snapshot_paths = [
     "Cargo.toml",
     "Cargo.lock",
     "Gemfile.lock",
     "rust-toolchain.toml",
-    "crates"
+    "crates",
+  ]
+  archive_environment = sanitized_dynamic_loader_environment(
+    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }
   )
-  command_output("/usr/bin/tar", "-xf", archive, "-C", source_root)
-  FileUtils.rm_f(archive)
+  archive_statuses = Open3.pipeline(
+    [
+      archive_environment,
+      "/usr/bin/git",
+      "archive",
+      "--format=tar",
+      source_commit,
+      "--",
+      *snapshot_paths,
+    ],
+    [
+      archive_environment,
+      "/usr/bin/tar",
+      "-xf",
+      "-",
+      "-C",
+      source_root,
+    ],
+    chdir: repository_root,
+    unsetenv_others: true
+  )
+  unless archive_statuses.length == 2 &&
+         archive_statuses.all?(&:success?)
+    UI.user_error!(
+      "Unable to stream the reviewed LAB-002 source snapshot safely."
+    )
+  end
 
   required = %w[
     Cargo.toml
@@ -1157,8 +1179,6 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
   [source_root, source_sha256, gemfile_lock_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to create the reviewed LAB-002 source snapshot safely.")
-ensure
-  FileUtils.rm_f(archive) if archive
 end
 
 def lab002_private_build_sandbox!(
@@ -4687,6 +4707,9 @@ platform :ios do
         "orchardprobe-lab002-reviewed-source-check-"
       )
     begin
+      legacy_archive_path =
+        File.join(source_snapshot_workspace, "reviewed-source.tar")
+      File.write(legacy_archive_path, "must remain untouched")
       snapshot_commit = git_command_output("rev-parse", "HEAD")
       snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
         lab002_reviewed_source_snapshot!(
@@ -4719,7 +4742,8 @@ platform :ios do
              snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
                snapshot_root,
                "LAB-002 reviewed source snapshot"
-             )
+             ) &&
+             File.binread(legacy_archive_path) == "must remain untouched"
         UI.user_error!(
           "LAB-002 reviewed source snapshot is not bound to its commit."
         )
