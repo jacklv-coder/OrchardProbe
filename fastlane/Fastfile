@@ -1025,6 +1025,66 @@ def lab002_remove_verified_vendor!(workspace)
   )
 end
 
+def lab002_reviewed_snapshot_file_sha256!(source_root, name)
+  unless /\A[A-Za-z0-9][A-Za-z0-9._-]*\z/.match?(name)
+    UI.user_error!("LAB-002 reviewed snapshot file name is invalid.")
+  end
+  source_root = File.realpath(source_root)
+  path = File.join(source_root, name)
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  file = File.open(path, flags)
+  before = file.stat
+  before_path = File.lstat(path)
+  digest = digest_open_file(file)
+  after = file.stat
+  after_path = File.lstat(path)
+  unless before.file? &&
+         before.uid == Process.uid &&
+         (before.mode & 0o777) == 0o400 &&
+         !before_path.symlink? &&
+         [
+           before.dev,
+           before.ino,
+           before.size,
+           before.mtime.to_f,
+         ] == [
+           before_path.dev,
+           before_path.ino,
+           before_path.size,
+           before_path.mtime.to_f,
+         ] &&
+         [
+           after.dev,
+           after.ino,
+           after.size,
+           after.mtime.to_f,
+         ] == [
+           before.dev,
+           before.ino,
+           before.size,
+           before.mtime.to_f,
+         ] &&
+         [
+           after_path.dev,
+           after_path.ino,
+           after_path.size,
+           after_path.mtime.to_f,
+         ] == [
+           after.dev,
+           after.ino,
+           after.size,
+           after.mtime.to_f,
+         ]
+    UI.user_error!("LAB-002 reviewed snapshot file changed while hashing.")
+  end
+  digest
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to hash the reviewed LAB-002 snapshot file safely.")
+ensure
+  file&.close unless file&.closed?
+end
+
 def lab002_reviewed_source_snapshot!(workspace, source_commit)
   unless /\A[0-9a-f]{40}\z/.match?(source_commit)
     UI.user_error!("LAB-002 reviewed source commit has an invalid format.")
@@ -1044,13 +1104,19 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
     "--",
     "Cargo.toml",
     "Cargo.lock",
+    "Gemfile.lock",
     "rust-toolchain.toml",
     "crates"
   )
   command_output("/usr/bin/tar", "-xf", archive, "-C", source_root)
   FileUtils.rm_f(archive)
 
-  required = %w[Cargo.toml Cargo.lock rust-toolchain.toml].map do |name|
+  required = %w[
+    Cargo.toml
+    Cargo.lock
+    Gemfile.lock
+    rust-toolchain.toml
+  ].map do |name|
     File.join(source_root, name)
   end
   unless required.all? { |path| File.file?(path) && !File.symlink?(path) }
@@ -1072,11 +1138,23 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
     end
   end
   directories.reverse_each { |path| File.chmod(0o500, path) }
+  gemfile_lock_sha256 = lab002_reviewed_snapshot_file_sha256!(
+    source_root,
+    "Gemfile.lock"
+  )
   source_sha256 = lab002_rust_toolchain_tree_sha256(
     source_root,
     "LAB-002 reviewed source snapshot"
   )
-  [source_root, source_sha256]
+  unless lab002_reviewed_snapshot_file_sha256!(
+    source_root,
+    "Gemfile.lock"
+  ) == gemfile_lock_sha256
+    UI.user_error!(
+      "The reviewed LAB-002 Gemfile.lock changed while snapshotting."
+    )
+  end
+  [source_root, source_sha256, gemfile_lock_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to create the reviewed LAB-002 source snapshot safely.")
 ensure
@@ -1133,7 +1211,7 @@ def build_lab002_private_tool(source_commit)
     external_temporary_directory("orchardprobe-lab002-vendor-")
   source_workspace =
     external_temporary_directory("orchardprobe-lab002-source-")
-  source_root, source_sha256 =
+  source_root, source_sha256, gemfile_lock_sha256 =
     lab002_reviewed_source_snapshot!(source_workspace, source_commit)
   toolchain_root, cargo, rustc, toolchain_sha256 =
     selected_lab002_rust_toolchain(source_root)
@@ -1232,7 +1310,7 @@ def build_lab002_private_tool(source_commit)
     locked_stat.size,
     Digest::SHA256.file(binary).hexdigest,
   ]
-  [binary, workspace, identity]
+  [binary, workspace, identity, gemfile_lock_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   FileUtils.rm_rf(workspace) if workspace
   UI.user_error!("Unable to build the private LAB-002 tool safely.")
@@ -1269,7 +1347,10 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   UI.user_error!("Unable to revalidate the private LAB-002 tool safely.")
 end
 
-def lab002_toolchain_record(xcode_toolchain)
+def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
+  unless /\A[0-9a-f]{64}\z/.match?(gemfile_lock_sha256)
+    UI.user_error!("Reviewed Gemfile.lock digest is invalid for LAB-002.")
+  end
   xcode_lines = xcode_toolchain.fetch("xcode_version").map(&:strip)
   xcode_version = xcode_lines[0]&.delete_prefix("Xcode ")
   xcode_build = xcode_lines[1]&.delete_prefix("Build version ")
@@ -1289,8 +1370,7 @@ def lab002_toolchain_record(xcode_toolchain)
     "xcodegen_architecture" => command_output("/usr/bin/uname", "-m"),
     "xcodegen_executable_sha256" => xcodegen_identity.fetch(4),
     "fastlane_version" => Fastlane::VERSION,
-    "gemfile_lock_sha256" =>
-      Digest::SHA256.file(File.join(repository_root, "Gemfile.lock")).hexdigest,
+    "gemfile_lock_sha256" => gemfile_lock_sha256,
   }.tap do
     current = File.stat(xcodegen_path)
     unless [
@@ -1328,7 +1408,6 @@ def prepare_lab002_private_inputs!(
   team_identifier:,
   xcode_toolchain:
 )
-  toolchain = lab002_toolchain_record(xcode_toolchain)
   present_application_identifier = lambda do |bundle_identifier|
     lab002_entitlement(
       "present",
@@ -1372,24 +1451,27 @@ def prepare_lab002_private_inputs!(
       "application_groups" => present_app_group,
     },
   ]
-  request = {
-    "schema" => DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA,
-    "source_commit" => source_commit,
-    "marketing_version" => marketing_version,
-    "build_number" => build_number,
-    "configuration" => "Release",
-    "observer_revision" => "lab002-observer-v1",
-    "toolchain" => toolchain,
-    "targets" => targets,
-  }
-
   binary = nil
   tool_workspace = nil
   acknowledgement_reader = nil
   acknowledgement_writer = nil
   begin
-    binary, tool_workspace, tool_identity =
+    binary, tool_workspace, tool_identity, gemfile_lock_sha256 =
       build_lab002_private_tool(source_commit)
+    toolchain = lab002_toolchain_record(
+      xcode_toolchain,
+      gemfile_lock_sha256: gemfile_lock_sha256
+    )
+    request = {
+      "schema" => DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA,
+      "source_commit" => source_commit,
+      "marketing_version" => marketing_version,
+      "build_number" => build_number,
+      "configuration" => "Release",
+      "observer_revision" => "lab002-observer-v1",
+      "toolchain" => toolchain,
+      "targets" => targets,
+    }
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     verify_selected_xcode_toolchain!(xcode_toolchain)
     acknowledgement_reader, acknowledgement_writer = IO.pipe
@@ -4557,20 +4639,34 @@ platform :ios do
       )
     begin
       snapshot_commit = git_command_output("rev-parse", "HEAD")
-      snapshot_root, snapshot_sha256 =
+      snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
         lab002_reviewed_source_snapshot!(
           source_snapshot_workspace,
           snapshot_commit
         )
-      expected_lock_blob = git_command_output(
+      expected_cargo_lock_blob = git_command_output(
         "rev-parse",
         "#{snapshot_commit}:Cargo.lock"
       )
-      observed_lock_blob = git_command_output(
+      observed_cargo_lock_blob = git_command_output(
         "hash-object",
         File.join(snapshot_root, "Cargo.lock")
       )
-      unless expected_lock_blob == observed_lock_blob &&
+      expected_gemfile_lock_blob = git_command_output(
+        "rev-parse",
+        "#{snapshot_commit}:Gemfile.lock"
+      )
+      observed_gemfile_lock_blob = git_command_output(
+        "hash-object",
+        File.join(snapshot_root, "Gemfile.lock")
+      )
+      unless expected_cargo_lock_blob == observed_cargo_lock_blob &&
+             expected_gemfile_lock_blob == observed_gemfile_lock_blob &&
+             gemfile_lock_sha256 ==
+               lab002_reviewed_snapshot_file_sha256!(
+                 snapshot_root,
+                 "Gemfile.lock"
+               ) &&
              snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
                snapshot_root,
                "LAB-002 reviewed source snapshot"

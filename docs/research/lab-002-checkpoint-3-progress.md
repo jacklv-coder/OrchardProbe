@@ -62,7 +62,9 @@ is not an ancestor of the reviewed `origin/main` ref and rechecks the same
 source immediately before generation. It compiles the helper from a read-only
 Git archive of that exact 40-hex commit in a separate private workspace, not
 from the mutable checkout, and rehashes the complete source snapshot after the
-build. The helper build never consumes the
+build. The `gemfile_lock_sha256` recorded in the Build Binding is derived from
+that same authenticated snapshot and is revalidated with it; the lane never
+hashes the mutable worktree `Gemfile.lock`. The helper build never consumes the
 mutable extracted tree under `~/.cargo/registry/src`: it authenticates every
 cached `.crate` archive against the checksum recorded in the snapshotted
 `Cargo.lock`, hashes the exact compressed bytes consumed by Gzip/Tar while
