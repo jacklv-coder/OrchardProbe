@@ -63,6 +63,20 @@ DEMO_LAB_TRUSTED_RUST_TOOLCHAINS = {
   "1.85.0-aarch64-apple-darwin" =>
     "8662d91ca4cefb026309b47a1b6e4a581273fd5021eb68aec8a0ee81659384ec",
 }.freeze
+DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
+  # Filled only with reproducible products independently reviewed for the
+  # exact source snapshot and Rust toolchain tuple.
+  "1.85.0-aarch64-apple-darwin" => {
+    "9e2752f7e64536a225fa2740692956c109a0b9364d4076521bf1ae7f03a17d68" => [
+      {
+        "size" => 945_872,
+        "sha256" =>
+          "8f5029c79b10a8f86d57838488b4dcdc7693fb987a3494f08807b59b102a95c8",
+        "cdhash" => "2e1cf35be8ef9eb8853967555102b1878a5e0c88",
+      }.freeze,
+    ].freeze,
+  }.freeze,
+}.freeze
 DEMO_LAB_CRATES_IO_SOURCE =
   "registry+https://github.com/rust-lang/crates.io-index"
 DEMO_LAB_MAX_CRATE_ARCHIVE_BYTES = 64 * 1024 * 1024
@@ -669,7 +683,7 @@ def selected_lab002_rust_toolchain(source_root = repository_root)
   end
   cargo = File.join(resolved, "bin", "cargo")
   rustc = File.join(resolved, "bin", "rustc")
-  [resolved, cargo, rustc, observed_sha256]
+  [toolchain_name, resolved, cargo, rustc, observed_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to resolve the pinned Rust toolchain safely.")
 end
@@ -1385,6 +1399,56 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to bind the reviewed LAB-002 source directory.")
 end
 
+def lab002_open_bound_directory!(
+  path,
+  label,
+  required_mode: nil
+)
+  flags = File::RDONLY
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  handle = File.open(path, flags)
+  held = handle.stat
+  linked = File.lstat(path)
+  unless held.directory? &&
+         held.uid == Process.uid &&
+         (held.mode & 0o022).zero? &&
+         (required_mode.nil? || (held.mode & 0o777) == required_mode) &&
+         !linked.symlink? &&
+         [linked.dev, linked.ino] == [held.dev, held.ino]
+    handle.close
+    UI.user_error!("#{label} root is unsafe.")
+  end
+  [handle, [held.dev, held.ino]]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  handle&.close
+  UI.user_error!("Unable to bind #{label.downcase}.")
+end
+
+def verify_held_lab002_directory!(
+  path,
+  handle,
+  identity,
+  label,
+  required_mode: nil
+)
+  held = handle.stat
+  linked = File.lstat(path)
+  unless identity.is_a?(Array) &&
+         identity.length == 2 &&
+         held.directory? &&
+         held.uid == Process.uid &&
+         (held.mode & 0o022).zero? &&
+         (required_mode.nil? || (held.mode & 0o777) == required_mode) &&
+         !linked.symlink? &&
+         [held.dev, held.ino] == identity &&
+         [linked.dev, linked.ino] == identity
+    UI.user_error!("#{label} directory changed.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to verify the held #{label.downcase}.")
+end
+
 def capture3_in_held_directory(environment, directory, *command)
   stdout_reader, stdout_writer = IO.pipe
   stderr_reader, stderr_writer = IO.pipe
@@ -1620,11 +1684,36 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to inspect the private LAB-002 tool safely.")
 end
 
+def verify_trusted_lab002_private_tool!(
+  identity,
+  source_sha256,
+  toolchain_name
+)
+  expected =
+    DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS.dig(
+      toolchain_name,
+      source_sha256
+    )
+  observed = {
+    "size" => identity.fetch(2),
+    "sha256" => identity.fetch(3),
+    "cdhash" => identity.fetch(4),
+  }
+  unless expected.is_a?(Array) && expected.include?(observed)
+    UI.user_error!(
+      "The private LAB-002 helper product is not independently reviewed."
+    )
+  end
+  true
+end
+
 def build_lab002_private_tool(source_commit)
   workspace = nil
   vendor_workspace = nil
   source_workspace = nil
   source_handle = nil
+  toolchain_handle = nil
+  vendor_handle = nil
   workspace = external_temporary_directory("orchardprobe-lab002-tool-")
   vendor_workspace =
     external_temporary_directory("orchardprobe-lab002-vendor-")
@@ -1640,12 +1729,23 @@ def build_lab002_private_tool(source_commit)
     source_handle,
     source_identity
   )
-  toolchain_root, cargo, rustc, toolchain_sha256 =
+  toolchain_name, toolchain_root, cargo, rustc, toolchain_sha256 =
     selected_lab002_rust_toolchain(source_root)
   vendor_root, vendor_sha256 =
     lab002_verified_vendor_source(
       vendor_workspace,
       lock_path: File.join(source_root, "Cargo.lock")
+    )
+  toolchain_handle, toolchain_identity =
+    lab002_open_bound_directory!(
+      toolchain_root,
+      "Pinned Rust toolchain"
+    )
+  vendor_handle, vendor_identity =
+    lab002_open_bound_directory!(
+      vendor_root,
+      "Verified Cargo dependency source",
+      required_mode: 0o500
     )
   cargo_home = File.join(workspace, "cargo-home")
   Dir.mkdir(cargo_home, 0o700)
@@ -1683,7 +1783,15 @@ def build_lab002_private_tool(source_commit)
     "PATH" =>
       "#{File.join(toolchain_root, 'bin')}:#{DEMO_LAB_PINNED_SYSTEM_PATH}",
     "RUSTC" => rustc,
+    "RUSTFLAGS" =>
+      [
+        "--remap-path-prefix=#{source_root}=/orchardprobe/reviewed-source",
+        "--remap-path-prefix=#{vendor_root}=/orchardprobe/verified-vendor",
+        "--remap-path-prefix=#{toolchain_root}=/orchardprobe/rust-toolchain",
+      ].join(" "),
+    "SOURCE_DATE_EPOCH" => "0",
     "TMPDIR" => workspace,
+    "ZERO_AR_DATE" => "1",
   }
   stdout, stderr, status = capture3_in_held_directory(
     environment,
@@ -1708,6 +1816,13 @@ def build_lab002_private_tool(source_commit)
   unless lab002_rust_toolchain_tree_sha256(vendor_root) == vendor_sha256
     UI.user_error!("The verified Cargo dependency source changed during the build.")
   end
+  verify_held_lab002_directory!(
+    vendor_root,
+    vendor_handle,
+    vendor_identity,
+    "Verified Cargo dependency source",
+    required_mode: 0o500
+  )
   verify_held_lab002_source_directory!(
     source_root,
     source_handle,
@@ -1728,6 +1843,12 @@ def build_lab002_private_tool(source_commit)
          toolchain_sha256
     UI.user_error!("The pinned Rust toolchain changed during the build.")
   end
+  verify_held_lab002_directory!(
+    toolchain_root,
+    toolchain_handle,
+    toolchain_identity,
+    "Pinned Rust toolchain"
+  )
   binary = File.join(workspace, "release", "oprobe-lab002")
   stat = File.lstat(binary)
   unless stat.file? &&
@@ -1740,6 +1861,11 @@ def build_lab002_private_tool(source_commit)
   end
   File.chmod(0o500, binary)
   identity = lab002_private_tool_identity!(binary)
+  verify_trusted_lab002_private_tool!(
+    identity,
+    source_sha256,
+    toolchain_name
+  )
   [binary, workspace, identity, gemfile_lock_sha256]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   FileUtils.rm_rf(workspace) if workspace
@@ -1749,6 +1875,8 @@ rescue StandardError
   raise
 ensure
   source_handle&.close unless source_handle&.closed?
+  toolchain_handle&.close unless toolchain_handle&.closed?
+  vendor_handle&.close unless vendor_handle&.closed?
   lab002_remove_verified_vendor!(vendor_workspace) if vendor_workspace
   if source_workspace
     lab002_remove_readonly_workspace!(
@@ -4844,6 +4972,39 @@ platform :ios do
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
+    trusted_toolchain_name, trusted_sources =
+      DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS.first
+    trusted_source_sha256, trusted_products = trusted_sources.first
+    trusted_product = trusted_products.first
+    trusted_identity = [
+      0,
+      0,
+      trusted_product.fetch("size"),
+      trusted_product.fetch("sha256"),
+      trusted_product.fetch("cdhash"),
+    ]
+    verify_trusted_lab002_private_tool!(
+      trusted_identity,
+      trusted_source_sha256,
+      trusted_toolchain_name
+    )
+    substituted_product_rejected = false
+    begin
+      substituted_identity = trusted_identity.dup
+      substituted_identity[3] = "0" * 64
+      verify_trusted_lab002_private_tool!(
+        substituted_identity,
+        trusted_source_sha256,
+        trusted_toolchain_name
+      )
+    rescue FastlaneCore::Interface::FastlaneError
+      substituted_product_rejected = true
+    end
+    unless substituted_product_rejected
+      UI.user_error!(
+        "A non-reviewed LAB-002 helper product passed the allowlist."
+      )
+    end
     DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS.each do |weak_key|
       weak_key_rejected = false
       begin

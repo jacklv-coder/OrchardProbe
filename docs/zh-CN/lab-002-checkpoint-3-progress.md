@@ -65,6 +65,16 @@ Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
 归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
 Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让
 全新隔离的 `CARGO_HOME` 只使用该目录；随后再次 Hash 所持归档与完整依赖树。
+Fastlane 还会持续持有已验证 Vendor Root 与 Rust Toolchain 的 Directory
+Descriptor，并要求构建期间对应 Path 身份始终不变。由于同 UID 恶意进程仍可能在
+前后检查之间短暂替换再恢复这些基于 Path 的输入，构建会固定 Archive 时间，并把
+Source、Vendor 与 Toolchain Root 重映射到固定名称以获得可复现产物。在生成任何
+Authorization Seed 之前，最终 Mach-O 必须精确命中按
+`Source Snapshot SHA-256 + Rust Toolchain` 独立评审的白名单 Tuple；该 Tuple
+同时固定文件大小、完整 SHA-256 与 SHA-256 CodeDirectory CDHash。因此瞬时替换
+Toolchain 或 Vendor 不能生成任意 Helper 后再靠恢复受评审目录隐藏，任何不同产物
+都会被拒绝。Helper Source 或受支持 Toolchain 改变时，必须重新评审并登记新的产物
+Tuple。
 构建结束后只为经过检查的清理恢复该临时 Source 的目录权限。Cargo、Build
 Script 与 Procedural Macro 使用私有临时目录中的空隔离 `HOME`，并在 macOS
 Sandbox 内运行：禁止网络，除受评审源码快照和固定 Rust Toolchain 外禁止读取操作员

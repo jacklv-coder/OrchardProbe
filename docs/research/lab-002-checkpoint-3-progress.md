@@ -81,7 +81,20 @@ cached `.crate` archive against the checksum recorded in the snapshotted
 extracting only through held directory descriptors into an owner-private,
 read-only temporary directory outside the build's writable workspace,
 configures a fresh isolated `CARGO_HOME` to use only that directory, and
-rehashes both each held archive and the complete dependency tree. The
+rehashes both each held archive and the complete dependency tree. Fastlane
+also retains the verified vendor-root and Rust-toolchain directory
+descriptors and requires their path identities to remain unchanged through
+the build. Because a hostile same-UID process could still replace and restore
+one of those path-based inputs between the before/after checks, the build is
+made reproducible with fixed archive timestamps and remapped source, vendor,
+and toolchain roots. Before any authorization seed is generated, the final
+Mach-O must exactly match an independently reviewed
+`source snapshot SHA-256 + Rust toolchain` allowlist entry containing its
+size, complete SHA-256, and SHA-256 CodeDirectory CDHash. A transient
+toolchain or vendor substitution therefore cannot publish an arbitrary helper
+and then hide by restoring the reviewed tree; any changed product is rejected.
+Changing the helper source or supported toolchain requires a newly reviewed
+product tuple. The
 temporary verified source has its directory permissions restored solely for
 checked cleanup after the build. Cargo,
 build scripts, and procedural macros run with an empty isolated `HOME` inside a
