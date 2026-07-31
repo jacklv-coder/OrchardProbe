@@ -213,6 +213,17 @@ Classic Rebase 与普通/Weak Bind Stream 必须包含终止 DONE，之后只允
 零填充；Lazy Bind Stream 则允许由多个分别以 DONE 终止的 Record 组成，但最后一个
 Record 仍不得缺少 DONE。
 
+发布前的最后一步，Helper 会从当前已持有的 Run Directory 路径重新打开固定 Archive
+App 与 IPA，要求 Archive App Directory 保持原 Device/Inode，并从该重新打开的 Root
+再次验证精确可执行清单以及六个保留文件的身份与完整摘要；同时两次重新打开当前 IPA，
+要求其保持原身份、完整摘要和已验证 ZIP 清单。因此 Archive App 或 IPA 被改名/替换时，
+Oracle 不会继续描述旧 Descriptor，而让紧随其后的 Evidence 步骤读取另一份当前路径。
+
+Helper 还会返回最终 IPA 的 Size/Digest，以及 Archive 六个保留文件按固定顺序排列的
+Size/Digest Tuple。Fastlane 在写入 Pre-upload Evidence 前，会独立 Snapshot 相同的
+三个 Mach-O 与三个 Info.plist，并要求逐项完全相同。因此 Evidence 边界会同时拒绝
+Helper 发布前后发生的 Source 替换，不再信任单纯的 Pathname 交接。
+
 只有三个 Role 全部通过后，Helper 才会编码规范
 `orchardprobe.lab002.oracle.v1` 记录，将其绑定到已认证 Source、Version/Build、
 Authorization-manifest 摘要、Target-identity Set 与 Build Binding，并以 Mode `0400`

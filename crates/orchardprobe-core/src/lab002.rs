@@ -1947,7 +1947,7 @@ fn parse_preupload_code_signature<R: Read + Seek>(
             "CodeDirectory layout is outside the closed profile".into(),
         ));
     }
-    if version >= 0x20300 && read_be_u32(code_directory, 44, "CodeDirectory")? != 0 {
+    if version >= 0x20200 && read_be_u32(code_directory, 44, "CodeDirectory")? != 0 {
         return Err(Lab002Error::InvalidMachO(
             "CodeDirectory scatter table is outside the closed profile".into(),
         ));
@@ -3930,7 +3930,12 @@ mod tests {
         output.extend_from_slice(&value.to_be_bytes());
     }
 
-    fn synthetic_code_signature(covered_code: &[u8], include_cms: bool, ad_hoc: bool) -> Vec<u8> {
+    fn synthetic_code_signature_version(
+        covered_code: &[u8],
+        include_cms: bool,
+        ad_hoc: bool,
+        version: u32,
+    ) -> Vec<u8> {
         let code_limit = u32::try_from(covered_code.len()).unwrap();
         let identifier = b"com.example.demolab\0";
         let team = b"TEAM123456\0";
@@ -3942,17 +3947,22 @@ mod tests {
 <key>com.apple.security.application-groups</key><array><string>group.com.example.demolab</string></array>
 </dict></plist>"#;
 
-        let dynamic_start = 52 + identifier.len() + team.len();
+        let header_length = match version {
+            0x20200 => 52,
+            0x20300 => 64,
+            _ => panic!("unsupported synthetic CodeDirectory version"),
+        };
+        let dynamic_start = header_length + identifier.len() + team.len();
         let hash_offset = dynamic_start + 5 * 32;
         let code_slot_count = covered_code.len().div_ceil(4096);
         let mut code_directory = vec![0_u8; hash_offset + code_slot_count * 32];
         code_directory[0..4].copy_from_slice(&0xfade_0c02_u32.to_be_bytes());
         let code_directory_length = code_directory.len() as u32;
         code_directory[4..8].copy_from_slice(&code_directory_length.to_be_bytes());
-        code_directory[8..12].copy_from_slice(&0x20200_u32.to_be_bytes());
+        code_directory[8..12].copy_from_slice(&version.to_be_bytes());
         code_directory[12..16].copy_from_slice(&(if ad_hoc { 0x2_u32 } else { 0 }).to_be_bytes());
         code_directory[16..20].copy_from_slice(&(hash_offset as u32).to_be_bytes());
-        code_directory[20..24].copy_from_slice(&52_u32.to_be_bytes());
+        code_directory[20..24].copy_from_slice(&(header_length as u32).to_be_bytes());
         code_directory[24..28].copy_from_slice(&5_u32.to_be_bytes());
         code_directory[28..32]
             .copy_from_slice(&u32::try_from(code_slot_count).unwrap().to_be_bytes());
@@ -3961,9 +3971,15 @@ mod tests {
         code_directory[37] = 2;
         code_directory[39] = 12;
         code_directory[40..44].copy_from_slice(&0_u32.to_be_bytes());
-        code_directory[48..52].copy_from_slice(&(52_u32 + identifier.len() as u32).to_be_bytes());
-        code_directory[52..52 + identifier.len()].copy_from_slice(identifier);
-        code_directory[52 + identifier.len()..dynamic_start].copy_from_slice(team);
+        code_directory[44..48].copy_from_slice(&0_u32.to_be_bytes());
+        code_directory[48..52]
+            .copy_from_slice(&(header_length as u32 + identifier.len() as u32).to_be_bytes());
+        if version >= 0x20300 {
+            code_directory[52..56].copy_from_slice(&0_u32.to_be_bytes());
+            code_directory[56..64].copy_from_slice(&0_u64.to_be_bytes());
+        }
+        code_directory[header_length..header_length + identifier.len()].copy_from_slice(identifier);
+        code_directory[header_length + identifier.len()..dynamic_start].copy_from_slice(team);
         for (index, page) in covered_code.chunks(4096).enumerate() {
             let start = hash_offset + index * 32;
             code_directory[start..start + 32].copy_from_slice(&Sha256::digest(page));
@@ -4011,7 +4027,16 @@ mod tests {
         add_code_signature_profile(thin, true, false)
     }
 
-    fn add_code_signature_profile(mut thin: Vec<u8>, include_cms: bool, ad_hoc: bool) -> Vec<u8> {
+    fn add_code_signature_profile(thin: Vec<u8>, include_cms: bool, ad_hoc: bool) -> Vec<u8> {
+        add_code_signature_profile_version(thin, include_cms, ad_hoc, 0x20200)
+    }
+
+    fn add_code_signature_profile_version(
+        mut thin: Vec<u8>,
+        include_cms: bool,
+        ad_hoc: bool,
+        version: u32,
+    ) -> Vec<u8> {
         let command_count = u32::from_le_bytes(thin[16..20].try_into().unwrap());
         let command_bytes = u32::from_le_bytes(thin[20..24].try_into().unwrap());
         let command_at = 32 + command_bytes as usize;
@@ -4021,12 +4046,20 @@ mod tests {
         thin[command_at..command_at + 4].copy_from_slice(&0x1d_u32.to_le_bytes());
         thin[command_at + 4..command_at + 8].copy_from_slice(&16_u32.to_le_bytes());
         thin[command_at + 8..command_at + 12].copy_from_slice(&signature_offset.to_le_bytes());
-        let initial_signature =
-            synthetic_code_signature(&thin[..signature_offset as usize], include_cms, ad_hoc);
+        let initial_signature = synthetic_code_signature_version(
+            &thin[..signature_offset as usize],
+            include_cms,
+            ad_hoc,
+            version,
+        );
         thin[command_at + 12..command_at + 16]
             .copy_from_slice(&(initial_signature.len() as u32).to_le_bytes());
-        let signature =
-            synthetic_code_signature(&thin[..signature_offset as usize], include_cms, ad_hoc);
+        let signature = synthetic_code_signature_version(
+            &thin[..signature_offset as usize],
+            include_cms,
+            ad_hoc,
+            version,
+        );
         assert_eq!(signature.len(), initial_signature.len());
         thin[signature_offset as usize..signature_offset as usize + signature.len()]
             .copy_from_slice(&signature);
@@ -4655,8 +4688,6 @@ mod tests {
         let mut scatter = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
         let signature_offset = 0x800;
         let code_directory_offset = signature_offset + 12 + 3 * 8;
-        scatter[code_directory_offset + 8..code_directory_offset + 12]
-            .copy_from_slice(&0x20300_u32.to_be_bytes());
         scatter[code_directory_offset + 44..code_directory_offset + 48]
             .copy_from_slice(&1_u32.to_be_bytes());
         assert!(matches!(
@@ -4664,5 +4695,21 @@ mod tests {
             Err(Lab002Error::InvalidMachO(message))
                 if message.contains("scatter table")
         ));
+
+        let version_20300 = add_code_signature_profile_version(
+            synthetic_fixed_macho(1, false, 0, true),
+            true,
+            false,
+            0x20300,
+        );
+        let report = parse_fixed_sections(&mut Cursor::new(version_20300)).unwrap();
+        assert_eq!(
+            report.slices[0]
+                .signing
+                .as_ref()
+                .unwrap()
+                .code_directory_identifier,
+            "com.example.demolab"
+        );
     }
 }

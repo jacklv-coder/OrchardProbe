@@ -173,6 +173,14 @@ struct OracleOutput {
     oracle_sha256: String,
     ipa_size: u64,
     ipa_sha256: String,
+    archive_files: Vec<OracleSourceMeasurement>,
+}
+
+#[derive(Debug, Serialize)]
+struct OracleSourceMeasurement {
+    relative_path: String,
+    size: u64,
+    sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -772,6 +780,22 @@ fn oracle_inspect_request(request: &OracleRequest) -> InspectPrebuildRequest {
     }
 }
 
+fn open_archive_app_beneath(run_directory: &File) -> Result<File, String> {
+    open_directory_beneath(
+        &open_directory_beneath(
+            &open_directory_beneath(
+                &open_directory_beneath(run_directory, "DemoLab.xcarchive", "Archive product")?,
+                "Products",
+                "Archive product",
+            )?,
+            "Applications",
+            "Archive product",
+        )?,
+        "DemoLab.app",
+        "Archive product",
+    )
+}
+
 fn create_oracle(
     prebuild_directory: PrivateOutputRoot,
     run_directory: PrivateOutputRoot,
@@ -791,23 +815,8 @@ fn create_oracle(
         inspect_prebuild_directory(prebuild_directory, oracle_inspect_request(&request))?;
     verify_private_output_root_path(&run_directory)?;
 
-    let archive_app = open_directory_beneath(
-        &open_directory_beneath(
-            &open_directory_beneath(
-                &open_directory_beneath(
-                    &run_directory.directory,
-                    "DemoLab.xcarchive",
-                    "Archive product",
-                )?,
-                "Products",
-                "Archive product",
-            )?,
-            "Applications",
-            "Archive product",
-        )?,
-        "DemoLab.app",
-        "Archive product",
-    )?;
+    let archive_app = open_archive_app_beneath(&run_directory.directory)?;
+    let archive_app_identity = stable_directory_identity(&archive_app, "Archive app")?;
     let archive_executable_paths = [
         "DemoLab",
         "Frameworks/DemoFramework.framework/DemoFramework",
@@ -983,13 +992,6 @@ fn create_oracle(
         &ipa_sha256,
     )?;
     verify_stable_file(&ipa_file, &ipa_identity, "exported IPA")?;
-    verify_final_archive_snapshot(
-        &archive_app,
-        &initial_archive_executables,
-        &archive_executable_paths,
-        &mut archive_measurements,
-    )?;
-
     let mut roles = Vec::with_capacity(LabRole::ALL.len());
     for (index, role) in LabRole::ALL.into_iter().enumerate() {
         let target = request
@@ -1074,6 +1076,26 @@ fn create_oracle(
     let oracle_bytes = oracle
         .to_canonical_bytes()
         .map_err(|error| format!("could not encode closed LAB-002 oracle: {error}"))?;
+    let _rebound_sources = rebind_oracle_source_paths(
+        &run_directory,
+        archive_app_identity,
+        &initial_archive_executables,
+        &archive_executable_paths,
+        &mut archive_measurements,
+        &ipa_name,
+        &ipa_identity,
+        &ipa_sha256,
+        &inventory,
+    )?;
+    let archive_files = retained_archive_paths
+        .iter()
+        .zip(archive_measurements.iter())
+        .map(|(relative_path, measurement)| OracleSourceMeasurement {
+            relative_path: format!("DemoLab.app/{relative_path}"),
+            size: measurement.identity.size,
+            sha256: measurement.sha256.clone(),
+        })
+        .collect();
     let artifact = publish_oracle(&run_directory, &oracle_bytes)?;
     verify_private_output_root_path(&run_directory)?;
     Ok(OracleOutput {
@@ -1086,6 +1108,7 @@ fn create_oracle(
         oracle_sha256: artifact.sha256,
         ipa_size: ipa_identity.size,
         ipa_sha256,
+        archive_files,
     })
 }
 
@@ -1093,6 +1116,113 @@ fn create_oracle(
 struct ArchiveAppSnapshot {
     executables: Vec<String>,
     retained_files: BTreeMap<String, File>,
+}
+
+struct ReboundOracleSources {
+    _archive_app: File,
+    _ipa: File,
+}
+
+fn stable_directory_identity(directory: &File, label: &str) -> Result<(u64, u64), String> {
+    let metadata = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect {label}: {error}"))?;
+    if !metadata.is_dir()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o022 != 0
+    {
+        return Err(format!("{label} has unsafe metadata"));
+    }
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+fn reopen_expected_archive_app(
+    run_directory: &File,
+    expected_identity: (u64, u64),
+) -> Result<File, String> {
+    let archive_app = open_archive_app_beneath(run_directory)?;
+    if stable_directory_identity(&archive_app, "current Archive app")? != expected_identity {
+        return Err("Archive app path no longer names the measured directory".into());
+    }
+    Ok(archive_app)
+}
+
+fn reopen_verified_regular_source(
+    root: &File,
+    components: &[&str],
+    expected_identity: &StableFileIdentity,
+    expected_sha256: &str,
+    label: &str,
+) -> Result<File, String> {
+    let mut file = open_regular_beneath(root, components, expected_identity.size, label)?;
+    let identity = stable_file_identity(&file, expected_identity.size, label)?;
+    if &identity != expected_identity {
+        return Err(format!("{label} path no longer names the measured file"));
+    }
+    verify_stable_file_digest(
+        &mut file,
+        expected_identity,
+        expected_identity.size,
+        label,
+        expected_sha256,
+    )?;
+    Ok(file)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn rebind_oracle_source_paths(
+    run_directory: &PrivateOutputRoot,
+    archive_app_identity: (u64, u64),
+    initial_archive_executables: &[String],
+    expected_archive_executables: &[&str],
+    archive_measurements: &mut [ArchiveFileMeasurement],
+    ipa_name: &str,
+    ipa_identity: &StableFileIdentity,
+    ipa_sha256: &str,
+    expected_ipa_inventory: &orchardprobe_core::ipa::IpaInventory,
+) -> Result<ReboundOracleSources, String> {
+    verify_private_output_root_path(run_directory)?;
+    let archive_app = reopen_expected_archive_app(&run_directory.directory, archive_app_identity)?;
+    verify_final_archive_snapshot(
+        &archive_app,
+        initial_archive_executables,
+        expected_archive_executables,
+        archive_measurements,
+    )?;
+    let final_archive_app =
+        reopen_expected_archive_app(&run_directory.directory, archive_app_identity)?;
+
+    let mut ipa = reopen_verified_regular_source(
+        &run_directory.directory,
+        &[ipa_name],
+        ipa_identity,
+        ipa_sha256,
+        "current exported IPA",
+    )?;
+    let inventory = inspect_ipa(&mut ipa, ipa_identity.size)
+        .map_err(|error| format!("could not revalidate current exported IPA: {error}"))?;
+    if &inventory != expected_ipa_inventory {
+        return Err("exported IPA path inventory changed before oracle publication".into());
+    }
+    verify_stable_file_digest(
+        &mut ipa,
+        ipa_identity,
+        ipa_identity.size,
+        "current exported IPA",
+        ipa_sha256,
+    )?;
+    let final_ipa = reopen_verified_regular_source(
+        &run_directory.directory,
+        &[ipa_name],
+        ipa_identity,
+        ipa_sha256,
+        "current exported IPA",
+    )?;
+    verify_private_output_root_path(run_directory)?;
+    Ok(ReboundOracleSources {
+        _archive_app: final_archive_app,
+        _ipa: final_ipa,
+    })
 }
 
 fn archive_app_snapshot(
@@ -4000,6 +4130,55 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.contains("bytes changed during oracle generation"));
+    }
+
+    #[test]
+    fn final_source_rebinding_rejects_replaced_ipa_path() {
+        let root = TempDir::new().unwrap();
+        let ipa = root.path().join("DemoLab-3.ipa");
+        fs::write(&ipa, b"measured-ipa").unwrap();
+        let mut original = File::open(&ipa).unwrap();
+        let identity = stable_file_identity(&original, 64, "test IPA").unwrap();
+        let digest = hash_stable_file(&mut original, &identity, 64, "test IPA").unwrap();
+        let root_directory = File::open(root.path()).unwrap();
+        reopen_verified_regular_source(
+            &root_directory,
+            &["DemoLab-3.ipa"],
+            &identity,
+            &digest,
+            "test IPA",
+        )
+        .unwrap();
+
+        fs::rename(&ipa, root.path().join("measured-ipa-moved")).unwrap();
+        fs::write(&ipa, b"replacement!").unwrap();
+        let error = reopen_verified_regular_source(
+            &root_directory,
+            &["DemoLab-3.ipa"],
+            &identity,
+            &digest,
+            "test IPA",
+        )
+        .unwrap_err();
+        assert!(error.contains("path no longer names"));
+    }
+
+    #[test]
+    fn final_source_rebinding_rejects_replaced_archive_app_path() {
+        let root = TempDir::new().unwrap();
+        let applications = root.path().join("DemoLab.xcarchive/Products/Applications");
+        fs::create_dir_all(&applications).unwrap();
+        let app = applications.join("DemoLab.app");
+        fs::create_dir(&app).unwrap();
+        let root_directory = File::open(root.path()).unwrap();
+        let original = open_archive_app_beneath(&root_directory).unwrap();
+        let identity = stable_directory_identity(&original, "test Archive app").unwrap();
+        reopen_expected_archive_app(&root_directory, identity).unwrap();
+
+        fs::rename(&app, applications.join("measured-app-moved")).unwrap();
+        fs::create_dir(&app).unwrap();
+        let error = reopen_expected_archive_app(&root_directory, identity).unwrap_err();
+        assert!(error.contains("path no longer names"));
     }
 
     #[test]

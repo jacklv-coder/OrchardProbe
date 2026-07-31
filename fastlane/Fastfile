@@ -198,6 +198,28 @@ DEMO_LAB_BINARY_SPECS = [
       "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
   },
 ].freeze
+DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS = [
+  *DEMO_LAB_BINARY_SPECS.map do |specification|
+    {
+      "relative_path" => specification.fetch("relative_path"),
+      "maximum_size" => DEMO_LAB_MAX_BINARY_BYTES,
+    }
+  end,
+  {
+    "relative_path" => "DemoLab.app/Info.plist",
+    "maximum_size" => DEMO_LAB_MAX_PLIST_BYTES,
+  },
+  {
+    "relative_path" =>
+      "DemoLab.app/Frameworks/DemoFramework.framework/Info.plist",
+    "maximum_size" => DEMO_LAB_MAX_PLIST_BYTES,
+  },
+  {
+    "relative_path" =>
+      "DemoLab.app/PlugIns/DemoShareExtension.appex/Info.plist",
+    "maximum_size" => DEMO_LAB_MAX_PLIST_BYTES,
+  },
+].freeze
 
 module DemoLabDarwin
   extend Fiddle::Importer
@@ -2637,6 +2659,7 @@ def create_lab002_private_oracle!(
         oracle_sha256
         ipa_size
         ipa_sha256
+        archive_files
       ],
       "LAB-002 oracle result"
     )
@@ -2654,8 +2677,27 @@ def create_lab002_private_oracle!(
            result["ipa_size"] <= DEMO_LAB_MAX_IPA_BYTES &&
            %w[oracle_sha256 ipa_sha256].all? { |name|
              /\A[0-9a-f]{64}\z/.match?(result[name].to_s)
-           }
+           } &&
+           result["archive_files"].is_a?(Array) &&
+           result["archive_files"].length ==
+             DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS.length
       UI.user_error!("LAB-002 oracle result is invalid.")
+    end
+    result["archive_files"].each_with_index do |measurement, index|
+      require_exact_hash_keys!(
+        measurement,
+        %w[relative_path size sha256],
+        "LAB-002 oracle Archive source"
+      )
+      specification = DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS.fetch(index)
+      unless measurement["relative_path"] ==
+               specification.fetch("relative_path") &&
+             measurement["size"].is_a?(Integer) &&
+             measurement["size"].positive? &&
+             measurement["size"] <= specification.fetch("maximum_size") &&
+             /\A[0-9a-f]{64}\z/.match?(measurement["sha256"].to_s)
+        UI.user_error!("LAB-002 oracle Archive source is invalid.")
+      end
     end
     observed = lab002_published_artifact_identity!(
       run_handle,
@@ -4426,10 +4468,70 @@ def demolab_archive_binary_inputs(archive_path)
   end
 end
 
+def demolab_archive_source_measurements!(
+  archive_path,
+  archive_binary_evidence
+)
+  binary_measurements = archive_binary_evidence.map do |measurement|
+    {
+      "relative_path" => measurement.fetch("relative_path"),
+      "size" => measurement.fetch("size"),
+      "sha256" => measurement.fetch("sha256"),
+    }
+  end
+  plist_measurements =
+    DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS
+      .drop(DEMO_LAB_BINARY_SPECS.length)
+      .map do |specification|
+        relative_path = specification.fetch("relative_path")
+        path = validate_regular_file_beneath_root!(
+          File.join(
+            archive_path,
+            "Products",
+            "Applications",
+            relative_path
+          ),
+          archive_path,
+          "Archived DemoLab Info.plist"
+        )
+        content = read_regular_file_snapshot(
+          path,
+          specification.fetch("maximum_size"),
+          "Archived DemoLab Info.plist"
+        )
+        {
+          "relative_path" => relative_path,
+          "size" => content.bytesize,
+          "sha256" => Digest::SHA256.hexdigest(content),
+        }
+      end
+  binary_measurements + plist_measurements
+end
+
+def verify_lab002_oracle_evidence_sources!(
+  oracle_result,
+  packaged,
+  archive_sources
+)
+  unless packaged.dig("archive", "size") == oracle_result.fetch("ipa_size") &&
+         packaged.dig("archive", "sha256") ==
+           oracle_result.fetch("ipa_sha256")
+    UI.user_error!(
+      "Pre-upload evidence IPA differs from the final LAB-002 oracle source."
+    )
+  end
+  unless archive_sources == oracle_result.fetch("archive_files")
+    UI.user_error!(
+      "Pre-upload evidence Archive differs from the final LAB-002 oracle source."
+    )
+  end
+end
+
 def write_pre_upload_evidence(
   run_directory:,
   archive_path:,
   ipa_path:,
+  oracle_result:,
   source_commit:,
   xcodegen_version:,
   marketing_version:,
@@ -4461,6 +4563,23 @@ def write_pre_upload_evidence(
     marketing_version: marketing_version,
     build_number: build_number,
     xcode_toolchain: xcode_toolchain
+  )
+  archive_binary_evidence = binaries.map do |path, relative_path, role|
+    binary_evidence(
+      path,
+      relative_path,
+      role,
+      xcode_toolchain: xcode_toolchain
+    )
+  end
+  archive_source_measurements = demolab_archive_source_measurements!(
+    archive_path,
+    archive_binary_evidence
+  )
+  verify_lab002_oracle_evidence_sources!(
+    oracle_result,
+    packaged,
+    archive_source_measurements
   )
 
   evidence = {
@@ -4496,14 +4615,7 @@ def write_pre_upload_evidence(
         "size" => packaged.dig("archive", "size"),
         "sha256" => packaged.dig("archive", "sha256"),
       },
-      "archive_binaries" => binaries.map do |path, relative_path, role|
-        binary_evidence(
-          path,
-          relative_path,
-          role,
-          xcode_toolchain: xcode_toolchain
-        )
-      end,
+      "archive_binaries" => archive_binary_evidence,
       "package" => packaged.reject do |key, _|
         ["archive", "binaries"].include?(key)
       end,
@@ -5894,6 +6006,60 @@ platform :ios do
       UI.user_error!(
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
+    end
+    oracle_source_fixture = {
+      "ipa_size" => 4096,
+      "ipa_sha256" => "1" * 64,
+      "archive_files" =>
+        DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS.each_with_index.map do |specification, index|
+          {
+            "relative_path" => specification.fetch("relative_path"),
+            "size" => index + 1,
+            "sha256" => (index + 2).to_s * 64,
+          }
+        end,
+    }
+    packaged_source_fixture = {
+      "archive" => {
+        "size" => oracle_source_fixture.fetch("ipa_size"),
+        "sha256" => oracle_source_fixture.fetch("ipa_sha256"),
+      },
+    }
+    archive_source_fixture = oracle_source_fixture.fetch("archive_files")
+    verify_lab002_oracle_evidence_sources!(
+      oracle_source_fixture,
+      packaged_source_fixture,
+      archive_source_fixture
+    )
+    [
+      [
+        {
+          "archive" => packaged_source_fixture.fetch("archive").merge(
+            "sha256" => "0" * 64
+          ),
+        },
+        archive_source_fixture,
+      ],
+      [
+        packaged_source_fixture,
+        archive_source_fixture.each_with_index.map do |measurement, index|
+          index.zero? ? measurement.merge("sha256" => "0" * 64) : measurement
+        end,
+      ],
+    ].each do |packaged_candidate, archive_candidate|
+      replaced_source_rejected = false
+      begin
+        verify_lab002_oracle_evidence_sources!(
+          oracle_source_fixture,
+          packaged_candidate,
+          archive_candidate
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        replaced_source_rejected = true
+      end
+      unless replaced_source_rejected
+        UI.user_error!("A replaced LAB-002 evidence source was accepted.")
+      end
     end
     Dir.mktmpdir(
       "orchardprobe-lab002-consumption-check-",
@@ -8701,6 +8867,7 @@ platform :ios do
               run_directory: staging_directory,
               archive_path: archive_path,
               ipa_path: ipa_path,
+              oracle_result: oracle_result,
               source_commit: source_commit,
               xcodegen_version: project_xcodegen_version,
               marketing_version: marketing_version,

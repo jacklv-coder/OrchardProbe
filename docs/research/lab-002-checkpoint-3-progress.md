@@ -272,6 +272,22 @@ opcode followed only by linker zero padding; lazy-bind streams instead accept
 their required sequence of individually DONE-terminated records and still
 reject a final unterminated record.
 
+Immediately before publication, the helper reopens the fixed Archive app and
+IPA from the current held run-directory path. It requires the Archive app
+directory to retain its original device/inode, repeats the exact executable
+inventory plus all six retained-file identity/digest checks from that reopened
+root, and requires two current IPA opens to retain the original identity,
+complete digest, and validated ZIP inventory. A renamed/replaced Archive app
+or IPA therefore cannot make the oracle describe stale descriptors while the
+following evidence step reads different current paths.
+
+The helper returns the final IPA size/digest and the ordered size/digest tuple
+for all six retained Archive files. Fastlane independently snapshots those
+same three Mach-O files and three Info.plists immediately before writing
+pre-upload evidence and requires an exact match. The evidence boundary
+therefore rejects a source replacement both before and after helper
+publication instead of trusting a pathname handoff.
+
 Only after all three roles pass does the helper encode the canonical
 `orchardprobe.lab002.oracle.v1` record, bind it to the authenticated source,
 version/build, authorization-manifest digest, target-identity set, and Build
