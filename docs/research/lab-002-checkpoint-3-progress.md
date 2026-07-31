@@ -41,14 +41,14 @@ preceding row is complete.
 | 3B.2.4 | Device-free closure tests | `local tests, Codex CR, and helper reproduction complete; CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
 The final 3B.2 helper was independently built twice from the read-only source
-snapshot at commit `ebd0ce7ba2502a782fbc2138e69bb77501ae4e2f`; both products were
+snapshot at commit `d5ecbdc4e797d5746f2c5a3754b977772c5c4774`; both products were
 byte-identical, and a third build passed after the mandatory allowlist path was
 restored. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`882403f226967a39ea427c64ccf50a11d787d26f9b4f7180d95c1d27d8d6fc4f`,
+`ac0cbd782f5d808f6895f6a94c74b3a3b8d499fe1cea7656f42e0228af073815`,
 size `1884192`, SHA-256
-`6089f40fb10215c0878e6c7f6acf75404c6bef0cb120f0516d353e9fd2ccbbcf`,
-and CDHash `766ffcbff3eedc9a4424fd74852c9a8bc73f87aa`.
+`63921c3919080251fdf984c43da57973cf3034564cc94ca543640bde953bd27e`,
+and CDHash `6c74c5e09aed91f7243e5b38580f7081a639e088`.
 
 ## Fixed safety boundaries
 
@@ -259,7 +259,12 @@ bundle identifier, version/build, and executable name instead of borrowing
 those values from the authorization request. The closed CodeDirectory parser
 requires indexed blobs to consume the declared SuperBlob exactly, rejects
 scatter tables, accepts only complete SHA-256 page coverage, and checks the
-signed entitlements special slot. Before CMS verification, selected
+signed entitlements special slot. Xcode's unsigned Simulator fixture may carry
+the exact `0x20400` ad-hoc/linker-signed CodeDirectory profile with no team,
+entitlements, or CMS slots; the parser accepts only that exact omission and
+still requires the closed identifier grammar. It remains classified ad hoc and
+therefore cannot pass the signed Archive/IPA oracle path. Before CMS
+verification, selected
 entitlements are read through a bounded XML/binary event stream with explicit
 event, depth, collection, key, and cumulative scalar-byte budgets. Binary
 inputs additionally receive a pre-allocation trailer, object-count, offset,

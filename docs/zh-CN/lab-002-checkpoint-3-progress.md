@@ -37,13 +37,13 @@
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
 | 3B.2.4 | 纯设备无关闭环测试 | `本地测试、Codex CR 与 Helper 复现完成；等待 CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
-最终 3B.2 Helper 已从 Commit `ebd0ce7ba2502a782fbc2138e69bb77501ae4e2f`
+最终 3B.2 Helper 已从 Commit `d5ecbdc4e797d5746f2c5a3754b977772c5c4774`
 的只读源码快照独立构建两次，产物字节完全一致；随后恢复强制白名单路径的第三次构建
 也通过。登记 Tuple 为：Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot
-SHA-256 `882403f226967a39ea427c64ccf50a11d787d26f9b4f7180d95c1d27d8d6fc4f`，
+SHA-256 `ac0cbd782f5d808f6895f6a94c74b3a3b8d499fe1cea7656f42e0228af073815`，
 Size `1884192`，SHA-256
-`6089f40fb10215c0878e6c7f6acf75404c6bef0cb120f0516d353e9fd2ccbbcf`，
-CDHash `766ffcbff3eedc9a4424fd74852c9a8bc73f87aa`。
+`63921c3919080251fdf984c43da57973cf3034564cc94ca543640bde953bd27e`，
+CDHash `6c74c5e09aed91f7243e5b38580f7081a639e088`。
 
 ## 固定安全边界
 
@@ -202,7 +202,11 @@ Chained Fixup Layout 的域分离摘要上全部一致。它会分别解析两�
 `Info.plist`，从 Artifact 本身绑定 Bundle Identifier、Version/Build 与 Executable
 Name，而不借用授权请求里的值。闭合 CodeDirectory Parser 要求索引 Blob 精确消费
 声明的完整 SuperBlob，拒绝 Scatter Table，只接受完整 SHA-256 Page 覆盖，并校验
-已签名 Entitlements Special Slot；CMS 验证前，选定 Entitlement 只通过有明确
+已签名 Entitlements Special Slot。Xcode 的未签名 Simulator Fixture 可能带有精确的
+`0x20400` Ad-hoc/Linker-signed CodeDirectory Profile，且没有 Team、Entitlements
+或 CMS Slot；Parser 只接受这一精确缺省，并仍要求闭合的 Identifier Grammar。
+该产物始终归类为 Ad-hoc，因此不能通过正式的签名 Archive/IPA Oracle 路径。
+CMS 验证前，选定 Entitlement 只通过有明确
 Event、Depth、Collection、Key 与累计 Scalar-byte 预算的 XML/Binary 流读取，
 Binary 输入还会在库 Reader 构造引用向量前，预检 Trailer、Object Count、Offset、
 Scalar Extent、Reference 与 Collection Length；重复 Root Key 或过大的未知结构
