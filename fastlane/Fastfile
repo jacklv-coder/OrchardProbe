@@ -222,11 +222,30 @@ def command_output_without_loader_overrides(*command, chdir: repository_root)
   )
 end
 
+def trusted_git_environment
+  sanitized_dynamic_loader_environment(
+    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }.merge(
+      "GIT_CONFIG_COUNT" => "0",
+      "GIT_CONFIG_GLOBAL" => "/dev/null",
+      "GIT_CONFIG_NOSYSTEM" => "1",
+      "GIT_OPTIONAL_LOCKS" => "0"
+    )
+  )
+end
+
 def git_command_output(*arguments)
-  command_output_with_environment(
-    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] },
+  stdout, stderr, status = Open3.capture3(
+    trusted_git_environment,
     "/usr/bin/git",
-    *arguments
+    "--no-replace-objects",
+    *arguments,
+    chdir: repository_root,
+    unsetenv_others: true
+  )
+  return stdout.strip if status.success?
+
+  UI.user_error!(
+    "Git command failed (#{arguments.shelljoin}):\n#{stderr.strip}"
   )
 end
 
@@ -1150,14 +1169,7 @@ def lab002_stream_reviewed_source_archive!(
   source_commit,
   snapshot_paths
 )
-  archive_environment = sanitized_dynamic_loader_environment(
-    DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }.merge(
-      "GIT_CONFIG_COUNT" => "0",
-      "GIT_CONFIG_GLOBAL" => "/dev/null",
-      "GIT_CONFIG_NOSYSTEM" => "1",
-      "GIT_OPTIONAL_LOCKS" => "0"
-    )
-  )
+  archive_environment = trusted_git_environment
   object_format, format_stderr, format_status = Open3.capture3(
     archive_environment,
     "/usr/bin/git",
@@ -2357,6 +2369,35 @@ def ensure_clean_source!
   UI.user_error!("Commit or remove every local change before creating evidence.") unless status.empty?
 end
 
+def git_ancestor_without_replacements?(
+  source_repository,
+  ancestor,
+  descendant
+)
+  unless [ancestor, descendant].all? { |value|
+    /\A[0-9a-f]{40}\z/.match?(value)
+  }
+    UI.user_error!("The reviewed Git ancestry input is invalid.")
+  end
+  stdout, stderr, status = Open3.capture3(
+    trusted_git_environment,
+    "/usr/bin/git",
+    "--no-replace-objects",
+    "merge-base",
+    "--is-ancestor",
+    ancestor,
+    descendant,
+    chdir: source_repository,
+    unsetenv_others: true
+  )
+  unless stdout.empty? &&
+         stderr.empty? &&
+         [0, 1].include?(status.exitstatus)
+    UI.user_error!("Unable to verify the reviewed Git ancestry safely.")
+  end
+  status.success?
+end
+
 def reviewed_main_source_commit
   source_commit = git_command_output("rev-parse", "HEAD")
   reviewed_main = git_command_output(
@@ -2364,18 +2405,11 @@ def reviewed_main_source_commit
     "--verify",
     "refs/remotes/origin/main"
   )
-  _, _, status = Open3.capture3(
-    sanitized_dynamic_loader_environment(
-      DEMO_LAB_XCODE_OVERRIDE_KEYS.to_h { |key| [key, nil] }
-    ),
-    "/usr/bin/git",
-    "merge-base",
-    "--is-ancestor",
+  unless git_ancestor_without_replacements?(
+    repository_root,
     source_commit,
-    reviewed_main,
-    chdir: repository_root
+    reviewed_main
   )
-  unless status.success?
     UI.user_error!(
       "LAB-002 preparation requires HEAD to be present in the reviewed " \
       "origin/main history."
@@ -5280,13 +5314,65 @@ platform :ios do
         "HEAD",
         chdir: replacement_repository
       )
+      File.write(
+        File.join(replacement_crates, "reviewed.txt"),
+        "replacement chain\n"
+      )
+      command_output(
+        "/usr/bin/git",
+        "add",
+        "--",
+        "crates/reviewed.txt",
+        chdir: replacement_repository
+      )
+      command_output(
+        "/usr/bin/git",
+        "-c",
+        "user.name=OrchardProbe",
+        "-c",
+        "user.email=orchardprobe@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "replacement chain",
+        chdir: replacement_repository
+      )
+      replacement_chain_commit = command_output(
+        "/usr/bin/git",
+        "rev-parse",
+        "HEAD",
+        chdir: replacement_repository
+      )
       command_output(
         "/usr/bin/git",
         "replace",
         reviewed_commit,
-        replacement_commit,
+        replacement_chain_commit,
         chdir: replacement_repository
       )
+      ancestry_stdout, ancestry_stderr, replaced_ancestry_status =
+        Open3.capture3(
+          trusted_git_environment,
+          "/usr/bin/git",
+          "merge-base",
+          "--is-ancestor",
+          replacement_commit,
+          reviewed_commit,
+          chdir: replacement_repository,
+          unsetenv_others: true
+        )
+      unless ancestry_stdout.empty? &&
+             ancestry_stderr.empty? &&
+             replaced_ancestry_status.success? &&
+             !git_ancestor_without_replacements?(
+               replacement_repository,
+               replacement_commit,
+               reviewed_commit
+             )
+        UI.user_error!(
+          "LAB-002 reviewed ancestry followed a Git replacement ref."
+        )
+      end
       replaced_view = command_output(
         "/usr/bin/git",
         "show",

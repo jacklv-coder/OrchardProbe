@@ -59,10 +59,11 @@ The published pre-build directory contains exactly:
 The directory is created under an already-existing canonical mode-`0700`
 output root outside the repository. The lane rejects a clean local commit that
 is not an ancestor of the reviewed `origin/main` ref and rechecks the same
-source immediately before generation. It compiles the helper from a read-only
-Git archive of that exact 40-hex commit in a separate private workspace. Git's
-replacement refs are explicitly disabled, global and system Git configuration
-are excluded, and the extracted path/Blob OID inventory must exactly match
+source immediately before generation. The ancestry check and subsequent Git
+operations explicitly disable replacement refs and exclude global and system
+Git configuration. The lane compiles the helper from a read-only Git archive
+of that exact 40-hex commit in a separate private workspace, and the extracted
+path/Blob OID inventory must exactly match
 `git ls-tree`; external attribute transformations are rejected. Archive stdout
 is piped directly to the extractor without a pathname-based intermediate
 archive, and both process statuses are required to succeed. The

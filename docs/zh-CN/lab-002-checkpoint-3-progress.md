@@ -49,9 +49,9 @@
 
 目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
 会拒绝尚未成为受评审 `origin/main` 祖先的干净本地 Commit，并在生成前再次核对
-同一 Source。Helper 只从该精确 40-hex Commit 的只读 Git Archive 快照构建；
-Archive 前会显式禁用 Git Replacement Ref、排除全局与系统 Git Configuration，
-解包后的 Path/Blob OID 清单还必须与 `git ls-tree` 精确相等；外部 Attributes
+同一 Source。祖先检查及后续 Git 操作都会显式禁用 Git Replacement Ref，并排除
+全局与系统 Git Configuration。Helper 只从该精确 40-hex Commit 的只读 Git
+Archive 快照构建；解包后的 Path/Blob OID 清单还必须与 `git ls-tree` 精确相等；外部 Attributes
 造成的变换会被拒绝。Git Archive 的标准输出直接以无路径中间归档的 Pipe 交给
 Extractor，且两个进程状态都必须成功。快照位于独立私有 Workspace，不读取
 可变 Worktree，并在构建后
