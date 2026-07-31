@@ -2512,7 +2512,7 @@ fn parse_preupload_code_signature<R: Read + Seek>(
     let identifier = code_signature_string(code_directory, identifier_offset, dynamic_data_start)?;
     let is_linker_signed_ad_hoc = version == 0x20400 && flags == 0x0002_0002;
     let team_identifier = if is_linker_signed_ad_hoc {
-        if team_offset != 0 || slots.contains_key(&5) || slots.contains_key(&0x1_0000) {
+        if team_offset != 0 || special_slot_count != 0 || slots.len() != 1 {
             return Err(Lab002Error::InvalidMachO(
                 "linker-signed CodeDirectory has unexpected identity slots".into(),
             ));
@@ -4691,6 +4691,54 @@ mod tests {
         superblob
     }
 
+    fn add_linker_signed_superblob_slot(signature: &[u8]) -> Vec<u8> {
+        let code_directory_offset =
+            u32::from_be_bytes(signature[16..20].try_into().unwrap()) as usize;
+        let code_directory = &signature[code_directory_offset..];
+        let extra_blob = [0xfa, 0xde, 0x0c, 0x01, 0, 0, 0, 8];
+        let new_code_directory_offset = 28_usize;
+        let extra_offset = new_code_directory_offset + code_directory.len();
+        let length = extra_offset + extra_blob.len();
+        let mut superblob = Vec::with_capacity(length);
+        append_be_u32(&mut superblob, 0xfade_0cc0);
+        append_be_u32(&mut superblob, length as u32);
+        append_be_u32(&mut superblob, 2);
+        append_be_u32(&mut superblob, 0);
+        append_be_u32(&mut superblob, new_code_directory_offset as u32);
+        append_be_u32(&mut superblob, 2);
+        append_be_u32(&mut superblob, extra_offset as u32);
+        superblob.extend_from_slice(code_directory);
+        superblob.extend_from_slice(&extra_blob);
+        superblob
+    }
+
+    fn add_linker_signed_special_slot_count(signature: &[u8]) -> Vec<u8> {
+        let code_directory_offset =
+            u32::from_be_bytes(signature[16..20].try_into().unwrap()) as usize;
+        let old_hash_offset = u32::from_be_bytes(
+            signature[code_directory_offset + 16..code_directory_offset + 20]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let insertion = code_directory_offset + old_hash_offset;
+        let mut superblob = signature.to_vec();
+        superblob.splice(insertion..insertion, [0_u8; 32]);
+        let code_directory_length = u32::from_be_bytes(
+            superblob[code_directory_offset + 4..code_directory_offset + 8]
+                .try_into()
+                .unwrap(),
+        ) + 32;
+        superblob[code_directory_offset + 4..code_directory_offset + 8]
+            .copy_from_slice(&code_directory_length.to_be_bytes());
+        superblob[code_directory_offset + 16..code_directory_offset + 20]
+            .copy_from_slice(&((old_hash_offset + 32) as u32).to_be_bytes());
+        superblob[code_directory_offset + 24..code_directory_offset + 28]
+            .copy_from_slice(&1_u32.to_be_bytes());
+        let superblob_length = superblob.len() as u32;
+        superblob[4..8].copy_from_slice(&superblob_length.to_be_bytes());
+        superblob
+    }
+
     fn add_code_signature(thin: Vec<u8>) -> Vec<u8> {
         add_code_signature_profile(thin, true, false)
     }
@@ -5308,6 +5356,24 @@ mod tests {
             Err(Lab002Error::InvalidMachO(message))
                 if message.contains("string offset")
         ));
+
+        let covered_code = synthetic_fixed_macho(1, false, 0, true);
+        let linker_signature = synthetic_linker_signed_code_signature(&covered_code);
+        for changed_signature in [
+            add_linker_signed_superblob_slot(&linker_signature),
+            add_linker_signed_special_slot_count(&linker_signature),
+        ] {
+            assert!(matches!(
+                parse_preupload_code_signature(
+                    &changed_signature,
+                    covered_code.len() as u64,
+                    &mut Cursor::new(&covered_code),
+                    0,
+                ),
+                Err(Lab002Error::InvalidMachO(message))
+                    if message.contains("unexpected identity slots")
+            ));
+        }
     }
 
     #[test]
