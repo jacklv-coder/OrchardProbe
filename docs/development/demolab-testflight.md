@@ -249,8 +249,16 @@ refuses to proceed until the retained `.demolab-staging-*` entry is explicitly
 reconciled. It revalidates output and
 staging filesystem identity and mode before and after the build, creates the
 evidence inside staging, validates that the completed evidence satisfies the
-same strict schema consumed by Stage 2, and only then publishes the completed
-directory with Darwin's exclusive, no-follow rename. Concurrent controlled
+same strict schema consumed by Stage 2, and then binds the exact Archive App
+directory identity returned by the private oracle helper. Its final publisher
+keeps read-only descriptors open for the IPA, six Archive sources, oracle, and
+evidence while it rehashes them, performs Darwin's exclusive no-follow
+directory rename, and revalidates every descriptor through the published path
+before returning success. If that post-rename validation fails, the lane writes
+an owner-only `.demolab-staging-published-indeterminate-*.json` sibling marker
+bound to the expected run device/inode. The normal retained-staging gate then
+blocks every retry until the operator reconciles that exact published run and
+its marker. Concurrent controlled
 invocations therefore cannot share, mix, or overwrite build output; an
 existing final directory is never reused. A replaced or permission-weakened
 directory is rejected and malformed evidence prevents publication without
@@ -262,6 +270,7 @@ The run directory contains local sensitive research artifacts:
 ```text
 DemoLab.xcarchive
 DemoLab-<build>.ipa
+lab-002-oracle-v1.json
 demolab-pre-upload-evidence.json
 ```
 

@@ -2696,6 +2696,8 @@ def create_lab002_private_oracle!(
       %w[
         schema
         oracle_name
+        archive_app_device
+        archive_app_inode
         oracle_device
         oracle_inode
         oracle_mode
@@ -2709,7 +2711,12 @@ def create_lab002_private_oracle!(
     )
     unless result["schema"] == DEMO_LAB_LAB002_ORACLE_RESULT_SCHEMA &&
            result["oracle_name"] == DEMO_LAB_LAB002_ORACLE_NAME &&
-           %w[oracle_device oracle_inode].all? { |name|
+           %w[
+             archive_app_device
+             archive_app_inode
+             oracle_device
+             oracle_inode
+           ].all? { |name|
              /\A(?:0|[1-9][0-9]*)\z/.match?(result[name].to_s)
            } &&
            result["oracle_mode"] == 0o400 &&
@@ -4642,6 +4649,571 @@ def verify_lab002_oracle_evidence_sources!(
   end
 end
 
+def open_stable_staged_file!(
+  path,
+  root,
+  maximum_size,
+  label
+)
+  first = nil
+  second = nil
+  keep_second = false
+  resolved = validate_regular_file_beneath_root!(path, root, label)
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  first = File.open(resolved, flags)
+  before = first.stat
+  unless before.file? &&
+         before.uid == Process.uid &&
+         before.size.positive? &&
+         before.size <= maximum_size
+    UI.user_error!("#{label} has unsafe metadata.")
+  end
+  first_digest = digest_open_file(first)
+  after = first.stat
+
+  reopened_path = validate_regular_file_beneath_root!(path, root, label)
+  second = File.open(reopened_path, flags)
+  reopened_before = second.stat
+  unless reopened_before.file? &&
+         reopened_before.uid == Process.uid &&
+         reopened_before.size.positive? &&
+         reopened_before.size <= maximum_size
+    UI.user_error!("#{label} has unsafe reopened metadata.")
+  end
+  reopened_digest = digest_open_file(second)
+  reopened_after = second.stat
+  linked = File.lstat(reopened_path)
+  identity = ->(stat) {
+    [
+      stat.dev,
+      stat.ino,
+      stat.mode & 0o777,
+      stat.size,
+      stat.mtime.to_f,
+    ]
+  }
+  unless identity.call(after) == identity.call(before) &&
+         reopened_path == resolved &&
+         identity.call(reopened_before) == identity.call(before) &&
+         identity.call(reopened_after) == identity.call(reopened_before) &&
+         linked.file? &&
+         !linked.symlink? &&
+         identity.call(linked) == identity.call(reopened_after) &&
+         first_digest == reopened_digest
+    UI.user_error!("#{label} changed during final publication binding.")
+  end
+  result = {
+    "device" => reopened_before.dev,
+    "inode" => reopened_before.ino,
+    "mode" => reopened_before.mode & 0o777,
+    "size" => reopened_before.size,
+    "mtime" => reopened_before.mtime.to_f,
+    "sha256" => reopened_digest,
+  }
+  keep_second = true
+  [second, result]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to bind #{label} before publication.")
+ensure
+  first&.close unless first&.closed?
+  second&.close if second && !keep_second && !second.closed?
+end
+
+def stable_staged_file_identity!(
+  path,
+  root,
+  maximum_size,
+  label
+)
+  handle = nil
+  handle, identity = open_stable_staged_file!(
+    path,
+    root,
+    maximum_size,
+    label
+  )
+  identity
+ensure
+  handle&.close unless handle&.closed?
+end
+
+def verify_held_staged_file_path!(
+  handle,
+  path,
+  root,
+  expected_identity,
+  maximum_size,
+  label
+)
+  resolved = validate_regular_file_beneath_root!(path, root, label)
+  before = handle.stat
+  digest = digest_open_file(handle)
+  after = handle.stat
+  linked = File.lstat(resolved)
+  observed = ->(stat) {
+    [
+      stat.dev,
+      stat.ino,
+      stat.mode & 0o777,
+      stat.size,
+      stat.mtime.to_f,
+    ]
+  }
+  expected = [
+    expected_identity.fetch("device"),
+    expected_identity.fetch("inode"),
+    expected_identity.fetch("mode"),
+    expected_identity.fetch("size"),
+    expected_identity.fetch("mtime"),
+  ]
+  unless before.file? &&
+         before.uid == Process.uid &&
+         before.size.positive? &&
+         before.size <= maximum_size &&
+         observed.call(before) == expected &&
+         observed.call(after) == expected &&
+         linked.file? &&
+         !linked.symlink? &&
+         linked.uid == Process.uid &&
+         observed.call(linked) == expected &&
+         digest == expected_identity.fetch("sha256")
+    UI.user_error!("#{label} changed at the publication commit point.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to revalidate #{label} at publication.")
+end
+
+def open_bound_lab002_archive_app!(archive_path, oracle_result)
+  expanded_archive = File.expand_path(archive_path)
+  archive_stat = File.lstat(expanded_archive)
+  unless archive_stat.directory? &&
+         !archive_stat.symlink? &&
+         archive_stat.uid == Process.uid
+    UI.user_error!("Final DemoLab Archive root is invalid.")
+  end
+  archive_root = File.realpath(expanded_archive)
+  archive_app_path = File.join(
+    expanded_archive,
+    "Products",
+    "Applications",
+    "DemoLab.app"
+  )
+  current = archive_root
+  %w[Products Applications DemoLab.app].each do |component|
+    current = File.join(current, component)
+    stat = File.lstat(current)
+    unless stat.directory? && !stat.symlink? && stat.uid == Process.uid
+      UI.user_error!("Final DemoLab Archive App path is invalid.")
+    end
+  end
+  flags = File::RDONLY
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  handle = File.open(archive_app_path, flags)
+  held = handle.stat
+  linked = File.lstat(archive_app_path)
+  expected = [
+    Integer(oracle_result.fetch("archive_app_device"), 10),
+    Integer(oracle_result.fetch("archive_app_inode"), 10),
+  ]
+  unless held.directory? &&
+         held.uid == Process.uid &&
+         !linked.symlink? &&
+         linked.directory? &&
+         linked.uid == Process.uid &&
+         [held.dev, held.ino] == expected &&
+         [linked.dev, linked.ino] == expected
+    UI.user_error!(
+      "Final DemoLab Archive App is not the directory measured by the oracle."
+    )
+  end
+  [handle, archive_app_path]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  handle&.close unless handle&.closed?
+  UI.user_error!("Unable to bind the final DemoLab Archive App.")
+end
+
+def verify_held_lab002_archive_app_path!(
+  handle,
+  path,
+  oracle_result
+)
+  held = handle.stat
+  linked = File.lstat(path)
+  expected = [
+    Integer(oracle_result.fetch("archive_app_device"), 10),
+    Integer(oracle_result.fetch("archive_app_inode"), 10),
+  ]
+  unless held.directory? &&
+         held.uid == Process.uid &&
+         linked.directory? &&
+         !linked.symlink? &&
+         linked.uid == Process.uid &&
+         [held.dev, held.ino] == expected &&
+         [linked.dev, linked.ino] == expected
+    UI.user_error!("Final DemoLab Archive App changed at publication.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to revalidate the final DemoLab Archive App.")
+end
+
+def verify_closed_staging_inventory!(
+  staging_handle,
+  expected_names
+)
+  unless expected_names.is_a?(Array) &&
+         expected_names.length == 4 &&
+         expected_names.uniq.length == expected_names.length &&
+         expected_names.all? { |name|
+           name.is_a?(String) &&
+             /\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/.match?(name)
+         }
+    UI.user_error!("DemoLab final staging inventory contract is invalid.")
+  end
+  reader, writer = IO.pipe
+  pid = nil
+  waited = false
+  pid = fork do
+    reader.close
+    exit! 126 if DemoLabDarwin.fchdir(staging_handle.fileno).nonzero?
+
+    entries = []
+    Dir.foreach(".") do |name|
+      next if [".", ".."].include?(name)
+
+      entries << name
+      exit! 125 if entries.length > expected_names.length
+    end
+    exit! 125 unless entries.sort == expected_names.sort
+
+    writer.write("closed")
+    writer.close
+    exit! 0
+  rescue StandardError
+    exit! 126
+  end
+  writer.close
+  response = reader.read(7)
+  _, status = Process.wait2(pid)
+  waited = true
+  unless status.success? && response == "closed"
+    UI.user_error!(
+      "DemoLab final staging contains an unexpected or missing artifact."
+    )
+  end
+  true
+rescue SystemCallError
+  UI.user_error!("Unable to enumerate final DemoLab staging safely.")
+ensure
+  reader&.close unless reader&.closed?
+  writer&.close unless writer&.closed?
+  if pid && !waited
+    Process.kill("TERM", pid) rescue nil
+    Process.wait(pid) rescue nil
+  end
+end
+
+def lab002_indeterminate_publication_marker_path(output_root, run_directory)
+  run_name = File.basename(run_directory)
+  unless /\A[A-Za-z0-9._-]+\z/.match?(run_name)
+    UI.user_error!("DemoLab run name is unsafe for an indeterminate marker.")
+  end
+  File.join(
+    output_root,
+    ".demolab-staging-published-indeterminate-#{run_name}.json"
+  )
+end
+
+def publish_lab002_indeterminate_publication_marker!(
+  output_handle:,
+  output_root:,
+  output_identity:,
+  run_directory:,
+  staging_identity:
+)
+  verify_locked_directory!(
+    output_handle,
+    output_root,
+    output_identity,
+    "DEMO_LAB_OUTPUT_DIR"
+  )
+  marker_path =
+    lab002_indeterminate_publication_marker_path(output_root, run_directory)
+  marker_file = publish_new_private_json_record!(
+    marker_path,
+    {
+      "schema" => "orchardprobe.lab002.publication-indeterminate.v1",
+      "status" => "indeterminate",
+      "run_name" => File.basename(run_directory),
+      "run_device" => staging_identity.fetch(1).to_s,
+      "run_inode" => staging_identity.fetch(2).to_s,
+      "note" =>
+        "The final directory rename completed, but descriptor-bound final " \
+        "validation did not. Reconcile this exact run identity before retry.",
+    },
+    "LAB-002 indeterminate publication marker"
+  )
+  marker_file.flock(File::LOCK_UN)
+  marker_file.close
+  marker_path
+ensure
+  marker_file&.close unless marker_file&.closed?
+end
+
+def publish_verified_lab002_staged_run!(
+  output_handle:,
+  output_root:,
+  output_identity:,
+  run_directory:,
+  staging_handle:,
+  staging_directory:,
+  staging_identity:,
+  archive_path:,
+  ipa_path:,
+  evidence_path:,
+  evidence_identity:,
+  oracle_result:,
+  on_publication_change:
+)
+  held_files = []
+  archive_app_handle = nil
+  publication_renamed = false
+  expected_names = [
+    File.basename(archive_path),
+    File.basename(ipa_path),
+    oracle_result.fetch("oracle_name"),
+    File.basename(evidence_path),
+  ]
+  unless [archive_path, ipa_path, evidence_path].all? { |path|
+           File.dirname(path) == staging_directory
+         }
+    UI.user_error!("A final DemoLab artifact escaped the staging directory.")
+  end
+  verify_locked_directory!(
+    staging_handle,
+    staging_directory,
+    staging_identity,
+    "DemoLab staging directory"
+  )
+  verify_closed_staging_inventory!(staging_handle, expected_names)
+
+  archive_app_handle, archive_app_path =
+    open_bound_lab002_archive_app!(archive_path, oracle_result)
+  archive_sources =
+    DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS.map do |specification|
+      relative_path = specification.fetch("relative_path")
+      source_path = File.join(
+        archive_path,
+        "Products",
+        "Applications",
+        relative_path
+      )
+      handle, measured = open_stable_staged_file!(
+        source_path,
+        archive_path,
+        specification.fetch("maximum_size"),
+        "Final DemoLab Archive source"
+      )
+      held_files << [
+        handle,
+        source_path,
+        measured,
+        specification.fetch("maximum_size"),
+        "Final DemoLab Archive source",
+      ]
+      {
+        "relative_path" => relative_path,
+        "size" => measured.fetch("size"),
+        "sha256" => measured.fetch("sha256"),
+      }
+    end
+  unless archive_sources == oracle_result.fetch("archive_files")
+    UI.user_error!("Final DemoLab Archive sources changed before publication.")
+  end
+
+  ipa_handle, ipa_identity = open_stable_staged_file!(
+    ipa_path,
+    staging_directory,
+    DEMO_LAB_MAX_IPA_BYTES,
+    "Final DemoLab IPA"
+  )
+  unless ipa_identity["size"] == oracle_result.fetch("ipa_size") &&
+         ipa_identity["sha256"] == oracle_result.fetch("ipa_sha256")
+    UI.user_error!("Final DemoLab IPA changed before publication.")
+  end
+  held_files << [
+    ipa_handle,
+    ipa_path,
+    ipa_identity,
+    DEMO_LAB_MAX_IPA_BYTES,
+    "Final DemoLab IPA",
+  ]
+
+  oracle_path = File.join(
+    staging_directory,
+    oracle_result.fetch("oracle_name")
+  )
+  oracle_handle, oracle_identity = open_stable_staged_file!(
+    oracle_path,
+    staging_directory,
+    16 * 1024,
+    "Final LAB-002 oracle"
+  )
+  unless oracle_identity.slice(
+    "device",
+    "inode",
+    "mode",
+    "size",
+    "sha256"
+  ) == {
+    "device" => Integer(oracle_result.fetch("oracle_device"), 10),
+    "inode" => Integer(oracle_result.fetch("oracle_inode"), 10),
+    "mode" => oracle_result.fetch("oracle_mode"),
+    "size" => oracle_result.fetch("oracle_size"),
+    "sha256" => oracle_result.fetch("oracle_sha256"),
+  }
+    UI.user_error!("Final LAB-002 oracle changed before publication.")
+  end
+  held_files << [
+    oracle_handle,
+    oracle_path,
+    oracle_identity,
+    16 * 1024,
+    "Final LAB-002 oracle",
+  ]
+
+  evidence_handle, final_evidence_identity = open_stable_staged_file!(
+    evidence_path,
+    staging_directory,
+    DEMO_LAB_MAX_UPLOAD_RESULT_BYTES,
+    "Final DemoLab pre-upload evidence"
+  )
+  unless final_evidence_identity == evidence_identity
+    UI.user_error!("Final DemoLab evidence changed before publication.")
+  end
+  held_files << [
+    evidence_handle,
+    evidence_path,
+    final_evidence_identity,
+    DEMO_LAB_MAX_UPLOAD_RESULT_BYTES,
+    "Final DemoLab pre-upload evidence",
+  ]
+
+  verify_held_lab002_archive_app_path!(
+    archive_app_handle,
+    archive_app_path,
+    oracle_result
+  )
+  held_files.each do |handle, path, identity, maximum_size, label|
+    verify_held_staged_file_path!(
+      handle,
+      path,
+      staging_directory,
+      identity,
+      maximum_size,
+      label
+    )
+  end
+  verify_closed_staging_inventory!(staging_handle, expected_names)
+  verify_locked_directory!(
+    staging_handle,
+    staging_directory,
+    staging_identity,
+    "DemoLab staging directory"
+  )
+  verify_locked_directory!(
+    output_handle,
+    output_root,
+    output_identity,
+    "DEMO_LAB_OUTPUT_DIR"
+  )
+
+  rename_exclusive_no_follow!(
+    staging_directory,
+    run_directory,
+    "DemoLab run directory"
+  )
+  publication_renamed = true
+  on_publication_change.call
+
+  published_identity = [
+    File.realpath(run_directory),
+    staging_identity.fetch(1),
+    staging_identity.fetch(2),
+  ]
+  verify_locked_directory!(
+    staging_handle,
+    run_directory,
+    published_identity,
+    "Published DemoLab run directory"
+  )
+  verify_closed_staging_inventory!(staging_handle, expected_names)
+  published_archive_app_path = File.join(
+    run_directory,
+    Pathname.new(archive_app_path).relative_path_from(
+      Pathname.new(staging_directory)
+    ).to_s
+  )
+  verify_held_lab002_archive_app_path!(
+    archive_app_handle,
+    published_archive_app_path,
+    oracle_result
+  )
+  held_files.each do |handle, path, identity, maximum_size, label|
+    published_path = File.join(
+      run_directory,
+      Pathname.new(path).relative_path_from(
+        Pathname.new(staging_directory)
+      ).to_s
+    )
+    verify_held_staged_file_path!(
+      handle,
+      published_path,
+      run_directory,
+      identity,
+      maximum_size,
+      label
+    )
+  end
+  verify_locked_directory!(
+    output_handle,
+    output_root,
+    output_identity,
+    "DEMO_LAB_OUTPUT_DIR"
+  )
+  true
+rescue => error
+  if publication_renamed
+    marker_path = publish_lab002_indeterminate_publication_marker!(
+      output_handle: output_handle,
+      output_root: output_root,
+      output_identity: output_identity,
+      run_directory: run_directory,
+      staging_identity: staging_identity
+    )
+    UI.important(
+      "Retained an indeterminate published DemoLab run for reconciliation: " \
+      "#{run_directory} (marker: #{marker_path})"
+    )
+  end
+  if [
+    Errno::EACCES,
+    Errno::ELOOP,
+    Errno::ENOENT,
+    Errno::ENOTDIR,
+  ].any? { |error_class| error.is_a?(error_class) }
+    UI.user_error!("Unable to publish the closed final DemoLab staging.")
+  end
+  raise error
+ensure
+  held_files&.each do |handle, _path, _identity, _maximum_size, _label|
+    handle&.close unless handle&.closed?
+  end
+  archive_app_handle&.close unless archive_app_handle&.closed?
+end
+
 def write_pre_upload_evidence(
   run_directory:,
   archive_path:,
@@ -4751,7 +5323,19 @@ def write_pre_upload_evidence(
   ensure
     evidence_file.close
   end
-  evidence_path
+  evidence_identity = stable_staged_file_identity!(
+    evidence_path,
+    run_directory,
+    DEMO_LAB_MAX_UPLOAD_RESULT_BYTES,
+    "DemoLab pre-upload evidence"
+  )
+  expected_serialized = "#{JSON.pretty_generate(evidence)}\n"
+  unless evidence_identity["size"] == expected_serialized.bytesize &&
+         evidence_identity["sha256"] ==
+           Digest::SHA256.hexdigest(expected_serialized)
+    UI.user_error!("Written DemoLab pre-upload evidence bytes changed.")
+  end
+  [evidence_path, evidence_identity]
 end
 
 def require_exact_hash_keys!(value, expected_keys, label)
@@ -6134,6 +6718,224 @@ platform :ios do
         UI.user_error!("Retained DemoLab staging was not detected.")
       end
       retained_directory.close
+    end
+    %w[
+      none
+      ipa
+      archive
+      archive_root
+      oracle
+      evidence
+      extra
+      post_publish_ipa
+    ].each do |replacement|
+      Dir.mktmpdir(
+        "orchardprobe-lab002-final-staging-check-",
+        external_temporary_base
+      ) do |container|
+        staging_directory = File.join(container, "staging")
+        Dir.mkdir(staging_directory, 0o700)
+        staging_identity = private_directory_identity!(
+          staging_directory,
+          "Final staging regression directory"
+        )
+        archive_path = File.join(staging_directory, "DemoLab.xcarchive")
+        Dir.mkdir(archive_path, 0o700)
+        archive_files =
+          DEMO_LAB_LAB002_ARCHIVE_SOURCE_SPECS.each_with_index.map do |specification, index|
+            path = File.join(
+              archive_path,
+              "Products",
+              "Applications",
+              specification.fetch("relative_path")
+            )
+            FileUtils.mkdir_p(File.dirname(path), mode: 0o700)
+            content = "archive-source-#{index}"
+            File.write(path, content)
+            File.chmod(0o400, path)
+            {
+              "relative_path" => specification.fetch("relative_path"),
+              "size" => content.bytesize,
+              "sha256" => Digest::SHA256.hexdigest(content),
+            }
+          end
+        ipa_path = File.join(staging_directory, "DemoLab-3.ipa")
+        evidence_path = File.join(
+          staging_directory,
+          "demolab-pre-upload-evidence.json"
+        )
+        oracle_path = File.join(
+          staging_directory,
+          DEMO_LAB_LAB002_ORACLE_NAME
+        )
+        {
+          ipa_path => "ipa-bytes",
+          evidence_path => "evidence-bytes",
+          oracle_path => "oracle-bytes",
+        }.each do |path, content|
+          File.write(path, content)
+          File.chmod(0o400, path)
+        end
+
+        archive_app_path = File.join(
+          archive_path,
+          "Products",
+          "Applications",
+          "DemoLab.app"
+        )
+        archive_app_stat = File.lstat(archive_app_path)
+        evidence_identity = nil
+        oracle_identity = nil
+        with_locked_private_directory(
+          staging_directory,
+          staging_identity,
+          "Final staging regression directory"
+        ) do |staging_handle|
+          evidence_identity = stable_staged_file_identity!(
+            evidence_path,
+            staging_directory,
+            DEMO_LAB_MAX_UPLOAD_RESULT_BYTES,
+            "Regression evidence"
+          )
+          oracle_identity = lab002_published_artifact_identity!(
+            staging_handle,
+            DEMO_LAB_LAB002_ORACLE_NAME,
+            allowed_names: [DEMO_LAB_LAB002_ORACLE_NAME]
+          )
+        end
+        oracle_result = {
+          "oracle_name" => DEMO_LAB_LAB002_ORACLE_NAME,
+          "archive_app_device" => archive_app_stat.dev.to_s,
+          "archive_app_inode" => archive_app_stat.ino.to_s,
+          "oracle_device" => oracle_identity.fetch("device").to_s,
+          "oracle_inode" => oracle_identity.fetch("inode").to_s,
+          "oracle_mode" => oracle_identity.fetch("mode"),
+          "oracle_size" => oracle_identity.fetch("size"),
+          "oracle_sha256" => oracle_identity.fetch("sha256"),
+          "ipa_size" => File.size(ipa_path),
+          "ipa_sha256" => Digest::SHA256.file(ipa_path).hexdigest,
+          "archive_files" => archive_files,
+        }
+
+        replaced_path =
+          case replacement
+          when "ipa"
+            ipa_path
+          when "archive"
+            File.join(
+              archive_path,
+              "Products",
+              "Applications",
+              archive_files.first.fetch("relative_path")
+            )
+          when "oracle"
+            oracle_path
+          when "evidence"
+            evidence_path
+          end
+        if replaced_path
+          File.rename(
+            replaced_path,
+            File.join(container, "replaced-#{replacement}")
+          )
+          File.write(replaced_path, "substituted-#{replacement}")
+          File.chmod(0o400, replaced_path)
+        elsif replacement == "archive_root"
+          displaced_app = File.join(container, "replaced-archive-app")
+          File.rename(archive_app_path, displaced_app)
+          FileUtils.cp_r(displaced_app, archive_app_path, preserve: true)
+        elsif replacement == "extra"
+          File.write(
+            File.join(staging_directory, "unexpected-artifact"),
+            "unexpected"
+          )
+        end
+
+        output_identity = private_directory_identity!(
+          container,
+          "Final staging regression output root"
+        )
+        run_directory = File.join(container, "published")
+        publication_changed = false
+        substitution_rejected = false
+        with_locked_private_directory(
+          container,
+          output_identity,
+          "Final staging regression output root"
+        ) do |output_handle|
+          with_locked_private_directory(
+            staging_directory,
+            staging_identity,
+            "Final staging regression directory"
+          ) do |staging_handle|
+            begin
+              publish_verified_lab002_staged_run!(
+                output_handle: output_handle,
+                output_root: container,
+                output_identity: output_identity,
+                run_directory: run_directory,
+                staging_handle: staging_handle,
+                staging_directory: staging_directory,
+                staging_identity: staging_identity,
+                archive_path: archive_path,
+                ipa_path: ipa_path,
+                evidence_path: evidence_path,
+                evidence_identity: evidence_identity,
+                oracle_result: oracle_result,
+                on_publication_change: lambda do
+                  publication_changed = true
+                  if replacement == "post_publish_ipa"
+                    published_ipa = File.join(
+                      run_directory,
+                      File.basename(ipa_path)
+                    )
+                    File.rename(
+                      published_ipa,
+                      File.join(container, "replaced-post-publish-ipa")
+                    )
+                    File.write(published_ipa, "substituted-post-publish-ipa")
+                    File.chmod(0o400, published_ipa)
+                  end
+                end
+              )
+            rescue FastlaneCore::Interface::FastlaneError
+              substitution_rejected = true
+            end
+          end
+        end
+        if replacement == "none"
+          unless publication_changed &&
+                 !substitution_rejected &&
+                 File.directory?(run_directory) &&
+                 !File.exist?(staging_directory)
+            UI.user_error!("A valid final staging run was not published.")
+          end
+        elsif replacement == "post_publish_ipa"
+          marker_path = lab002_indeterminate_publication_marker_path(
+            container,
+            run_directory
+          )
+          marker_name = File.basename(marker_path)
+          retained_names = File.open(container, File::RDONLY) do |root_handle|
+            retained_demolab_staging_names!(root_handle)
+          end
+          unless substitution_rejected &&
+                 publication_changed &&
+                 File.directory?(run_directory) &&
+                 File.file?(marker_path) &&
+                 retained_names == [marker_name]
+            UI.user_error!(
+              "A post-publication substitution lacked an indeterminate marker."
+            )
+          end
+        elsif !substitution_rejected ||
+              publication_changed ||
+              File.exist?(run_directory)
+          UI.user_error!(
+            "A #{replacement} final-staging substitution was accepted."
+          )
+        end
+      end
     end
     trusted_toolchain_name, trusted_sources =
       DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS.first
@@ -8946,6 +9748,7 @@ platform :ios do
 
           ipa_path = nil
           evidence_path = nil
+          evidence_identity = nil
           oracle_result = nil
           with_pinned_xcode_environment(xcode_toolchain) do
             verify_selected_xcode_toolchain!(xcode_toolchain)
@@ -8961,9 +9764,9 @@ platform :ios do
                 sdk: "iphoneos",
                 archive_path: archive_path,
                 derived_data_path: File.join(workspace, "DerivedData"),
-                output_directory: staging_directory,
+                output_directory: gym_scratch_root,
                 output_name: "DemoLab-#{build_number}.ipa",
-                buildlog_path: staging_directory,
+                buildlog_path: gym_scratch_root,
                 export_method: "app-store",
                 export_options: {
                   method: "app-store",
@@ -8974,6 +9777,10 @@ platform :ios do
                 xcargs: xcargs,
                 export_xcargs: "-allowProvisioningUpdates",
                 result_bundle: true,
+                result_bundle_path: File.join(
+                  gym_scratch_root,
+                  "DemoLab-#{build_number}.xcresult"
+                ),
                 xcodebuild_command: Shellwords.escape(
                   xcode_toolchain.dig("xcodebuild", "path")
                 ),
@@ -9004,6 +9811,21 @@ platform :ios do
             ) == gym_scratch_identity
               UI.user_error!("Gym scratch root changed during export.")
             end
+            resolved_ipa = validate_regular_file_beneath_root!(
+              ipa_path,
+              gym_scratch_root,
+              "Gym-exported DemoLab IPA"
+            )
+            staged_ipa = File.join(
+              staging_directory,
+              File.basename(resolved_ipa)
+            )
+            rename_exclusive_no_follow!(
+              resolved_ipa,
+              staged_ipa,
+              "DemoLab IPA"
+            )
+            ipa_path = staged_ipa
             FileUtils.rm_rf(gym_scratch_root)
             if File.exist?(gym_scratch_root) || File.symlink?(gym_scratch_root)
               UI.user_error!("Unable to remove Gym export scratch artifacts.")
@@ -9034,7 +9856,7 @@ platform :ios do
                 on_retention_change: ->(retain) { retain_staging = retain }
               )
             end
-            evidence_path = write_pre_upload_evidence(
+            evidence_path, evidence_identity = write_pre_upload_evidence(
               run_directory: staging_directory,
               archive_path: archive_path,
               ipa_path: ipa_path,
@@ -9049,26 +9871,26 @@ platform :ios do
             )
             verify_selected_xcode_toolchain!(xcode_toolchain)
           end
-          verify_locked_directory!(
-            staging_handle,
-            staging_directory,
-            staging_identity,
-            "DemoLab staging directory"
+          publish_verified_lab002_staged_run!(
+            output_handle: output_handle,
+            output_root: output_root,
+            output_identity: output_identity,
+            run_directory: run_directory,
+            staging_handle: staging_handle,
+            staging_directory: staging_directory,
+            staging_identity: staging_identity,
+            archive_path: archive_path,
+            ipa_path: ipa_path,
+            evidence_path: evidence_path,
+            evidence_identity: evidence_identity,
+            oracle_result: oracle_result,
+            on_publication_change: lambda do
+              published = true
+              retain_staging = true
+              staging_directory = nil
+            end
           )
-          verify_locked_directory!(
-            output_handle,
-            output_root,
-            output_identity,
-            "DEMO_LAB_OUTPUT_DIR"
-          )
-          rename_exclusive_no_follow!(
-            staging_directory,
-            run_directory,
-            "DemoLab run directory"
-          )
-          published = true
           retain_staging = false
-          staging_directory = nil
 
           published_ipa = File.join(
             run_directory,

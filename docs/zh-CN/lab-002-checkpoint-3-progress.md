@@ -15,7 +15,7 @@
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
-| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已完成，3B.2 实现与本地 CR 已完成` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
+| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已完成，3B.2 等待最终 P1 修复 CR/CI` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
@@ -25,7 +25,7 @@
 | 顺序 | 切片 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3B.1 | 安全消费 3A 工件 | `完成；PR #63 已合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量。纯设备无关回归、Codex CR、GitHub Codex Review 与 CI 已通过；[PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 已合并为 `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
-| 3B.2 | Archive/IPA Oracle 闭合 | `实现与本地 CR 完成；等待 CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
+| 3B.2 | Archive/IPA Oracle 闭合 | `等待最终 P1 修复 CR/CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
 | 3B.3 | Evidence 与 Upload Gate | `等待 3B.2 合并` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
 
 ### 3B.2 顺序执行门禁
@@ -35,7 +35,7 @@
 | 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
 | 3B.2.2 | Archive/IPA 一致性 | `完成` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
-| 3B.2.4 | 纯设备无关闭环测试 | `本地测试、Codex CR 与 Helper 复现完成；等待 CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
+| 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；等待最终 P1 修复 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
 最终 3B.2 Helper 已从 Commit `dc08c057115b6aa01c6eea5b73d5909ae392ae21`
 的只读源码快照独立构建两次，产物字节完全一致；随后恢复强制白名单路径的第三次构建
@@ -230,10 +230,23 @@ App 与 IPA，要求 Archive App Directory 保持原 Device/Inode，并从该重
 要求其保持原身份、完整摘要和已验证 ZIP 清单。因此 Archive App 或 IPA 被改名/替换时，
 Oracle 不会继续描述旧 Descriptor，而让紧随其后的 Evidence 步骤读取另一份当前路径。
 
-Helper 还会返回最终 IPA 的 Size/Digest，以及 Archive 六个保留文件按固定顺序排列的
-Size/Digest Tuple。Fastlane 在写入 Pre-upload Evidence 前，会独立 Snapshot 相同的
-三个 Mach-O 与三个 Info.plist，并要求逐项完全相同。因此 Evidence 边界会同时拒绝
-Helper 发布前后发生的 Source 替换，不再信任单纯的 Pathname 交接。
+Helper 还会返回最终 IPA 的 Size/Digest、Archive 六个保留文件按固定顺序排列的
+Size/Digest Tuple，以及完成这些测量时仍持有的 Archive App Directory Device/Inode。
+Fastlane 在写入 Pre-upload Evidence 前，会绑定该精确目录并独立 Snapshot 相同的三个
+Mach-O 与三个 Info.plist，要求逐项完全相同。因此 Evidence 边界会同时拒绝 Helper
+发布前后发生的 Source 或整个 Archive Root 替换，不再信任单纯的 Pathname 交接。
+
+外层 Lane 会把 Gym Log、Result Bundle、dSYM ZIP 及其他 Export 辅助产物全部留在
+一次性私有 Scratch Directory，只把返回的 IPA 移入最终 Staging。最终 Publisher
+要求顶层清单精确只有 Archive、IPA、Oracle 与 Evidence，并持续持有 Oracle 绑定的
+Archive App、IPA、六个 Archive Source、Oracle 和序列化 Evidence 的只读 Descriptor。
+同一个函数会再次验证完整摘要与当前路径身份，执行排他的 Staging Directory Rename，
+再从发布后的新路径逐个复核所有已持有 Descriptor，成功后才返回。纯设备无关回归会
+发布一份合法 Fixture，并拒绝 IPA、Archive Source、整个 Archive App Root、Oracle、
+Evidence 的替换以及额外顶层 Entry 注入。它还会在目录重命名后替换 IPA，并要求生成
+一个仅所有者可读写的 `.demolab-staging-published-indeterminate-*.json` 同级标记，
+其中绑定预期发布目录的 Device/Inode。现有 Retained-staging 扫描会识别该标记，因此
+最终复核失败会进入明确的人工核对路径，不会静默遗留未经验证的最终 Run Directory。
 
 只有三个 Role 全部通过后，Helper 才会编码规范
 `orchardprobe.lab002.oracle.v1` 记录，将其绑定到已认证 Source、Version/Build、

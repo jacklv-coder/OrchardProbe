@@ -166,6 +166,8 @@ struct InspectPrebuildOutput {
 struct OracleOutput {
     schema: &'static str,
     oracle_name: &'static str,
+    archive_app_device: String,
+    archive_app_inode: String,
     oracle_device: String,
     oracle_inode: String,
     oracle_mode: u32,
@@ -1076,7 +1078,7 @@ fn create_oracle(
     let oracle_bytes = oracle
         .to_canonical_bytes()
         .map_err(|error| format!("could not encode closed LAB-002 oracle: {error}"))?;
-    let _rebound_sources = rebind_oracle_source_paths(
+    let rebound_sources = rebind_oracle_source_paths(
         &run_directory,
         archive_app_identity,
         &initial_archive_executables,
@@ -1087,6 +1089,8 @@ fn create_oracle(
         &ipa_sha256,
         &inventory,
     )?;
+    let final_archive_app_identity =
+        stable_directory_identity(&rebound_sources.archive_app, "final Archive app")?;
     let archive_files = retained_archive_paths
         .iter()
         .zip(archive_measurements.iter())
@@ -1101,6 +1105,8 @@ fn create_oracle(
     Ok(OracleOutput {
         schema: ORACLE_RESULT_SCHEMA,
         oracle_name: ORACLE_NAME,
+        archive_app_device: final_archive_app_identity.0.to_string(),
+        archive_app_inode: final_archive_app_identity.1.to_string(),
         oracle_device: artifact.device.to_string(),
         oracle_inode: artifact.inode.to_string(),
         oracle_mode: artifact.mode,
@@ -1119,7 +1125,7 @@ struct ArchiveAppSnapshot {
 }
 
 struct ReboundOracleSources {
-    _archive_app: File,
+    archive_app: File,
     _ipa: File,
 }
 
@@ -1220,7 +1226,7 @@ fn rebind_oracle_source_paths(
     )?;
     verify_private_output_root_path(run_directory)?;
     Ok(ReboundOracleSources {
-        _archive_app: final_archive_app,
+        archive_app: final_archive_app,
         _ipa: final_ipa,
     })
 }
