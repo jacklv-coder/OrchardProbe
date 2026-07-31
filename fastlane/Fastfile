@@ -131,6 +131,14 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6173d47133962761001307b898809a4c118eb4a2",
       }.freeze,
     ].freeze,
+    "882403f226967a39ea427c64ccf50a11d787d26f9b4f7180d95c1d27d8d6fc4f" => [
+      {
+        "size" => 1_884_192,
+        "sha256" =>
+          "6089f40fb10215c0878e6c7f6acf75404c6bef0cb120f0516d353e9fd2ccbbcf",
+        "cdhash" => "766ffcbff3eedc9a4424fd74852c9a8bc73f87aa",
+      }.freeze,
+    ].freeze,
   }.freeze,
 }.freeze
 DEMO_LAB_CRATES_IO_SOURCE =

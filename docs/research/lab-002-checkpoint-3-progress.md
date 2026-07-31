@@ -41,14 +41,14 @@ preceding row is complete.
 | 3B.2.4 | Device-free closure tests | `local tests, Codex CR, and helper reproduction complete; CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
 The final 3B.2 helper was independently built twice from the read-only source
-snapshot at commit `08f0fdeee7cf72484ebe642dc02ce96857600d53`; both products were
+snapshot at commit `ebd0ce7ba2502a782fbc2138e69bb77501ae4e2f`; both products were
 byte-identical, and a third build passed after the mandatory allowlist path was
 restored. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`99d57347456f102e4d56ccb9ac2c1ea2d8b7082920a428cd5e5f7c23658d71e8`,
-size `1892336`, SHA-256
-`8a75fc72c18c8caa4ec6fceb2f4fdfdb2957f9b50332909f1464d4c7a0d60418`,
-and CDHash `6173d47133962761001307b898809a4c118eb4a2`.
+`882403f226967a39ea427c64ccf50a11d787d26f9b4f7180d95c1d27d8d6fc4f`,
+size `1884192`, SHA-256
+`6089f40fb10215c0878e6c7f6acf75404c6bef0cb120f0516d353e9fd2ccbbcf`,
+and CDHash `766ffcbff3eedc9a4424fd74852c9a8bc73f87aa`.
 
 ## Fixed safety boundaries
 
