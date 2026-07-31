@@ -14,11 +14,19 @@
 
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
-| 3B | Archive/Oracle/证据闭合 | `blocked` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
+| 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
+| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已启动` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
+
+### 3B 顺序实现切片
+
+| 顺序 | 切片 | 状态 | 完成门禁 |
+|---:|---|---|---|
+| 3B.1 | 安全消费 3A 工件 | `进行中` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 必须以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量 |
+| 3B.2 | Archive/IPA Oracle 闭合 | `被 3B.1 阻塞` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
+| 3B.3 | Evidence 与 Upload Gate | `被 3B.2 阻塞` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
 
 ## 固定安全边界
 
@@ -130,3 +138,28 @@ Lane 不会静默重试该 Tuple。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
 Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
 签名、Archive/Export、上传、安装或设备操作。
+
+## 3B.1 实现边界
+
+Archive Lane 不再从 Shell 接受 `DEMO_LAB_BUILD_BINDING_SHA256`、
+`DEMO_LAB_IDENTITY_NONCE` 或 `DEMO_LAB_AUTHORIZATION_PUBLIC_KEY`。它会认证实时
+GitHub `main` Source Commit，把检查点固定为 DemoLab `1.0 (3)`，并在已锁定私有
+输出根下推导精确 3A 目录名称。私有 Helper 运行期间，输出根和推导出的预构建目录
+都保持打开并持有排他锁。
+
+Helper 的 `inspect-prebuild` 操作通过固定继承 Descriptor 接收已持有预构建目录及其
+预期 Device/Inode。它只接受 Seed、Manifest 与 Pre-build Record 三个目录项。每个
+Entry 都以 Descriptor-relative、No-follow、Nonblocking 方式打开，必须是非空、
+当前用户所有、Mode `0400`、固定大小上限内的普通文件，并在每次读取前后核对身份与
+时间戳。Helper 从 Seed 推导 Ed25519 公钥与 Key ID，拒绝弱 Key，把 Manifest 与
+Record 解析为精确规范 Artifact，再根据 Archive Lane 预期的 Source、Version、
+Build、Configuration、Observer、Toolchain 和固定三 Role Authorization Request
+重新计算 Manifest Hash、Build Binding、三个 Role-specific Target Binding 与
+Target-identity-set Hash。返回前还会再次执行精确目录清单、字节/身份读取及
+Held-path 身份复核。
+
+结果是只由 Fastlane 消费且不会打印的有界私有标准输出 IPC Envelope。Fastlane
+要求精确 Schema/Field，并检查所持目录身份、Source/Version/Build/Toolchain、所有
+64-hex Binding 和非弱公钥；随后再次验证受评审 Helper、所选 Xcode/XcodeGen 和所持
+目录。只有这些闭合值才会注入仓库自有构建。本切片尚不声明 Archive/IPA Oracle，
+也不会启用 Upload；二者分别继续被 3B.2 与 3B.3 阻塞。

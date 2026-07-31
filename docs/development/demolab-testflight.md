@@ -173,11 +173,8 @@ checkout, or export them only in the local terminal:
 | `DEMO_LAB_APP_GROUP_ID` | archive | Registered first-party App Group enabled on both the main App ID and share-extension App ID. The archive lane rejects the checked-in `group.com.example.*` value and injects this exact group into both entitlements and Info.plists. |
 | `DEMO_LAB_TEAM_ID` | archive | Apple Developer team used by Xcode signing. |
 | `DEMO_LAB_MARKETING_VERSION` | archive | Optional dotted version; defaults to `1.0`. |
-| `DEMO_LAB_BUILD_NUMBER` | archive | New positive integer for every App Store Connect upload. |
-| `DEMO_LAB_BUILD_BINDING_SHA256` | archive | Exact lowercase 64-hex binding produced by the reviewed LAB-002 pre-build step from every frozen source, version, manifest, and toolchain input. The archive lane validates and injects it; it never supplies a default. |
-| `DEMO_LAB_IDENTITY_NONCE` | archive | Exact lowercase 64-hex private target-manifest nonce produced by the same reviewed LAB-002 pre-build step. The archive lane validates and injects it into the owned DemoLab fixture; it is never generated or defaulted by the lane. |
-| `DEMO_LAB_AUTHORIZATION_PUBLIC_KEY` | archive | Exact lowercase 64-hex, non-weak Ed25519 public key from the reviewed authorized-target manifest. The archive lane and app reject all eight encoded low-order points. The app pins the accepted value and accepts only Host enrollment/run envelopes signed by its matching private key; the private key never enters Xcode or Fastlane. |
-| `DEMO_LAB_OUTPUT_DIR` | archive | Absolute dedicated directory outside the repository. It must already exist, be owned by the current user, not be a symlink, already have mode `0700`, and contain no single quote or control character; the lane never creates it or changes its permissions. |
+| `DEMO_LAB_BUILD_NUMBER` | pre-build, archive | Positive build number. Checkpoint 3 currently accepts only `3`. |
+| `DEMO_LAB_OUTPUT_DIR` | pre-build, archive | Absolute dedicated directory outside the repository. It must already exist, be owned by the current user, not be a symlink, already have mode `0700`, and contain no single quote or control character; the lanes never create it or change its permissions. The archive lane derives and locks the exact 3A directory below this root. |
 | `DEMO_LAB_EVIDENCE_PATH` | upload, reconciliation | Absolute path to the generated pre-upload evidence JSON. It must remain owned by the current user with no group/other access. |
 | `DEMO_LAB_APPLE_ID` | upload | Numeric Apple ID of the existing App Store Connect app record; this binds Apple's package-upload command to the intended app. |
 | `APP_STORE_CONNECT_KEY_ID` | upload | App Store Connect API key identifier. |
@@ -216,10 +213,20 @@ mkdir -p /absolute/private/path/orchardprobe-demolab
 chmod 700 /absolute/private/path/orchardprobe-demolab
 export DEMO_LAB_OUTPUT_DIR=/absolute/private/path/orchardprobe-demolab
 export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_BUILD_NUMBER=3
+bundle _4.0.16_ exec fastlane ios demolab_prepare_lab002
 bundle _4.0.16_ exec fastlane ios demolab_archive
 ```
 
-The lane validates identifier formats and ownership inputs, records the clean
+The pre-build lane first publishes exactly one private three-file 3A tuple for
+the authenticated live-`main` source and DemoLab `1.0 (3)`. The archive lane
+derives that directory from the same locked output root, reads it only through
+a held directory descriptor, and rederives and validates the manifest,
+non-weak authorization public key, identity nonce, Build Binding, three target
+bindings, target-identity set, and pinned toolchain before injecting those
+values. The shell does not provide any of those private binding values.
+
+The archive lane then validates identifier formats and ownership inputs, records the clean
 commit, exports `fixtures/DemoLab` from that immutable Git commit rather than
 copying the mutable checkout, generates the project in a temporary directory,
 asks Xcode to archive/export with automatic signing, and writes first to a new

@@ -24,6 +24,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
+const INSPECT_REQUEST_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-request.v1";
+const INSPECT_RESULT_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-result.v1";
 const PREBUILD_SCHEMA: &str = "orchardprobe.lab002.prebuild.v1";
 const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directory.v1";
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
@@ -34,6 +36,7 @@ const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
 const PREBUILD_NAME: &str = "lab-002-prebuild-v1.json";
 const CHECKPOINT_MARKETING_VERSION: &str = "1.0";
 const CHECKPOINT_BUILD_NUMBER: &str = "3";
+const MAX_PRIVATE_ARTIFACT_BYTES: usize = 16 * 1024;
 
 #[derive(Debug)]
 struct PrivateOutputRoot {
@@ -54,7 +57,20 @@ struct PrepareRequest {
     targets: Vec<AuthorizedTarget>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InspectPrebuildRequest {
+    schema: String,
+    source_commit: String,
+    marketing_version: String,
+    build_number: String,
+    configuration: String,
+    observer_revision: String,
+    toolchain: Toolchain,
+    targets: Vec<AuthorizedTarget>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PreparedTarget {
     role: LabRole,
@@ -96,6 +112,30 @@ struct PrepareOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct InspectPrebuildOutput {
+    schema: &'static str,
+    prebuild_directory_device: String,
+    prebuild_directory_inode: String,
+    source_commit: String,
+    marketing_version: String,
+    build_number: String,
+    identity_nonce: String,
+    authorization_public_key: String,
+    authorization_key_id: String,
+    authorized_target_manifest_sha256: String,
+    build_binding_sha256: String,
+    target_identity_set_sha256: String,
+    toolchain: Toolchain,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+enum CommandOutput {
+    Prepare(PrepareOutput),
+    InspectPrebuild(InspectPrebuildOutput),
+}
+
+#[derive(Debug, Serialize)]
 struct PrivateArtifactIdentity {
     name: String,
     device: String,
@@ -127,7 +167,7 @@ fn main() -> ExitCode {
         },
     ) {
         Ok(output) => {
-            if let Err(error) = write_prepare_result(&mut stdout, &output) {
+            if let Err(error) = write_command_result(&mut stdout, &output) {
                 eprintln!("error: {error}");
                 return ExitCode::FAILURE;
             }
@@ -176,7 +216,7 @@ fn write_publication_identity(
     .map_err(|error| format!("could not arm publication rollback: {error}"))
 }
 
-fn write_prepare_result(mut writer: impl Write, output: &PrepareOutput) -> Result<(), String> {
+fn write_command_result(mut writer: impl Write, output: &CommandOutput) -> Result<(), String> {
     let bytes =
         canonical_json(output).map_err(|error| format!("could not encode result: {error}"))?;
     writer
@@ -189,28 +229,72 @@ fn execute(
     arguments: Vec<std::ffi::OsString>,
     output_root_directory: File,
     arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
-) -> Result<PrepareOutput, String> {
-    if arguments.len() != 7
-        || arguments[0] != "prepare"
-        || arguments[1] != "--output-root"
-        || arguments[3] != "--output-root-device"
-        || arguments[5] != "--output-root-inode"
-    {
-        return Err(
-            "usage: oprobe-lab002 prepare --output-root ABSOLUTE_PRIVATE_DIRECTORY \
-             --output-root-device DECIMAL --output-root-inode DECIMAL"
-                .into(),
-        );
+) -> Result<CommandOutput, String> {
+    match arguments.first().and_then(|value| value.to_str()) {
+        Some("prepare") => {
+            let (path, expected_identity) =
+                parse_bound_directory_arguments(&arguments, "prepare", "--output-root")?;
+            let output_root = validate_bound_private_output_root(
+                &path,
+                output_root_directory,
+                expected_identity,
+            )?;
+            let request: PrepareRequest = read_request(io::stdin().lock())?;
+            if request.schema != REQUEST_SCHEMA {
+                return Err("prebuild request schema is invalid".into());
+            }
+            prepare_with_bound_publication_arm(output_root, request, arm_publication)
+                .map(CommandOutput::Prepare)
+        }
+        Some("inspect-prebuild") => {
+            let (path, expected_identity) = parse_bound_directory_arguments(
+                &arguments,
+                "inspect-prebuild",
+                "--prebuild-directory",
+            )?;
+            let prebuild_directory = validate_bound_private_output_root(
+                &path,
+                output_root_directory,
+                expected_identity,
+            )?;
+            let request: InspectPrebuildRequest = read_request(io::stdin().lock())?;
+            if request.schema != INSPECT_REQUEST_SCHEMA {
+                return Err("inspect-prebuild request schema is invalid".into());
+            }
+            inspect_prebuild_directory(prebuild_directory, request)
+                .map(CommandOutput::InspectPrebuild)
+        }
+        _ => Err(
+            "usage: oprobe-lab002 prepare|inspect-prebuild with one fixed private directory".into(),
+        ),
     }
-    let output_root = PathBuf::from(&arguments[2]);
-    let expected_identity = (
-        parse_identity_component(&arguments[4], "output-root device")?,
-        parse_identity_component(&arguments[6], "output-root inode")?,
-    );
-    let output_root =
-        validate_bound_private_output_root(&output_root, output_root_directory, expected_identity)?;
-    let request = read_request(io::stdin().lock())?;
-    prepare_with_bound_publication_arm(output_root, request, arm_publication)
+}
+
+fn parse_bound_directory_arguments(
+    arguments: &[std::ffi::OsString],
+    operation: &str,
+    path_option: &str,
+) -> Result<(PathBuf, (u64, u64)), String> {
+    let device_option = format!("{path_option}-device");
+    let inode_option = format!("{path_option}-inode");
+    if arguments.len() != 7
+        || arguments[0] != operation
+        || arguments[1] != path_option
+        || arguments[3] != device_option.as_str()
+        || arguments[5] != inode_option.as_str()
+    {
+        return Err(format!(
+            "usage: oprobe-lab002 {operation} {path_option} ABSOLUTE_PRIVATE_DIRECTORY \
+             {device_option} DECIMAL {inode_option} DECIMAL"
+        ));
+    }
+    Ok((
+        PathBuf::from(&arguments[2]),
+        (
+            parse_identity_component(&arguments[4], "private-directory device")?,
+            parse_identity_component(&arguments[6], "private-directory inode")?,
+        ),
+    ))
 }
 
 fn parse_identity_component(value: &std::ffi::OsStr, label: &str) -> Result<u64, String> {
@@ -228,7 +312,7 @@ fn parse_identity_component(value: &std::ffi::OsStr, label: &str) -> Result<u64,
         .map_err(|_| format!("{label} must fit in an unsigned 64-bit integer"))
 }
 
-fn read_request(mut input: impl Read) -> Result<PrepareRequest, String> {
+fn read_request<T: serde::de::DeserializeOwned>(mut input: impl Read) -> Result<T, String> {
     let mut bytes = Vec::with_capacity(4096);
     input
         .by_ref()
@@ -238,12 +322,7 @@ fn read_request(mut input: impl Read) -> Result<PrepareRequest, String> {
     if bytes.is_empty() || bytes.len() > MAX_REQUEST_BYTES {
         return Err("prebuild request is empty or oversized".into());
     }
-    let request: PrepareRequest = serde_json::from_slice(&bytes)
-        .map_err(|error| format!("prebuild request is invalid: {error}"))?;
-    if request.schema != REQUEST_SCHEMA {
-        return Err("prebuild request schema is invalid".into());
-    }
-    Ok(request)
+    serde_json::from_slice(&bytes).map_err(|error| format!("prebuild request is invalid: {error}"))
 }
 
 #[cfg(test)]
@@ -391,37 +470,306 @@ fn prepare_with_bound_publication_arm(
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ReadPrivateArtifact {
+    bytes: Vec<u8>,
+    device: u64,
+    inode: u64,
+    size: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+}
+
+fn inspect_prebuild_directory(
+    prebuild_directory: PrivateOutputRoot,
+    request: InspectPrebuildRequest,
+) -> Result<InspectPrebuildOutput, String> {
+    validate_inspect_request(&request)?;
+    verify_private_artifact_inventory(&prebuild_directory.directory)?;
+    let seed = read_private_artifact(&prebuild_directory.directory, PRIVATE_SEED_NAME, 32)?;
+    let manifest_artifact = read_private_artifact(
+        &prebuild_directory.directory,
+        MANIFEST_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )?;
+    let record_artifact = read_private_artifact(
+        &prebuild_directory.directory,
+        PREBUILD_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )?;
+
+    let seed_bytes: [u8; 32] = seed
+        .bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "authorization seed must contain exactly 32 bytes")?;
+    let signing_key = SigningKey::from_bytes(&seed_bytes);
+    if signing_key.verifying_key().is_weak() {
+        return Err("authorization seed produces a weak Ed25519 public key".into());
+    }
+    let public_key = signing_key.verifying_key().to_bytes();
+    let public_key_hex = lower_hex(&public_key);
+    let authorization_key_id = sha256_hex(&public_key);
+
+    let manifest = AuthorizedTargetManifest::from_canonical_bytes(&manifest_artifact.bytes)
+        .map_err(|error| format!("authorized-target manifest is invalid: {error}"))?;
+    let manifest_sha256 = sha256_hex(&manifest_artifact.bytes);
+    let record: PrebuildRecord = serde_json::from_slice(&record_artifact.bytes)
+        .map_err(|error| format!("prebuild record is invalid: {error}"))?;
+    let canonical_record =
+        canonical_json(&record).map_err(|error| format!("prebuild record is invalid: {error}"))?;
+    if canonical_record != record_artifact.bytes {
+        return Err("prebuild record is not exact canonical JSON".into());
+    }
+
+    let build_input = BuildBindingInput {
+        source_commit: request.source_commit.clone(),
+        marketing_version: request.marketing_version.clone(),
+        build_number: request.build_number.clone(),
+        configuration: request.configuration.clone(),
+        observer_revision: request.observer_revision.clone(),
+        authorized_target_manifest_sha256: manifest_sha256.clone(),
+        xcode_version: request.toolchain.xcode_version.clone(),
+        xcode_build: request.toolchain.xcode_build.clone(),
+        iphoneos_sdk_version: request.toolchain.iphoneos_sdk_version.clone(),
+        iphoneos_sdk_build: request.toolchain.iphoneos_sdk_build.clone(),
+        xcodegen_version: request.toolchain.xcodegen_version.clone(),
+        xcodegen_architecture: request.toolchain.xcodegen_architecture.clone(),
+        xcodegen_executable_sha256: request.toolchain.xcodegen_executable_sha256.clone(),
+        fastlane_version: request.toolchain.fastlane_version.clone(),
+        gemfile_lock_sha256: request.toolchain.gemfile_lock_sha256.clone(),
+    };
+    let expected_build_binding =
+        build_binding_sha256(&build_input).map_err(|error| error.to_string())?;
+    let mut target_digests = Vec::with_capacity(manifest.targets.len());
+    let mut expected_targets = Vec::with_capacity(manifest.targets.len());
+    for target in &manifest.targets {
+        let identity_input = target_identity_input(&manifest.identity_nonce, target)?;
+        let digest =
+            target_identity_binding_sha256(&identity_input).map_err(|error| error.to_string())?;
+        target_digests.push((target.role, digest.clone()));
+        expected_targets.push(PreparedTarget {
+            role: target.role,
+            target_identity_binding_sha256: digest,
+        });
+    }
+    let expected_identity_set =
+        target_identity_set_sha256(&target_digests).map_err(|error| error.to_string())?;
+
+    if manifest.authorization_public_key != public_key_hex
+        || manifest.authorization_key_id != authorization_key_id
+        || manifest.targets != request.targets
+        || record.schema != PREBUILD_SCHEMA
+        || record.profile != LAB002_PROFILE
+        || record.source_commit != request.source_commit
+        || record.fixture_source_root != "fixtures/DemoLab"
+        || record.marketing_version != request.marketing_version
+        || record.build_number != request.build_number
+        || record.configuration != request.configuration
+        || record.observer_revision != request.observer_revision
+        || record.generator_revision != request.source_commit
+        || record.identity_nonce != manifest.identity_nonce
+        || record.authorization_public_key != manifest.authorization_public_key
+        || record.authorization_key_id != manifest.authorization_key_id
+        || record.authorized_target_manifest_sha256 != manifest_sha256
+        || record.build_binding_sha256 != expected_build_binding
+        || record.target_identity_set_sha256 != expected_identity_set
+        || record.toolchain != request.toolchain
+        || record.targets != expected_targets
+    {
+        return Err("private LAB-002 prebuild artifacts are not one exact authorized tuple".into());
+    }
+
+    verify_private_artifact_inventory(&prebuild_directory.directory)?;
+    for (name, expected) in [
+        (PRIVATE_SEED_NAME, &seed),
+        (MANIFEST_NAME, &manifest_artifact),
+        (PREBUILD_NAME, &record_artifact),
+    ] {
+        let observed = read_private_artifact(
+            &prebuild_directory.directory,
+            name,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )?;
+        if &observed != expected {
+            return Err("a private LAB-002 prebuild artifact changed during validation".into());
+        }
+    }
+    verify_private_artifact_inventory(&prebuild_directory.directory)?;
+    verify_private_output_root_path(&prebuild_directory)?;
+    let directory_metadata = prebuild_directory
+        .directory
+        .metadata()
+        .map_err(|error| format!("could not recheck private prebuild directory: {error}"))?;
+
+    Ok(InspectPrebuildOutput {
+        schema: INSPECT_RESULT_SCHEMA,
+        prebuild_directory_device: directory_metadata.dev().to_string(),
+        prebuild_directory_inode: directory_metadata.ino().to_string(),
+        source_commit: request.source_commit,
+        marketing_version: request.marketing_version,
+        build_number: request.build_number,
+        identity_nonce: manifest.identity_nonce,
+        authorization_public_key: manifest.authorization_public_key,
+        authorization_key_id: manifest.authorization_key_id,
+        authorized_target_manifest_sha256: manifest_sha256,
+        build_binding_sha256: expected_build_binding,
+        target_identity_set_sha256: expected_identity_set,
+        toolchain: request.toolchain,
+    })
+}
+
+fn read_private_artifact(
+    directory: &File,
+    name: &str,
+    maximum_size: usize,
+) -> Result<ReadPrivateArtifact, String> {
+    let descriptor = rustix::fs::openat(
+        directory,
+        name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|error| format!("could not open private prebuild artifact {name}: {error}"))?;
+    let mut file = File::from(descriptor);
+    let before = file
+        .metadata()
+        .map_err(|error| format!("could not inspect private prebuild artifact {name}: {error}"))?;
+    if !before.is_file()
+        || before.uid() != rustix::process::geteuid().as_raw()
+        || before.mode() & 0o777 != 0o400
+        || before.len() == 0
+        || before.len() > maximum_size as u64
+    {
+        return Err(format!(
+            "private prebuild artifact {name} has unsafe metadata"
+        ));
+    }
+    let mut bytes = Vec::with_capacity(before.len() as usize);
+    Read::by_ref(&mut file)
+        .take(maximum_size as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("could not read private prebuild artifact {name}: {error}"))?;
+    let after = file
+        .metadata()
+        .map_err(|error| format!("could not recheck private prebuild artifact {name}: {error}"))?;
+    if bytes.len() as u64 != before.len()
+        || bytes.len() > maximum_size
+        || (
+            after.dev(),
+            after.ino(),
+            after.len(),
+            after.mtime(),
+            after.mtime_nsec(),
+        ) != (
+            before.dev(),
+            before.ino(),
+            before.len(),
+            before.mtime(),
+            before.mtime_nsec(),
+        )
+    {
+        return Err(format!(
+            "private prebuild artifact {name} changed while it was read"
+        ));
+    }
+    Ok(ReadPrivateArtifact {
+        bytes,
+        device: before.dev(),
+        inode: before.ino(),
+        size: before.len(),
+        modified_seconds: before.mtime(),
+        modified_nanoseconds: before.mtime_nsec(),
+    })
+}
+
+fn verify_private_artifact_inventory(directory: &File) -> Result<(), String> {
+    let entries = rustix::fs::Dir::read_from(directory)
+        .map_err(|error| format!("could not open private prebuild directory stream: {error}"))?;
+    let mut observed = Vec::with_capacity(3);
+    for entry in entries {
+        let entry = entry
+            .map_err(|error| format!("could not enumerate private prebuild directory: {error}"))?;
+        let name = entry.file_name().to_bytes();
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        let name = String::from_utf8(name.to_vec())
+            .map_err(|_| "private prebuild artifact name is not valid UTF-8".to_owned())?;
+        observed.push(name);
+        if observed.len() > 3 {
+            return Err(
+                "private prebuild directory does not contain the exact three artifacts".into(),
+            );
+        }
+    }
+    observed.sort();
+    let mut expected = [
+        PRIVATE_SEED_NAME.to_owned(),
+        MANIFEST_NAME.to_owned(),
+        PREBUILD_NAME.to_owned(),
+    ];
+    expected.sort();
+    if observed != expected {
+        return Err("private prebuild directory does not contain the exact three artifacts".into());
+    }
+    Ok(())
+}
+
 fn validate_request(request: &PrepareRequest) -> Result<(), String> {
-    if request.source_commit.len() != 40
-        || !request
-            .source_commit
+    validate_request_fields(
+        &request.source_commit,
+        &request.marketing_version,
+        &request.build_number,
+        &request.configuration,
+        &request.targets,
+    )
+}
+
+fn validate_inspect_request(request: &InspectPrebuildRequest) -> Result<(), String> {
+    validate_request_fields(
+        &request.source_commit,
+        &request.marketing_version,
+        &request.build_number,
+        &request.configuration,
+        &request.targets,
+    )
+}
+
+fn validate_request_fields(
+    source_commit: &str,
+    marketing_version: &str,
+    build_number: &str,
+    configuration: &str,
+    targets: &[AuthorizedTarget],
+) -> Result<(), String> {
+    if source_commit.len() != 40
+        || !source_commit
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
         return Err("source commit must be exactly 40 lowercase hexadecimal characters".into());
     }
-    if !valid_marketing_version(&request.marketing_version) {
+    if !valid_marketing_version(marketing_version) {
         return Err("marketing version must contain one to three numeric components".into());
     }
-    if request.build_number.is_empty()
-        || request.build_number.len() > 18
-        || request.build_number.starts_with('0')
-        || !request
-            .build_number
-            .bytes()
-            .all(|byte| byte.is_ascii_digit())
+    if build_number.is_empty()
+        || build_number.len() > 18
+        || build_number.starts_with('0')
+        || !build_number.bytes().all(|byte| byte.is_ascii_digit())
     {
         return Err("build number must be a positive decimal integer of at most 18 digits".into());
     }
-    if request.marketing_version != CHECKPOINT_MARKETING_VERSION
-        || request.build_number != CHECKPOINT_BUILD_NUMBER
+    if marketing_version != CHECKPOINT_MARKETING_VERSION || build_number != CHECKPOINT_BUILD_NUMBER
     {
         return Err("this helper only authorizes the reviewed DemoLab 1.0 (3) checkpoint".into());
     }
-    if request.configuration != "Release"
-        || request.targets.len() != LabRole::ALL.len()
-        || request
-            .targets
+    if configuration != "Release"
+        || targets.len() != LabRole::ALL.len()
+        || targets
             .iter()
             .zip(LabRole::ALL)
             .any(|(target, role)| target.role != role)
@@ -1102,6 +1450,27 @@ mod tests {
         }
     }
 
+    fn inspect_request(source: &PrepareRequest) -> InspectPrebuildRequest {
+        InspectPrebuildRequest {
+            schema: INSPECT_REQUEST_SCHEMA.into(),
+            source_commit: source.source_commit.clone(),
+            marketing_version: source.marketing_version.clone(),
+            build_number: source.build_number.clone(),
+            configuration: source.configuration.clone(),
+            observer_revision: source.observer_revision.clone(),
+            toolchain: source.toolchain.clone(),
+            targets: source.targets.clone(),
+        }
+    }
+
+    fn inspect_prebuild_path(
+        path: &Path,
+        request: InspectPrebuildRequest,
+    ) -> Result<InspectPrebuildOutput, String> {
+        let directory = validate_private_output_root(path)?;
+        inspect_prebuild_directory(directory, request)
+    }
+
     #[test]
     fn prepare_publishes_closed_owner_only_artifacts() {
         let root = TempDir::new().unwrap();
@@ -1164,7 +1533,7 @@ mod tests {
         let mut wire_output = Vec::new();
         let (staging_name, armed_identity) = armed_publication.unwrap();
         write_publication_identity(&mut wire_output, &staging_name, armed_identity).unwrap();
-        write_prepare_result(&mut wire_output, &output).unwrap();
+        write_command_result(&mut wire_output, &CommandOutput::Prepare(output)).unwrap();
         let wire_output = String::from_utf8(wire_output).unwrap();
         let (identity_line, result_line) = wire_output.split_once('\n').unwrap();
         assert_eq!(
@@ -1185,6 +1554,138 @@ mod tests {
         assert_eq!(
             decoded["prebuild_directory_inode"],
             directory_metadata.ino().to_string()
+        );
+    }
+
+    #[test]
+    fn inspect_prebuild_closes_seed_manifest_record_and_expected_tuple() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let prepare_request = request();
+        let prepared = prepare(&root, request()).unwrap();
+        let directory = PathBuf::from(prepared.prebuild_directory);
+        let inspected =
+            inspect_prebuild_path(&directory, inspect_request(&prepare_request)).unwrap();
+
+        assert_eq!(inspected.schema, INSPECT_RESULT_SCHEMA);
+        assert_eq!(inspected.source_commit, prepare_request.source_commit);
+        assert_eq!(
+            inspected.authorized_target_manifest_sha256,
+            prepared.authorized_target_manifest_sha256
+        );
+        assert_eq!(
+            inspected.build_binding_sha256,
+            prepared.build_binding_sha256
+        );
+        assert_eq!(
+            inspected.target_identity_set_sha256,
+            prepared.target_identity_set_sha256
+        );
+        let seed_bytes: [u8; 32] = fs::read(directory.join(PRIVATE_SEED_NAME))
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let expected_public_key = SigningKey::from_bytes(&seed_bytes)
+            .verifying_key()
+            .to_bytes();
+        assert_eq!(
+            inspected.authorization_public_key,
+            lower_hex(&expected_public_key)
+        );
+        assert_eq!(
+            inspected.authorization_key_id,
+            sha256_hex(&expected_public_key)
+        );
+    }
+
+    #[test]
+    fn inspect_prebuild_rejects_tuple_drift_and_extra_artifacts() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let prepared = prepare(&root, request()).unwrap();
+        let directory = PathBuf::from(prepared.prebuild_directory);
+
+        let mut changed_request = inspect_request(&request());
+        changed_request.targets[0].bundle_id = "com.example.substituted".into();
+        assert!(
+            inspect_prebuild_path(&directory, changed_request)
+                .unwrap_err()
+                .contains("exact authorized tuple")
+        );
+
+        fs::write(directory.join("unexpected-private"), b"private").unwrap();
+        assert!(
+            inspect_prebuild_path(&directory, inspect_request(&request()))
+                .unwrap_err()
+                .contains("exact three artifacts")
+        );
+    }
+
+    #[test]
+    fn inspect_prebuild_rejects_seed_and_record_substitution() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let prepared = prepare(&root, request()).unwrap();
+        let directory = PathBuf::from(prepared.prebuild_directory);
+        let seed_path = directory.join(PRIVATE_SEED_NAME);
+        fs::set_permissions(
+            &seed_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
+        fs::write(&seed_path, [0x55; 32]).unwrap();
+        fs::set_permissions(
+            &seed_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        assert!(
+            inspect_prebuild_path(&directory, inspect_request(&request()))
+                .unwrap_err()
+                .contains("one exact authorized tuple")
+        );
+
+        let second_root = TempDir::new().unwrap();
+        fs::set_permissions(
+            second_root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let second_root = second_root.path().canonicalize().unwrap();
+        let second = prepare(&second_root, request()).unwrap();
+        let second_directory = PathBuf::from(second.prebuild_directory);
+        let record_path = second_directory.join(PREBUILD_NAME);
+        let canonical = fs::read_to_string(&record_path).unwrap();
+        fs::set_permissions(
+            &record_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
+        fs::write(&record_path, format!("{canonical}\n")).unwrap();
+        fs::set_permissions(
+            &record_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        assert!(
+            inspect_prebuild_path(&second_directory, inspect_request(&request()))
+                .unwrap_err()
+                .contains("exact canonical JSON")
         );
     }
 

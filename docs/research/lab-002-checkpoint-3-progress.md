@@ -17,11 +17,19 @@ preceding row is complete.
 
 | Order | Substep | Status | Completion gate |
 |---:|---|---|---|
-| 3A | Private pre-build input generator | `implemented; PR #62 review/merge pending` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests pass; this row becomes complete only after [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) passes Codex CR/CI and merges |
-| 3B | Archive/oracle/evidence closure | `blocked` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
+| 3A | Private pre-build input generator | `complete; PR #62 merged` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests, Codex CR, and CI passed; [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) merged as `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
+| 3B | Archive/oracle/evidence closure | `in progress; 3B.1 active` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
 | 3C | Device-free tests, Codex CR, CI, and implementation merge | `blocked` | Use only temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures; cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection; merge the reviewed implementation before any signed candidate is built |
 | 3D | Exact signed DemoLab `1.0 (3)` candidate | `blocked` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
 | 3E | Sanitized completion record | `blocked` | Independently rehash and verify the local candidate, manifest, oracle, and evidence bindings; record only non-secret hashes/toolchain/build facts in Issue #55 and bilingual docs, run final Codex CR/CI/review, and merge the checkpoint-3 result |
+
+### 3B ordered implementation slices
+
+| Order | Slice | Status | Completion gate |
+|---:|---|---|---|
+| 3B.1 | Secure 3A consumption | `active` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper must descriptor-relatively read exactly the three mode-`0400` owner files, rederive the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and return only a bounded private IPC envelope. Fastlane must inject the closed values without caller-supplied nonce, public-key, or Build-Binding variables |
+| 3B.2 | Archive/IPA oracle closure | `blocked by 3B.1` | Measure the three allowlisted Archive and IPA executables, close slice/UUID/range/fixup identity, compare `__TEXT,__oprobe`, and atomically publish one canonical owner-only oracle |
+| 3B.3 | Evidence and upload gate | `blocked by 3B.2` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
 
 ## Fixed safety boundaries
 
@@ -169,3 +177,36 @@ Files use exclusive creation and `fsync`, and the parent directory is fsynced
 after publication or cleanup. Reusing the same source/version/build tuple is
 rejected instead of overwriting its private inputs. This lane performs no
 signing, Archive/export, upload, installation, or device operation.
+
+## 3B.1 implementation boundary
+
+The archive lane no longer accepts `DEMO_LAB_BUILD_BINDING_SHA256`,
+`DEMO_LAB_IDENTITY_NONCE`, or `DEMO_LAB_AUTHORIZATION_PUBLIC_KEY` from the
+shell. It authenticates the live GitHub `main` source commit, fixes the
+checkpoint to DemoLab `1.0 (3)`, and derives the exact 3A directory name below
+the already locked private output root. Both the root and the derived
+pre-build directory remain open and exclusively locked while the private
+helper runs.
+
+The helper's `inspect-prebuild` operation receives the held pre-build
+directory on a fixed inherited descriptor plus its expected device/inode. It
+enumerates that descriptor and accepts exactly the seed, manifest, and
+pre-build record. Each entry is opened descriptor-relatively with no-follow
+and nonblocking semantics, must be a nonempty owner-owned regular file with
+mode `0400` and a fixed size bound, and is identity- and timestamp-checked
+across each read. The helper derives the Ed25519 public key and key ID from the
+seed; rejects weak keys; parses the manifest and record as exact canonical
+artifacts; and recomputes the manifest hash, Build Binding, all three
+role-specific target bindings, and target-identity-set hash against the
+archive lane's expected source, version, build, configuration, observer,
+toolchain, and three-role authorization request. It then repeats the exact
+directory inventory, byte/identity reads, and held-path identity check before
+returning.
+
+The result is a bounded private standard-output IPC envelope consumed only by
+Fastlane; it is not printed. Fastlane requires its exact schema and fields,
+checks the held directory identity, source/version/build/toolchain, every
+64-hex binding, and the non-weak public key, then revalidates the reviewed
+helper, selected Xcode/XcodeGen, and held directory. Only those closed values
+are injected into the repository-owned build. This slice does not yet claim
+an Archive/IPA oracle or enable upload; those remain blocked on 3B.2 and 3B.3.
