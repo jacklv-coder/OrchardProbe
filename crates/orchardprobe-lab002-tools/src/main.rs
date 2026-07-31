@@ -7,10 +7,11 @@ use std::fs::{self, File};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode, Stdio};
 
 use ed25519_dalek::SigningKey;
 use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
+use orchardprobe_core::ipa_app::{ParsedInfoPlist, parse_info_plist};
 use orchardprobe_core::lab002::artifacts::{
     AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, LabOracle, OracleRole, OracleSlice,
     Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
@@ -43,6 +44,15 @@ const CHECKPOINT_BUILD_NUMBER: &str = "3";
 const MAX_PRIVATE_ARTIFACT_BYTES: usize = 16 * 1024;
 const MAX_IPA_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_EXECUTABLE_BYTES: u64 = 100 * 1024 * 1024;
+const MAX_INFO_PLIST_BYTES: u64 = 1024 * 1024;
+const MAX_CODE_DIRECTORY_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CMS_SIGNATURE_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CERTIFICATE_BUNDLE_BYTES: usize = 512 * 1024;
+const MAX_CERTIFICATE_PEM_BYTES: usize = 64 * 1024;
+const MAX_EMBEDDED_CERTIFICATES: usize = 8;
+const SYSTEM_OPENSSL_PATH: &str = "/usr/bin/openssl";
+const SYSTEM_SECURITY_PATH: &str = "/usr/bin/security";
+const SYSTEM_ROOT_KEYCHAIN_PATH: &str = "/System/Library/Keychains/SystemRootCertificates.keychain";
 const ORACLE_NAME: &str = "lab-002-oracle-v1.json";
 
 #[derive(Debug)]
@@ -804,6 +814,33 @@ fn create_oracle(
             "DemoShareExtension",
         ],
     ];
+    let archive_plist_paths: [&[&str]; 3] = [
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "Info.plist",
+        ],
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "Frameworks",
+            "DemoFramework.framework",
+            "Info.plist",
+        ],
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "PlugIns",
+            "DemoShareExtension.appex",
+            "Info.plist",
+        ],
+    ];
     let archive_reports = archive_paths
         .iter()
         .map(|components| {
@@ -813,7 +850,24 @@ fn create_oracle(
                 MAX_EXECUTABLE_BYTES,
                 "Archive executable",
             )?;
-            parse_stable_fixed_sections(&mut file, MAX_EXECUTABLE_BYTES, "Archive executable")
+            let report =
+                parse_stable_fixed_sections(&mut file, MAX_EXECUTABLE_BYTES, "Archive executable")?;
+            cryptographically_verify_report(report, "Archive")
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let archive_identities = archive_plist_paths
+        .iter()
+        .map(|components| {
+            let mut file = open_regular_beneath(
+                &run_directory.directory,
+                components,
+                MAX_INFO_PLIST_BYTES,
+                "Archive Info.plist",
+            )?;
+            let bytes =
+                read_stable_file_bytes(&mut file, MAX_INFO_PLIST_BYTES, "Archive Info.plist")?;
+            parse_info_plist(&bytes)
+                .map_err(|error| format!("Archive Info.plist identity is invalid: {error}"))
         })
         .collect::<Result<Vec<_>, String>>()?;
 
@@ -835,6 +889,11 @@ fn create_oracle(
         "Payload/DemoLab.app/DemoLab",
         "Payload/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
         "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+    ];
+    let ipa_plist_paths = [
+        "Payload/DemoLab.app/Info.plist",
+        "Payload/DemoLab.app/Frameworks/DemoFramework.framework/Info.plist",
+        "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/Info.plist",
     ];
     let executable_entries = inventory
         .entries
@@ -875,9 +934,42 @@ fn create_oracle(
         temporary
             .seek(SeekFrom::Start(0))
             .map_err(|error| format!("could not rewind fixed IPA executable {path}: {error}"))?;
-        ipa_reports.push(
-            parse_fixed_sections(&mut temporary)
-                .map_err(|error| format!("fixed IPA executable {path} is invalid: {error}"))?,
+        let report = parse_fixed_sections(&mut temporary)
+            .map_err(|error| format!("fixed IPA executable {path} is invalid: {error}"))?;
+        ipa_reports.push(cryptographically_verify_report(report, "IPA")?);
+    }
+    let mut ipa_identities = Vec::with_capacity(ipa_plist_paths.len());
+    for path in ipa_plist_paths {
+        let entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .ok_or_else(|| format!("exported IPA is missing fixed Info.plist {path}"))?;
+        if entry.uncompressed_size == 0 || entry.uncompressed_size > MAX_INFO_PLIST_BYTES {
+            return Err(format!(
+                "exported IPA Info.plist {path} has an invalid size"
+            ));
+        }
+        let mut bytes = Vec::with_capacity(
+            usize::try_from(entry.uncompressed_size)
+                .map_err(|_| format!("exported IPA Info.plist {path} size does not fit memory"))?,
+        );
+        let copied = copy_ipa_entry_bounded(
+            &mut ipa_file,
+            ipa_identity.size,
+            path,
+            MAX_INFO_PLIST_BYTES.min(MAX_IPA_ENTRY_COPY_BYTES),
+            &mut bytes,
+        )
+        .map_err(|error| format!("could not read fixed IPA Info.plist {path}: {error}"))?;
+        if copied.inventory != inventory || copied.bytes_written != entry.uncompressed_size {
+            return Err(format!(
+                "exported IPA inventory changed while reading fixed Info.plist {path}"
+            ));
+        }
+        ipa_identities.push(
+            parse_info_plist(&bytes)
+                .map_err(|error| format!("IPA Info.plist identity is invalid: {error}"))?,
         );
     }
     let confirmed_inventory = inspect_ipa(&mut ipa_file, ipa_identity.size)
@@ -896,9 +988,38 @@ fn create_oracle(
         let expected_input = target_identity_input(&inspected.identity_nonce, target)?;
         let expected_binding =
             target_identity_binding_sha256(&expected_input).map_err(|error| error.to_string())?;
+        let archive_identity = archive_identities
+            .get(index)
+            .ok_or_else(|| "Archive bundle identity inventory is incomplete".to_owned())?;
+        let ipa_identity = ipa_identities
+            .get(index)
+            .ok_or_else(|| "IPA bundle identity inventory is incomplete".to_owned())?;
+        validate_bundle_identity(
+            archive_identity,
+            target,
+            role,
+            &request.marketing_version,
+            &request.build_number,
+            "Archive",
+        )?;
+        validate_bundle_identity(
+            ipa_identity,
+            target,
+            role,
+            &request.marketing_version,
+            &request.build_number,
+            "IPA",
+        )?;
+        if archive_identity != ipa_identity {
+            return Err(format!(
+                "Archive/IPA {} Info.plist identities differ",
+                role.fixture_relative_path()
+            ));
+        }
         verify_report_signing_identity(
             &archive_reports[index],
             target,
+            &archive_identity.bundle_identifier,
             &inspected.identity_nonce,
             &expected_binding,
             "Archive",
@@ -906,6 +1027,7 @@ fn create_oracle(
         verify_report_signing_identity(
             &ipa_reports[index],
             target,
+            &ipa_identity.bundle_identifier,
             &inspected.identity_nonce,
             &expected_binding,
             "IPA",
@@ -913,8 +1035,8 @@ fn create_oracle(
         roles.push(close_oracle_role(
             role,
             expected_binding,
-            &archive_reports[index],
-            &ipa_reports[index],
+            &archive_reports[index].report,
+            &ipa_reports[index].report,
         )?);
     }
 
@@ -1123,6 +1245,288 @@ fn parse_stable_fixed_sections(
     Ok(report)
 }
 
+#[derive(Debug)]
+struct CryptographicallyVerifiedReport {
+    report: FixedSectionReport,
+}
+
+fn system_tool_identity(path: &str, label: &str) -> Result<StableFileIdentity, String> {
+    let file =
+        File::open(path).map_err(|error| format!("could not open the fixed {label}: {error}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("could not inspect the fixed {label}: {error}"))?;
+    if !metadata.is_file()
+        || metadata.uid() != 0
+        || metadata.mode() & 0o022 != 0
+        || metadata.len() == 0
+        || metadata.len() > 16 * 1024 * 1024
+    {
+        return Err(format!("the fixed {label} has unsafe metadata"));
+    }
+    Ok(StableFileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        owner: metadata.uid(),
+        mode: metadata.mode() & 0o777,
+        size: metadata.len(),
+        modified_seconds: metadata.mtime(),
+        modified_nanoseconds: metadata.mtime_nsec(),
+    })
+}
+
+fn verify_cms_signature(signing: &PreuploadSigningMetadata) -> Result<(), String> {
+    if signing.is_ad_hoc
+        || !signing.has_cms
+        || signing.code_directory.is_empty()
+        || signing.code_directory.len() > MAX_CODE_DIRECTORY_BYTES
+        || signing.cms_signature.is_empty()
+        || signing.cms_signature.len() > MAX_CMS_SIGNATURE_BYTES
+    {
+        return Err("code-signing material is outside the closed profile".into());
+    }
+    let openssl_before = system_tool_identity(SYSTEM_OPENSSL_PATH, "system OpenSSL")?;
+    let security_before = system_tool_identity(SYSTEM_SECURITY_PATH, "system Security tool")?;
+    let roots_before =
+        system_tool_identity(SYSTEM_ROOT_KEYCHAIN_PATH, "Apple system-root keychain")?;
+    let mut code_directory = tempfile::NamedTempFile::new()
+        .map_err(|error| format!("could not create private CodeDirectory input: {error}"))?;
+    code_directory
+        .write_all(&signing.code_directory)
+        .and_then(|_| code_directory.flush())
+        .map_err(|error| format!("could not write private CodeDirectory input: {error}"))?;
+    let mut cms = tempfile::NamedTempFile::new()
+        .map_err(|error| format!("could not create private CMS input: {error}"))?;
+    cms.write_all(&signing.cms_signature)
+        .and_then(|_| cms.flush())
+        .map_err(|error| format!("could not write private CMS input: {error}"))?;
+    let mut signer = tempfile::NamedTempFile::new()
+        .map_err(|error| format!("could not create private signer-certificate output: {error}"))?;
+    let mut certificates = tempfile::NamedTempFile::new()
+        .map_err(|error| format!("could not create private certificate-chain output: {error}"))?;
+
+    let status = Command::new(SYSTEM_OPENSSL_PATH)
+        .env_clear()
+        .args(["cms", "-verify", "-binary", "-inform", "DER", "-in"])
+        .arg(cms.path())
+        .arg("-content")
+        .arg(code_directory.path())
+        .args(["-noverify", "-signer"])
+        .arg(signer.path())
+        .arg("-certsout")
+        .arg(certificates.path())
+        .args(["-out", "/dev/null"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| format!("could not run the fixed CMS verifier: {error}"))?;
+    if !status.success() {
+        return Err("embedded CMS does not authenticate its CodeDirectory".into());
+    }
+    let signer_certificates =
+        read_pem_certificates(signer.as_file_mut(), "CMS signer certificate")?;
+    if signer_certificates.len() != 1 {
+        return Err("CMS verifier did not return exactly one signer certificate".into());
+    }
+    let embedded_certificates =
+        read_pem_certificates(certificates.as_file_mut(), "CMS embedded certificate chain")?;
+    let signer_certificate = &signer_certificates[0];
+    let mut chain_files = Vec::new();
+    for certificate in embedded_certificates {
+        if &certificate == signer_certificate {
+            continue;
+        }
+        let mut file = tempfile::NamedTempFile::new().map_err(|error| {
+            format!("could not create private chain-certificate input: {error}")
+        })?;
+        file.write_all(&certificate)
+            .and_then(|_| file.flush())
+            .map_err(|error| format!("could not write private chain-certificate input: {error}"))?;
+        chain_files.push(file);
+    }
+    let mut trust_command = Command::new(SYSTEM_SECURITY_PATH);
+    trust_command
+        .env_clear()
+        .args(["verify-cert", "-c"])
+        .arg(signer.path());
+    for certificate in &chain_files {
+        trust_command.arg("-c").arg(certificate.path());
+    }
+    let trust_status = trust_command
+        .args(["-N", "-k"])
+        .arg(SYSTEM_ROOT_KEYCHAIN_PATH)
+        .args(["-p", "codeSign", "-q", "-L"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|error| format!("could not run the fixed code-signing trust verifier: {error}"))?;
+    if !trust_status.success() {
+        return Err("embedded CMS signer is not trusted for Apple code signing".into());
+    }
+    let subject = Command::new(SYSTEM_OPENSSL_PATH)
+        .env_clear()
+        .args(["x509", "-in"])
+        .arg(signer.path())
+        .args(["-noout", "-subject", "-nameopt", "RFC2253"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|error| format!("could not inspect the trusted CMS signer: {error}"))?;
+    if !subject.status.success() || subject.stdout.len() > 16 * 1024 {
+        return Err("trusted CMS signer subject could not be inspected".into());
+    }
+    let expected_ou = format!("OU={}", signing.code_directory_team_identifier);
+    let subject = std::str::from_utf8(&subject.stdout)
+        .map_err(|_| "trusted CMS signer subject is not UTF-8".to_owned())?;
+    if !subject
+        .trim()
+        .strip_prefix("subject=")
+        .is_some_and(|subject| {
+            subject
+                .split(',')
+                .any(|component| component.trim() == expected_ou)
+        })
+    {
+        return Err("trusted CMS signer Team ID does not match the CodeDirectory".into());
+    }
+    let openssl_after = system_tool_identity(SYSTEM_OPENSSL_PATH, "system OpenSSL")?;
+    let security_after = system_tool_identity(SYSTEM_SECURITY_PATH, "system Security tool")?;
+    let roots_after =
+        system_tool_identity(SYSTEM_ROOT_KEYCHAIN_PATH, "Apple system-root keychain")?;
+    if openssl_before != openssl_after
+        || security_before != security_after
+        || roots_before != roots_after
+    {
+        return Err("a fixed system signature verifier changed during verification".into());
+    }
+    Ok(())
+}
+
+fn read_pem_certificates(file: &mut File, label: &str) -> Result<Vec<Vec<u8>>, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not rewind {label}: {error}"))?;
+    let mut bytes = Vec::new();
+    file.take((MAX_CERTIFICATE_BUNDLE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("could not read {label}: {error}"))?;
+    if bytes.is_empty() || bytes.len() > MAX_CERTIFICATE_BUNDLE_BYTES {
+        return Err(format!("{label} is empty or exceeds its fixed limit"));
+    }
+    parse_pem_certificates(&bytes, label)
+}
+
+fn parse_pem_certificates(bytes: &[u8], label: &str) -> Result<Vec<Vec<u8>>, String> {
+    const BEGIN: &str = "-----BEGIN CERTIFICATE-----";
+    const END: &str = "-----END CERTIFICATE-----";
+
+    let text = std::str::from_utf8(bytes).map_err(|_| format!("{label} is not UTF-8 PEM"))?;
+    let mut certificates = Vec::new();
+    let mut current = None::<Vec<u8>>;
+    for line in text.lines() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        match (current.as_mut(), line) {
+            (None, BEGIN) => current = Some(format!("{BEGIN}\n").into_bytes()),
+            (Some(certificate), END) => {
+                certificate.extend_from_slice(END.as_bytes());
+                certificate.push(b'\n');
+                if certificate.len() > MAX_CERTIFICATE_PEM_BYTES {
+                    return Err(format!("{label} contains an oversized certificate"));
+                }
+                certificates.push(current.take().expect("certificate is present"));
+                if certificates.len() > MAX_EMBEDDED_CERTIFICATES {
+                    return Err(format!("{label} contains too many certificates"));
+                }
+            }
+            (Some(certificate), body)
+                if !body.is_empty()
+                    && body.len() <= 80
+                    && body.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
+                    }) =>
+            {
+                certificate.extend_from_slice(body.as_bytes());
+                certificate.push(b'\n');
+                if certificate.len() > MAX_CERTIFICATE_PEM_BYTES {
+                    return Err(format!("{label} contains an oversized certificate"));
+                }
+            }
+            (None, "") => {}
+            _ => return Err(format!("{label} has malformed or unexpected PEM content")),
+        }
+    }
+    if current.is_some() || certificates.is_empty() {
+        return Err(format!("{label} has an incomplete certificate inventory"));
+    }
+    Ok(certificates)
+}
+
+fn cryptographically_verify_report(
+    report: FixedSectionReport,
+    artifact: &str,
+) -> Result<CryptographicallyVerifiedReport, String> {
+    if report.slices.is_empty() || report.slices.len() > 4 {
+        return Err(format!("{artifact} has an invalid signed slice inventory"));
+    }
+    for slice in &report.slices {
+        let signing = slice
+            .signing
+            .as_ref()
+            .ok_or_else(|| format!("{artifact} slice has no embedded code signature"))?;
+        verify_cms_signature(signing)
+            .map_err(|error| format!("{artifact} signature verification failed: {error}"))?;
+    }
+    Ok(CryptographicallyVerifiedReport { report })
+}
+
+fn read_stable_file_bytes(
+    file: &mut File,
+    maximum_size: u64,
+    label: &str,
+) -> Result<Vec<u8>, String> {
+    let identity = stable_file_identity(file, maximum_size, label)?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not rewind {label}: {error}"))?;
+    let mut bytes = Vec::with_capacity(
+        usize::try_from(identity.size).map_err(|_| format!("{label} size does not fit memory"))?,
+    );
+    file.take(maximum_size + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("could not read {label}: {error}"))?;
+    if bytes.len() as u64 != identity.size {
+        return Err(format!("{label} size changed while reading"));
+    }
+    verify_stable_file(file, &identity, label)?;
+    Ok(bytes)
+}
+
+fn validate_bundle_identity(
+    identity: &ParsedInfoPlist,
+    target: &AuthorizedTarget,
+    role: LabRole,
+    marketing_version: &str,
+    build_number: &str,
+    artifact: &str,
+) -> Result<(), String> {
+    let expected_executable = match role {
+        LabRole::MainApp => "DemoLab",
+        LabRole::Framework => "DemoFramework",
+        LabRole::ShareExtension => "DemoShareExtension",
+    };
+    if identity.bundle_identifier != target.bundle_id
+        || identity.executable_name != expected_executable
+        || identity.bundle_version != build_number
+        || identity.short_version.as_deref() != Some(marketing_version)
+    {
+        return Err(format!(
+            "{artifact} {} Info.plist identity is outside the authorized target",
+            role.fixture_relative_path()
+        ));
+    }
+    Ok(())
+}
+
 fn observed_entitlement(value: &Option<String>) -> EntitlementValue {
     value
         .as_ref()
@@ -1140,12 +1544,13 @@ fn observed_app_groups(value: &Option<Vec<String>>) -> AppGroups {
 fn observed_target_input(
     identity_nonce: &str,
     target: &AuthorizedTarget,
+    bundle_identifier: &str,
     signing: &PreuploadSigningMetadata,
 ) -> TargetIdentityInput {
     TargetIdentityInput {
         identity_nonce_hex: identity_nonce.into(),
         role: target.role,
-        bundle_id: target.bundle_id.clone(),
+        bundle_id: bundle_identifier.into(),
         code_directory_identifier: signing.code_directory_identifier.clone(),
         code_directory_team_identifier: signing.code_directory_team_identifier.clone(),
         application_identifier: observed_entitlement(&signing.application_identifier),
@@ -1155,19 +1560,19 @@ fn observed_target_input(
 }
 
 fn verify_report_signing_identity(
-    report: &FixedSectionReport,
+    report: &CryptographicallyVerifiedReport,
     target: &AuthorizedTarget,
+    bundle_identifier: &str,
     identity_nonce: &str,
     expected_binding: &str,
     artifact: &str,
 ) -> Result<(), String> {
-    for slice in &report.slices {
+    for slice in &report.report.slices {
         let signing = slice
             .signing
             .as_ref()
             .ok_or_else(|| format!("{artifact} slice has no embedded code signature"))?;
         if signing.is_ad_hoc
-            || !signing.has_cms
             || signing.code_directory_identifier != target.code_directory_identifier
             || signing.code_directory_team_identifier != target.code_directory_team_identifier
         {
@@ -1175,9 +1580,13 @@ fn verify_report_signing_identity(
                 "{artifact} code-signing identity is outside the authorized target"
             ));
         }
-        let observed =
-            target_identity_binding_sha256(&observed_target_input(identity_nonce, target, signing))
-                .map_err(|error| format!("{artifact} target identity is invalid: {error}"))?;
+        let observed = target_identity_binding_sha256(&observed_target_input(
+            identity_nonce,
+            target,
+            bundle_identifier,
+            signing,
+        ))
+        .map_err(|error| format!("{artifact} target identity is invalid: {error}"))?;
         if observed != expected_binding {
             return Err(format!(
                 "{artifact} target identity binding does not match the authorized tuple"
@@ -2103,6 +2512,23 @@ mod tests {
     use orchardprobe_core::macho::{EncryptionCommand, EncryptionInfo, MachOContainer};
     use tempfile::TempDir;
 
+    #[test]
+    fn pem_certificate_inventory_is_bounded_and_canonical() {
+        let bundle = b"\n-----BEGIN CERTIFICATE-----\r\nQUJD\r\n-----END CERTIFICATE-----\r\n\
+-----BEGIN CERTIFICATE-----\nREVG\n-----END CERTIFICATE-----\n";
+        assert_eq!(
+            parse_pem_certificates(bundle, "test chain").unwrap(),
+            vec![
+                b"-----BEGIN CERTIFICATE-----\nQUJD\n-----END CERTIFICATE-----\n".to_vec(),
+                b"-----BEGIN CERTIFICATE-----\nREVG\n-----END CERTIFICATE-----\n".to_vec(),
+            ]
+        );
+        assert!(parse_pem_certificates(b"not a certificate", "test chain").is_err());
+        assert!(
+            parse_pem_certificates(b"-----BEGIN CERTIFICATE-----\nQUJD\n", "test chain",).is_err()
+        );
+    }
+
     fn target(role: LabRole, bundle_id: &str, team: &str, app_group: bool) -> AuthorizedTarget {
         AuthorizedTarget {
             role,
@@ -2866,9 +3292,63 @@ mod tests {
                     application_groups: Some(vec!["group.com.example.demolab".into()]),
                     is_ad_hoc: false,
                     has_cms: true,
+                    code_directory: vec![0x44],
+                    cms_signature: vec![0x55],
                 }),
             }],
         }
+    }
+
+    #[test]
+    fn oracle_identity_requires_artifact_bundle_metadata_and_verified_cms() {
+        let authorized = target(
+            LabRole::MainApp,
+            "com.example.orchardprobe.demolab",
+            "ABCDEFGHIJ",
+            true,
+        );
+        let identity = ParsedInfoPlist {
+            bundle_identifier: authorized.bundle_id.clone(),
+            bundle_version: "3".into(),
+            short_version: Some("1.0".into()),
+            executable_name: "DemoLab".into(),
+        };
+        validate_bundle_identity(
+            &identity,
+            &authorized,
+            LabRole::MainApp,
+            "1.0",
+            "3",
+            "Archive",
+        )
+        .unwrap();
+        let mut substituted = identity;
+        substituted.bundle_identifier = "com.example.substituted".into();
+        assert!(
+            validate_bundle_identity(
+                &substituted,
+                &authorized,
+                LabRole::MainApp,
+                "1.0",
+                "3",
+                "Archive",
+            )
+            .is_err()
+        );
+
+        let signing = PreuploadSigningMetadata {
+            superblob_sha256: "44".repeat(32),
+            code_directory_identifier: authorized.code_directory_identifier,
+            code_directory_team_identifier: authorized.code_directory_team_identifier,
+            application_identifier: None,
+            developer_team_identifier: None,
+            application_groups: None,
+            is_ad_hoc: false,
+            has_cms: false,
+            code_directory: vec![0x30],
+            cms_signature: Vec::new(),
+        };
+        assert!(verify_cms_signature(&signing).is_err());
     }
 
     #[test]

@@ -1561,6 +1561,10 @@ pub struct PreuploadSigningMetadata {
     pub application_groups: Option<Vec<String>>,
     pub is_ad_hoc: bool,
     pub has_cms: bool,
+    #[serde(skip)]
+    pub code_directory: Vec<u8>,
+    #[serde(skip)]
+    pub cms_signature: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1752,19 +1756,93 @@ fn code_directory_hash_size(hash_type: u8) -> Option<usize> {
     }
 }
 
-fn parse_preupload_code_signature(
-    blob: &[u8],
+fn verify_code_directory_pages<R: Read + Seek>(
+    reader: &mut R,
+    slice_offset: u64,
+    code_limit: u64,
+    page_size: u64,
+    code_directory: &[u8],
+    hash_offset: usize,
+    code_slot_count: usize,
+) -> Result<(), Lab002Error> {
+    let mut page = vec![
+        0_u8;
+        usize::try_from(page_size).map_err(|_| {
+            Lab002Error::InvalidMachO("CodeDirectory page size does not fit memory".into())
+        })?
+    ];
+    for slot in 0..code_slot_count {
+        let relative_offset = u64::try_from(slot)
+            .ok()
+            .and_then(|slot| slot.checked_mul(page_size))
+            .ok_or_else(|| {
+                Lab002Error::InvalidMachO("CodeDirectory page offset overflows".into())
+            })?;
+        let remaining = code_limit.checked_sub(relative_offset).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory page exceeds code coverage".into())
+        })?;
+        let length = usize::try_from(remaining.min(page_size)).map_err(|_| {
+            Lab002Error::InvalidMachO("CodeDirectory page length does not fit memory".into())
+        })?;
+        let absolute = slice_offset.checked_add(relative_offset).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory page file offset overflows".into())
+        })?;
+        reader
+            .seek(SeekFrom::Start(absolute))
+            .map_err(|error| Lab002Error::Io(error.to_string()))?;
+        reader
+            .read_exact(&mut page[..length])
+            .map_err(|error| Lab002Error::Io(error.to_string()))?;
+        let expected_start = hash_offset
+            .checked_add(slot.checked_mul(32).ok_or_else(|| {
+                Lab002Error::InvalidMachO("CodeDirectory page-hash offset overflows".into())
+            })?)
+            .ok_or_else(|| {
+                Lab002Error::InvalidMachO("CodeDirectory page-hash offset overflows".into())
+            })?;
+        let expected_end = expected_start.checked_add(32).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory page-hash extent overflows".into())
+        })?;
+        let expected = code_directory
+            .get(expected_start..expected_end)
+            .ok_or_else(|| {
+                Lab002Error::InvalidMachO("CodeDirectory page-hash extent is invalid".into())
+            })?;
+        if Sha256::digest(&page[..length]).as_slice() != expected {
+            return Err(Lab002Error::InvalidMachO(
+                "CodeDirectory page hash does not match the executable".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn parse_preupload_code_signature<R: Read + Seek>(
+    signature_bytes: &[u8],
     expected_code_limit: u64,
+    reader: &mut R,
+    slice_offset: u64,
 ) -> Result<PreuploadSigningMetadata, Lab002Error> {
-    if blob.len() < 12
-        || read_be_u32(blob, 0, "code-signature SuperBlob")? != 0xfade_0cc0
-        || usize::try_from(read_be_u32(blob, 4, "code-signature SuperBlob")?).ok()
-            != Some(blob.len())
+    if signature_bytes.len() < 12
+        || read_be_u32(signature_bytes, 0, "code-signature SuperBlob")? != 0xfade_0cc0
     {
         return Err(Lab002Error::InvalidMachO(
             "code-signature SuperBlob is invalid".into(),
         ));
     }
+    let declared_length =
+        usize::try_from(read_be_u32(signature_bytes, 4, "code-signature SuperBlob")?)
+            .map_err(|_| Lab002Error::InvalidMachO("code-signature length overflows".into()))?;
+    if !(12..=signature_bytes.len()).contains(&declared_length)
+        || signature_bytes[declared_length..]
+            .iter()
+            .any(|byte| *byte != 0)
+    {
+        return Err(Lab002Error::InvalidMachO(
+            "code-signature SuperBlob length or padding is invalid".into(),
+        ));
+    }
+    let blob = &signature_bytes[..declared_length];
     let count = usize::try_from(read_be_u32(blob, 8, "code-signature SuperBlob")?)
         .map_err(|_| Lab002Error::InvalidMachO("code-signature slot count overflows".into()))?;
     let index_end = count
@@ -1807,9 +1885,12 @@ fn parse_preupload_code_signature(
         intervals.push((offset, end));
     }
     intervals.sort_unstable();
-    if intervals.windows(2).any(|pair| pair[0].1 > pair[1].0) {
+    if intervals.first().map(|interval| interval.0) != Some(index_end)
+        || intervals.windows(2).any(|pair| pair[0].1 != pair[1].0)
+        || intervals.last().map(|interval| interval.1) != Some(blob.len())
+    {
         return Err(Lab002Error::InvalidMachO(
-            "code-signature slots overlap".into(),
+            "code-signature slots do not exactly consume the SuperBlob".into(),
         ));
     }
 
@@ -1858,13 +1939,15 @@ fn parse_preupload_code_signature(
     if code_directory.len() < minimum_length
         || read_be_u32(code_directory, 40, "CodeDirectory")? != 0
         || !(12..=16).contains(&page_size_power)
+        || hash_type != 2
+        || hash_size != 32
         || code_directory_hash_size(hash_type) != Some(hash_size)
     {
         return Err(Lab002Error::InvalidMachO(
             "CodeDirectory layout is outside the closed profile".into(),
         ));
     }
-    if version >= 0x20300 && read_be_u32(code_directory, 52, "CodeDirectory")? != 0 {
+    if version >= 0x20300 && read_be_u32(code_directory, 44, "CodeDirectory")? != 0 {
         return Err(Lab002Error::InvalidMachO(
             "CodeDirectory scatter table is outside the closed profile".into(),
         ));
@@ -1911,6 +1994,15 @@ fn parse_preupload_code_signature(
             "CodeDirectory dynamic fields overlap its header".into(),
         ));
     }
+    verify_code_directory_pages(
+        reader,
+        slice_offset,
+        code_limit,
+        page_size,
+        code_directory,
+        hash_offset,
+        code_slot_count,
+    )?;
     let identifier = code_signature_string(code_directory, identifier_offset, dynamic_data_start)?;
     let team_offset = usize::try_from(read_be_u32(code_directory, 48, "CodeDirectory")?)
         .map_err(|_| Lab002Error::InvalidMachO("CodeDirectory team offset overflows".into()))?;
@@ -1919,6 +2011,24 @@ fn parse_preupload_code_signature(
     validate_team_identifier("code_directory_team_identifier", &team_identifier)?;
 
     let entitlements = if let Some(entitlements) = slots.get(&5) {
+        if special_slot_count < 5 {
+            return Err(Lab002Error::InvalidMachO(
+                "code-signing entitlements are not covered by the CodeDirectory".into(),
+            ));
+        }
+        let entitlement_hash_start = hash_offset.checked_sub(5 * 32).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory entitlement hash underflows".into())
+        })?;
+        let entitlement_hash_end = entitlement_hash_start.checked_add(32).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory entitlement hash overflows".into())
+        })?;
+        if code_directory.get(entitlement_hash_start..entitlement_hash_end)
+            != Some(Sha256::digest(*entitlements).as_slice())
+        {
+            return Err(Lab002Error::InvalidMachO(
+                "code-signing entitlements do not match the signed special slot".into(),
+            ));
+        }
         if read_be_u32(entitlements, 0, "code-signing entitlements")? != 0xfade_7171 {
             return Err(Lab002Error::InvalidMachO(
                 "code-signing entitlements slot has an invalid magic".into(),
@@ -1932,9 +2042,17 @@ fn parse_preupload_code_signature(
             application_groups: None,
         }
     };
-    let has_cms = slots.get(&0x1_0000).is_some_and(|cms| {
-        cms.len() > 8 && read_be_u32(cms, 0, "CMS signature").ok() == Some(0xfade_0b01)
-    });
+    let cms = slots
+        .get(&0x1_0000)
+        .map(|cms| {
+            if cms.len() <= 8 || read_be_u32(cms, 0, "CMS signature")? != 0xfade_0b01 {
+                return Err(Lab002Error::InvalidMachO(
+                    "detached CMS signature slot is invalid".into(),
+                ));
+            }
+            Ok(cms[8..].to_vec())
+        })
+        .transpose()?;
     Ok(PreuploadSigningMetadata {
         superblob_sha256: sha256_hex(blob),
         code_directory_identifier: identifier,
@@ -1943,7 +2061,9 @@ fn parse_preupload_code_signature(
         developer_team_identifier: entitlements.developer_team_identifier,
         application_groups: entitlements.application_groups,
         is_ad_hoc: flags & 0x2 != 0,
-        has_cms,
+        has_cms: cms.is_some(),
+        code_directory: code_directory.to_vec(),
+        cms_signature: cms.unwrap_or_default(),
     })
 }
 
@@ -3101,6 +3221,8 @@ pub fn parse_fixed_sections<R: Read + Seek>(
             Some(parse_preupload_code_signature(
                 &signature,
                 u64::from(data_offset),
+                reader,
+                slice.offset,
             )?)
         } else {
             None
@@ -3792,7 +3914,8 @@ mod tests {
         output.extend_from_slice(&value.to_be_bytes());
     }
 
-    fn synthetic_code_signature(code_limit: u32) -> Vec<u8> {
+    fn synthetic_code_signature(covered_code: &[u8], include_cms: bool, ad_hoc: bool) -> Vec<u8> {
+        let code_limit = u32::try_from(covered_code.len()).unwrap();
         let identifier = b"com.example.demolab\0";
         let team = b"TEAM123456\0";
         let entitlement_payload = br#"<?xml version="1.0" encoding="UTF-8"?>
@@ -3805,16 +3928,18 @@ mod tests {
 
         let dynamic_start = 52 + identifier.len() + team.len();
         let hash_offset = dynamic_start + 5 * 32;
-        let mut code_directory = vec![0_u8; hash_offset + 32];
+        let code_slot_count = covered_code.len().div_ceil(4096);
+        let mut code_directory = vec![0_u8; hash_offset + code_slot_count * 32];
         code_directory[0..4].copy_from_slice(&0xfade_0c02_u32.to_be_bytes());
         let code_directory_length = code_directory.len() as u32;
         code_directory[4..8].copy_from_slice(&code_directory_length.to_be_bytes());
         code_directory[8..12].copy_from_slice(&0x20200_u32.to_be_bytes());
-        code_directory[12..16].copy_from_slice(&0_u32.to_be_bytes());
+        code_directory[12..16].copy_from_slice(&(if ad_hoc { 0x2_u32 } else { 0 }).to_be_bytes());
         code_directory[16..20].copy_from_slice(&(hash_offset as u32).to_be_bytes());
         code_directory[20..24].copy_from_slice(&52_u32.to_be_bytes());
         code_directory[24..28].copy_from_slice(&5_u32.to_be_bytes());
-        code_directory[28..32].copy_from_slice(&1_u32.to_be_bytes());
+        code_directory[28..32]
+            .copy_from_slice(&u32::try_from(code_slot_count).unwrap().to_be_bytes());
         code_directory[32..36].copy_from_slice(&code_limit.to_be_bytes());
         code_directory[36] = 32;
         code_directory[37] = 2;
@@ -3823,52 +3948,70 @@ mod tests {
         code_directory[48..52].copy_from_slice(&(52_u32 + identifier.len() as u32).to_be_bytes());
         code_directory[52..52 + identifier.len()].copy_from_slice(identifier);
         code_directory[52 + identifier.len()..dynamic_start].copy_from_slice(team);
+        for (index, page) in covered_code.chunks(4096).enumerate() {
+            let start = hash_offset + index * 32;
+            code_directory[start..start + 32].copy_from_slice(&Sha256::digest(page));
+        }
 
         let mut entitlements = Vec::new();
         append_be_u32(&mut entitlements, 0xfade_7171);
         append_be_u32(&mut entitlements, (8 + entitlement_payload.len()) as u32);
         entitlements.extend_from_slice(entitlement_payload);
+        let entitlement_hash_start = hash_offset - 5 * 32;
+        code_directory[entitlement_hash_start..entitlement_hash_start + 32]
+            .copy_from_slice(&Sha256::digest(&entitlements));
         let mut cms = Vec::new();
         append_be_u32(&mut cms, 0xfade_0b01);
         append_be_u32(&mut cms, 12);
         append_be_u32(&mut cms, 0);
 
-        let index_end = 12 + 3 * 8;
+        let index_count = if include_cms { 3 } else { 2 };
+        let index_end = 12 + index_count * 8;
         let code_directory_offset = index_end;
         let entitlements_offset = code_directory_offset + code_directory.len();
         let cms_offset = entitlements_offset + entitlements.len();
-        let length = cms_offset + cms.len();
+        let length = cms_offset + if include_cms { cms.len() } else { 0 };
         let mut superblob = Vec::with_capacity(length);
         append_be_u32(&mut superblob, 0xfade_0cc0);
         append_be_u32(&mut superblob, length as u32);
-        append_be_u32(&mut superblob, 3);
-        for (slot, offset) in [
-            (0_u32, code_directory_offset),
-            (5_u32, entitlements_offset),
-            (0x1_0000_u32, cms_offset),
-        ] {
+        append_be_u32(&mut superblob, index_count as u32);
+        let mut entries = vec![(0_u32, code_directory_offset), (5_u32, entitlements_offset)];
+        if include_cms {
+            entries.push((0x1_0000_u32, cms_offset));
+        }
+        for (slot, offset) in entries {
             append_be_u32(&mut superblob, slot);
             append_be_u32(&mut superblob, offset as u32);
         }
         superblob.extend_from_slice(&code_directory);
         superblob.extend_from_slice(&entitlements);
-        superblob.extend_from_slice(&cms);
+        if include_cms {
+            superblob.extend_from_slice(&cms);
+        }
         superblob
     }
 
-    fn add_code_signature(mut thin: Vec<u8>) -> Vec<u8> {
+    fn add_code_signature(thin: Vec<u8>) -> Vec<u8> {
+        add_code_signature_profile(thin, true, false)
+    }
+
+    fn add_code_signature_profile(mut thin: Vec<u8>, include_cms: bool, ad_hoc: bool) -> Vec<u8> {
         let command_count = u32::from_le_bytes(thin[16..20].try_into().unwrap());
         let command_bytes = u32::from_le_bytes(thin[20..24].try_into().unwrap());
         let command_at = 32 + command_bytes as usize;
         let signature_offset = 0x800_u32;
-        let signature = synthetic_code_signature(signature_offset);
         thin[16..20].copy_from_slice(&(command_count + 1).to_le_bytes());
         thin[20..24].copy_from_slice(&(command_bytes + 16).to_le_bytes());
         thin[command_at..command_at + 4].copy_from_slice(&0x1d_u32.to_le_bytes());
         thin[command_at + 4..command_at + 8].copy_from_slice(&16_u32.to_le_bytes());
         thin[command_at + 8..command_at + 12].copy_from_slice(&signature_offset.to_le_bytes());
+        let initial_signature =
+            synthetic_code_signature(&thin[..signature_offset as usize], include_cms, ad_hoc);
         thin[command_at + 12..command_at + 16]
-            .copy_from_slice(&(signature.len() as u32).to_le_bytes());
+            .copy_from_slice(&(initial_signature.len() as u32).to_le_bytes());
+        let signature =
+            synthetic_code_signature(&thin[..signature_offset as usize], include_cms, ad_hoc);
+        assert_eq!(signature.len(), initial_signature.len());
         thin[signature_offset as usize..signature_offset as usize + signature.len()]
             .copy_from_slice(&signature);
         thin
@@ -4351,7 +4494,133 @@ mod tests {
         );
         assert!(!signing.is_ad_hoc);
         assert!(signing.has_cms);
+        assert!(!signing.code_directory.is_empty());
+        assert!(!signing.cms_signature.is_empty());
         assert_eq!(signing.superblob_sha256.len(), 64);
         assert_eq!(report.slices[0].fixup_layout_sha256.len(), 64);
+    }
+
+    #[test]
+    fn fixed_section_parser_preserves_ad_hoc_without_cms_classification() {
+        let bytes =
+            add_code_signature_profile(synthetic_fixed_macho(1, false, 0, true), false, true);
+        let report = parse_fixed_sections(&mut Cursor::new(bytes)).unwrap();
+        let signing = report.slices[0].signing.as_ref().unwrap();
+        assert!(signing.is_ad_hoc);
+        assert!(!signing.has_cms);
+        assert!(signing.cms_signature.is_empty());
+        assert!(!signing.code_directory.is_empty());
+    }
+
+    #[test]
+    fn fixed_section_parser_rejects_unconsumed_cms_wrapper_bytes() {
+        let mut bytes = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let signature_offset = 0x800_usize;
+        let slot_count = u32::from_be_bytes(
+            bytes[signature_offset + 8..signature_offset + 12]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let cms_offset = (0..slot_count)
+            .find_map(|index| {
+                let entry = signature_offset + 12 + index * 8;
+                let slot = u32::from_be_bytes(bytes[entry..entry + 4].try_into().unwrap());
+                (slot == 0x1_0000).then(|| {
+                    u32::from_be_bytes(bytes[entry + 4..entry + 8].try_into().unwrap()) as usize
+                })
+            })
+            .unwrap();
+        let cms = signature_offset + cms_offset;
+        let cms_length = u32::from_be_bytes(bytes[cms + 4..cms + 8].try_into().unwrap());
+        bytes[cms + 4..cms + 8].copy_from_slice(&(cms_length - 1).to_be_bytes());
+
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(bytes)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("exactly consume")
+        ));
+    }
+
+    #[test]
+    fn fixed_section_parser_accepts_only_zero_code_signature_padding() {
+        let mut padded = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let command_count = u32::from_le_bytes(padded[16..20].try_into().unwrap());
+        let mut cursor = 32_usize;
+        let command = (0..command_count)
+            .find_map(|_| {
+                let command = u32::from_le_bytes(padded[cursor..cursor + 4].try_into().unwrap());
+                let size =
+                    u32::from_le_bytes(padded[cursor + 4..cursor + 8].try_into().unwrap()) as usize;
+                let current = cursor;
+                cursor += size;
+                (command == 0x1d).then_some(current)
+            })
+            .unwrap();
+        let signature_offset =
+            u32::from_le_bytes(padded[command + 8..command + 12].try_into().unwrap()) as usize;
+        let signature_size =
+            u32::from_le_bytes(padded[command + 12..command + 16].try_into().unwrap());
+        padded[command + 12..command + 16].copy_from_slice(&(signature_size + 16).to_le_bytes());
+        padded[signature_offset + signature_size as usize
+            ..signature_offset + signature_size as usize + 16]
+            .fill(0);
+        let code_directory_offset = u32::from_be_bytes(
+            padded[signature_offset + 16..signature_offset + 20]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let code_directory = signature_offset + code_directory_offset;
+        let hash_offset = u32::from_be_bytes(
+            padded[code_directory + 16..code_directory + 20]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let page_hash = Sha256::digest(&padded[..signature_offset]);
+        padded[code_directory + hash_offset..code_directory + hash_offset + 32]
+            .copy_from_slice(&page_hash);
+        parse_fixed_sections(&mut Cursor::new(padded.clone())).unwrap();
+
+        padded[signature_offset + signature_size as usize + 15] = 1;
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(padded)),
+            Err(Lab002Error::InvalidMachO(message)) if message.contains("padding")
+        ));
+    }
+
+    #[test]
+    fn fixed_section_parser_rejects_page_hash_drift_and_scatter_tables() {
+        let mut changed_page = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        changed_page[0x600] ^= 1;
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(changed_page)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("page hash")
+        ));
+
+        let mut changed_entitlement = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let entitlement = b"TEAM123456.com.example.demolab";
+        let entitlement_offset = changed_entitlement
+            .windows(entitlement.len())
+            .position(|window| window == entitlement)
+            .unwrap();
+        changed_entitlement[entitlement_offset] ^= 1;
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(changed_entitlement)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("signed special slot")
+        ));
+
+        let mut scatter = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let signature_offset = 0x800;
+        let code_directory_offset = signature_offset + 12 + 3 * 8;
+        scatter[code_directory_offset + 8..code_directory_offset + 12]
+            .copy_from_slice(&0x20300_u32.to_be_bytes());
+        scatter[code_directory_offset + 44..code_directory_offset + 48]
+            .copy_from_slice(&1_u32.to_be_bytes());
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(scatter)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("scatter table")
+        ));
     }
 }

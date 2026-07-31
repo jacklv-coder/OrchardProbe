@@ -33,7 +33,7 @@
 | 顺序 | 门禁 | 状态 | 完成标准 |
 |---:|---|---|---|
 | 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
-| 3B.2.2 | Archive/IPA 一致性 | `完成` | 要求 Archive 与导出 IPA 的 Role、Architecture、CPU Subtype、Mach-O UUID、CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容及已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
+| 3B.2.2 | Archive/IPA 一致性 | `完成` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
 | 3B.2.4 | 纯设备无关闭环测试 | `本地测试完成；等待最终 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
@@ -183,8 +183,17 @@ Descriptor 传入已持有的 Archive 与 Run Directory；Helper 从已持有 St
 对于固定的主 App、Framework 与 Share Extension 三个 Role，Helper 要求 Archive 与
 IPA 的精确可执行路径以及每个 Mach-O Slice 在 Architecture、CPU Subtype、UUID、
 Slice 范围、签名身份、固定区间坐标与字节、加密状态，以及已接受 Classic 或
-Chained Fixup Layout 的域分离摘要上全部一致。未知 Load Command、Classic/Chained
-Fixup 混用、可执行文件缺失或多出、签名畸形、区间漂移或任何字节不一致都会失败关闭。
+Chained Fixup Layout 的域分离摘要上全部一致。它会分别解析两份固定 Bundle
+`Info.plist`，从 Artifact 本身绑定 Bundle Identifier、Version/Build 与 Executable
+Name，而不借用授权请求里的值。闭合 CodeDirectory Parser 要求索引 Blob 精确消费
+声明的完整 SuperBlob，拒绝 Scatter Table，只接受完整 SHA-256 Page 覆盖，并校验
+已签名 Entitlements Special Slot；随后 Helper
+验证精确 CodeDirectory 的 Detached CMS，要求 Signer 通过 macOS 本地 `codeSign`
+信任策略（使用有界的 CMS 内嵌证书链与本地 Apple Trust Root），且 Signer
+Certificate Team ID 必须等于已签名 CodeDirectory Team ID；验证只显式使用
+Root-owned Apple System Root Keychain，并禁用默认/用户 Keychain 搜索列表。
+未知 Load Command、Classic/Chained Fixup 混用、可执行文件缺失或多出、签名畸形或
+不受信、区间漂移或任何字节不一致都会失败关闭。
 
 只有三个 Role 全部通过后，Helper 才会编码规范
 `orchardprobe.lab002.oracle.v1` 记录，将其绑定到已认证 Source、Version/Build、

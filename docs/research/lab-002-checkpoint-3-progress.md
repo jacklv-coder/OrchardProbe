@@ -36,7 +36,7 @@ preceding row is complete.
 | Order | Gate | Status | Completion criterion |
 |---:|---|---|---|
 | 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
-| 3B.2.2 | Archive/IPA parity | `complete` | Require exact role, architecture, CPU subtype, Mach-O UUID, CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinates/content, and accepted fixup-layout agreement between the Archive and exported IPA; no role or slice may be skipped |
+| 3B.2.2 | Archive/IPA parity | `complete` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree; no role or slice may be skipped |
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
 | 3B.2.4 | Device-free closure tests | `local tests complete; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
@@ -235,9 +235,19 @@ helper requires the exact Archive and IPA executable paths and every Mach-O
 slice to agree on architecture, CPU subtype, UUID, slice extent, signing
 identity, fixed-range coordinates and bytes, encryption state, and a
 domain-separated digest of the accepted classic or chained-fixup layout.
-Unknown load commands, mixed classic/chained fixups, omitted or extra
-executables, malformed signatures, range drift, or any byte mismatch fail
-closed.
+It separately parses both fixed bundle `Info.plist` files and binds their
+bundle identifier, version/build, and executable name instead of borrowing
+those values from the authorization request. The closed CodeDirectory parser
+requires indexed blobs to consume the declared SuperBlob exactly, rejects
+scatter tables, accepts only complete SHA-256 page coverage, and checks the
+signed entitlements special slot. The helper then verifies the
+detached CMS over that exact CodeDirectory, requires its signer to pass
+macOS's local `codeSign` trust policy using the bounded embedded certificate
+chain plus the explicit root-owned Apple system-root keychain while disabling
+the default/user keychain search list, and requires the signer-certificate
+Team ID to equal the signed CodeDirectory Team ID. Unknown load commands,
+mixed classic/chained fixups, omitted or extra executables, malformed or
+untrusted signatures, range drift, or any byte mismatch fail closed.
 
 Only after all three roles pass does the helper encode the canonical
 `orchardprobe.lab002.oracle.v1` record, bind it to the authenticated source,
