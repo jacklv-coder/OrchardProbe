@@ -37,16 +37,16 @@
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
 | 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；等待最终 P1 修复 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
-最终 3B.2 Helper 已从 Commit `dc08c057115b6aa01c6eea5b73d5909ae392ae21`
-的只读源码快照独立构建两次，产物字节完全一致；随后恢复强制白名单路径的第三次构建
-也通过。登记 Tuple 为：Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot
-SHA-256 `f0ad59f622dced9dabdfa0fefe53a0bae0a7855d821e6e03e25824e66bab44d5`，
+最终完成 P1/P2 修复的 3B.2 Helper 已从 Commit
+`b30f7ef222d9947e49573b6cdd96349f32cb2014` 的只读源码快照独立构建两次，
+产物字节完全一致；随后恢复强制白名单路径的第三次构建也通过。登记 Tuple 为：
+Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot SHA-256
+`c1e7a22fb329d10cbeed1a45d9df038eac9776865c4f210540e5627d2d03b717`，
 Size `1884192`，SHA-256
-`681f7b4c0bd4395f30c2cee573e21ae274e76d8f60f5ac180192f455bad96142`，
-CDHash `9fa36c42e5090946f22793bdc32d846cbb34ab49`。最终 CR 还把 Xcode
-Linker-signed Simulator 例外收紧到精确的 Ad-hoc CodeDirectory Profile：
-Team Identifier 缺失、Special-slot Count 为零，且 SuperBlob 只能包含主
-CodeDirectory；该例外不能通过签名 Archive/IPA Oracle。
+`e8cf678b089174a449893febf18f6af784d07580af3691f8a9f97327b6599c00`，
+CDHash `5e69eb5cbb4995d031a7237ceaa9fdde7cd1e433`。该 Helper 会返回仍持有的
+最终 Archive App Root 的 Device/Inode，使 Fastlane 能把最终 Evidence 与发布复核
+绑定到 Helper 实际测量的精确目录，而不是可替换的 Pathname。
 
 ## 固定安全边界
 
