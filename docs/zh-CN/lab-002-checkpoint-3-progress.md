@@ -65,6 +65,11 @@ Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descr
 方式执行并禁止跟随链接；返回输出路径前还会重新核对其与所持输出根身份一致。
 Fastlane 在 Helper 调用前后始终持有并锁定自己的输出根 Descriptor；如果后续
 Result 或输出根复核失败，它会相对该 Descriptor 删除本次发布的精确 Tuple。
+Helper 会在写入任何私有字节前，通过已 Flush 的非秘密首行记录返回唯一 Staging
+名称及其 Device/Inode 身份。Fastlane 会在检查进程状态或解析结果 JSON 前据此
+启用 Rollback，再通过专用继承 Pipe 向 Helper 确认；Helper 收到确认前不能写入
+私有字节。此后 Helper 中断或结果畸形等任何失败都会清理身份匹配的 Staging 或
+最终目录；如果目录已被替换，Rollback 会拒绝接触替代目录。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
 Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
 签名、Archive/Export、上传、安装或设备操作。

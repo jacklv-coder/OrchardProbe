@@ -25,6 +25,8 @@ use sha2::{Digest, Sha256};
 
 const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
 const PREBUILD_SCHEMA: &str = "orchardprobe.lab002.prebuild.v1";
+const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directory.v1";
+const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
 const MAX_REQUEST_BYTES: usize = 32 * 1024;
 const PRIVATE_SEED_NAME: &str = "lab-002-authorization-seed-v1.bin";
 const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
@@ -83,16 +85,25 @@ struct PrebuildRecord {
 struct PrepareOutput {
     schema: &'static str,
     prebuild_directory: String,
+    prebuild_directory_device: String,
+    prebuild_directory_inode: String,
     authorized_target_manifest_sha256: String,
     build_binding_sha256: String,
     target_identity_set_sha256: String,
 }
 
 fn main() -> ExitCode {
-    match execute(std::env::args_os().skip(1).collect()) {
+    let mut stdout = io::stdout().lock();
+    match execute(
+        std::env::args_os().skip(1).collect(),
+        |staging_name, identity| {
+            write_publication_identity(&mut stdout, staging_name, identity)?;
+            wait_for_publication_ack()
+        },
+    ) {
         Ok(output) => {
-            if let Err(error) = writeln!(io::stdout().lock(), "{output}") {
-                eprintln!("error: could not write result: {error}");
+            if let Err(error) = write_prepare_result(&mut stdout, &output) {
+                eprintln!("error: {error}");
                 return ExitCode::FAILURE;
             }
             ExitCode::SUCCESS
@@ -104,15 +115,61 @@ fn main() -> ExitCode {
     }
 }
 
-fn execute(arguments: Vec<std::ffi::OsString>) -> Result<String, String> {
+fn wait_for_publication_ack() -> Result<(), String> {
+    let mut acknowledgement = Vec::with_capacity(2);
+    let mut file = File::open(PUBLICATION_ACK_PATH).map_err(|error| {
+        format!("could not receive publication rollback acknowledgement: {error}")
+    })?;
+    let mut flags = rustix::fs::fcntl_getfl(&file)
+        .map_err(|error| format!("could not inspect publication acknowledgement pipe: {error}"))?;
+    flags.remove(rustix::fs::OFlags::NONBLOCK);
+    rustix::fs::fcntl_setfl(&file, flags)
+        .map_err(|error| format!("could not block on publication acknowledgement: {error}"))?;
+    Read::by_ref(&mut file)
+        .take(2)
+        .read_to_end(&mut acknowledgement)
+        .map_err(|error| {
+            format!("could not receive publication rollback acknowledgement: {error}")
+        })?;
+    if acknowledgement != b"A" {
+        return Err("publication rollback acknowledgement is invalid".into());
+    }
+    Ok(())
+}
+
+fn write_publication_identity(
+    mut writer: impl Write,
+    staging_name: &str,
+    identity: (u64, u64),
+) -> Result<(), String> {
+    writeln!(
+        writer,
+        "{} {} {} {}",
+        PUBLICATION_IDENTITY_SCHEMA, staging_name, identity.0, identity.1
+    )
+    .and_then(|()| writer.flush())
+    .map_err(|error| format!("could not arm publication rollback: {error}"))
+}
+
+fn write_prepare_result(mut writer: impl Write, output: &PrepareOutput) -> Result<(), String> {
+    let bytes =
+        canonical_json(output).map_err(|error| format!("could not encode result: {error}"))?;
+    writer
+        .write_all(&bytes)
+        .and_then(|()| writeln!(writer))
+        .map_err(|error| format!("could not write result: {error}"))
+}
+
+fn execute(
+    arguments: Vec<std::ffi::OsString>,
+    arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+) -> Result<PrepareOutput, String> {
     if arguments.len() != 3 || arguments[0] != "prepare" || arguments[1] != "--output-root" {
         return Err("usage: oprobe-lab002 prepare --output-root ABSOLUTE_PRIVATE_DIRECTORY".into());
     }
     let output_root = PathBuf::from(&arguments[2]);
     let request = read_request(io::stdin().lock())?;
-    let result = prepare(&output_root, request)?;
-    let bytes = canonical_json(&result).map_err(|error| error.to_string())?;
-    String::from_utf8(bytes).map_err(|_| "canonical result was not UTF-8".into())
+    prepare_with_publication_arm(&output_root, request, arm_publication)
 }
 
 fn read_request(mut input: impl Read) -> Result<PrepareRequest, String> {
@@ -133,7 +190,16 @@ fn read_request(mut input: impl Read) -> Result<PrepareRequest, String> {
     Ok(request)
 }
 
+#[cfg(test)]
 fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput, String> {
+    prepare_with_publication_arm(output_root, request, |_, _| Ok(()))
+}
+
+fn prepare_with_publication_arm(
+    output_root: &Path,
+    request: PrepareRequest,
+    mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+) -> Result<PrepareOutput, String> {
     validate_request(&request)?;
     let output_root = validate_private_output_root(output_root)?;
     let final_name = format!(
@@ -223,7 +289,7 @@ fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput,
     };
     let record_bytes = canonical_json(&record).map_err(|error| error.to_string())?;
 
-    publish_prebuild_directory(
+    let published_identity = publish_prebuild_directory(
         &output_root,
         &final_name,
         &[
@@ -231,6 +297,7 @@ fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput,
             (MANIFEST_NAME, &manifest_bytes),
             (PREBUILD_NAME, &record_bytes),
         ],
+        &mut arm_publication,
     )?;
 
     Ok(PrepareOutput {
@@ -240,6 +307,8 @@ fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput,
             .join(final_name)
             .display()
             .to_string(),
+        prebuild_directory_device: published_identity.0.to_string(),
+        prebuild_directory_inode: published_identity.1.to_string(),
         authorized_target_manifest_sha256: manifest_sha256,
         build_binding_sha256: build_binding,
         target_identity_set_sha256: identity_set,
@@ -383,16 +452,40 @@ fn publish_prebuild_directory(
     output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
-) -> Result<(), String> {
-    publish_prebuild_directory_with(output_root, final_name, files, File::sync_all)
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        arm_publication,
+        File::sync_all,
+    )
 }
 
+#[cfg(test)]
 fn publish_prebuild_directory_with(
     output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
-) -> Result<(), String> {
+) -> Result<(u64, u64), String> {
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        &mut |_, _| Ok(()),
+        &mut sync_parent,
+    )
+}
+
+fn publish_prebuild_directory_with_arm(
+    output_root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    mut sync_parent: impl FnMut(&File) -> io::Result<()>,
+) -> Result<(u64, u64), String> {
     verify_private_output_root_path(output_root)?;
     let mut random = [0_u8; 16];
     OsRng.fill_bytes(&mut random);
@@ -471,6 +564,24 @@ fn publish_prebuild_directory_with(
         return Err("private prebuild staging directory has unsafe permissions".into());
     }
     let staging_identity = (staging_metadata.dev(), staging_metadata.ino());
+    if let Err(error) = arm_publication(&staging_name, staging_identity) {
+        let cleanup = cleanup_staging_directory_durably(
+            &staging,
+            staging_identity,
+            &[],
+            parent,
+            &staging_name,
+            None,
+            &mut sync_parent,
+        );
+        if let Err(cleanup_error) = cleanup {
+            return Err(format!(
+                "prebuild staging cleanup is indeterminate after rollback could not be armed: \
+                 {cleanup_error}; original failure: {error}"
+            ));
+        }
+        return Err(format!("could not arm prebuild rollback: {error}"));
+    }
 
     let mut publication_renamed_back = false;
     let mut publication_may_be_live = false;
@@ -539,7 +650,7 @@ fn publish_prebuild_directory_with(
             ));
         }
     }
-    result
+    result.map(|()| staging_identity)
 }
 
 fn verify_private_output_root_path(output_root: &PrivateOutputRoot) -> Result<(), String> {
@@ -828,9 +939,23 @@ mod tests {
         )
         .unwrap();
         let root = root.path().canonicalize().unwrap();
-        let output = prepare(&root, request()).unwrap();
+        let mut armed_publication = None;
+        let output = prepare_with_publication_arm(&root, request(), |staging_name, identity| {
+            armed_publication = Some((staging_name.to_owned(), identity));
+            Ok(())
+        })
+        .unwrap();
         let directory = PathBuf::from(&output.prebuild_directory);
         assert!(directory.is_dir());
+        let directory_metadata = directory.metadata().unwrap();
+        assert_eq!(
+            output.prebuild_directory_device,
+            directory_metadata.dev().to_string()
+        );
+        assert_eq!(
+            output.prebuild_directory_inode,
+            directory_metadata.ino().to_string()
+        );
         for name in [PRIVATE_SEED_NAME, MANIFEST_NAME, PREBUILD_NAME] {
             let metadata = fs::symlink_metadata(directory.join(name)).unwrap();
             assert!(metadata.is_file());
@@ -847,6 +972,31 @@ mod tests {
         assert_eq!(
             sha256_hex(&manifest_bytes),
             output.authorized_target_manifest_sha256
+        );
+        let mut wire_output = Vec::new();
+        let (staging_name, armed_identity) = armed_publication.unwrap();
+        write_publication_identity(&mut wire_output, &staging_name, armed_identity).unwrap();
+        write_prepare_result(&mut wire_output, &output).unwrap();
+        let wire_output = String::from_utf8(wire_output).unwrap();
+        let (identity_line, result_line) = wire_output.split_once('\n').unwrap();
+        assert_eq!(
+            identity_line,
+            format!(
+                "{} {} {} {}",
+                PUBLICATION_IDENTITY_SCHEMA,
+                staging_name,
+                directory_metadata.dev(),
+                directory_metadata.ino()
+            )
+        );
+        let decoded: serde_json::Value = serde_json::from_str(result_line.trim()).unwrap();
+        assert_eq!(
+            decoded["prebuild_directory_device"],
+            directory_metadata.dev().to_string()
+        );
+        assert_eq!(
+            decoded["prebuild_directory_inode"],
+            directory_metadata.ino().to_string()
         );
     }
 
@@ -899,6 +1049,29 @@ mod tests {
 
         assert!(error.contains("publication was durably rolled back"));
         assert_eq!(sync_calls, 2);
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_arm_failure_cleans_before_private_bytes_are_written() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-prebuild-test",
+            &[("private.bin", b"private")],
+            &mut |_, _| Err("injected rollback-arm failure".into()),
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("could not arm prebuild rollback"));
         assert!(fs::read_dir(&root_path).unwrap().next().is_none());
     }
 

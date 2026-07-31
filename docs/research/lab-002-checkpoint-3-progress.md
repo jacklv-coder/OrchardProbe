@@ -81,7 +81,14 @@ rollback, and cleanup are descriptor-relative with no-follow semantics; the
 reported output path is revalidated against the held output-root identity.
 Fastlane retains its own locked output-root descriptor across the helper call
 and descriptor-relatively removes the exact published tuple if any subsequent
-result or root revalidation fails.
+result or root revalidation fails. Before writing any private bytes, the helper
+reports the unique staging name and its device/inode identity in a flushed
+non-secret first-line record. Fastlane arms rollback from that record before
+acknowledging the helper over a dedicated inherited pipe; the helper cannot
+write private bytes until that acknowledgement arrives. Fastlane then removes
+the identity-matching staging or final entry on any later failure, including an
+interrupted helper or malformed result. Rollback refuses to touch a substituted
+directory.
 Files use exclusive creation and `fsync`, and the parent directory is fsynced
 after publication or cleanup. Reusing the same source/version/build tuple is
 rejected instead of overwriting its private inputs. This lane performs no

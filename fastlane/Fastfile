@@ -32,6 +32,7 @@ DEMO_LAB_MAX_ALTOOL_LOG_FILES = 64
 DEMO_LAB_MAX_ALTOOL_LOG_BYTES = 2 * 1024 * 1024
 DEMO_LAB_MAX_ALTOOL_LOG_TOTAL_BYTES = 8 * 1024 * 1024
 DEMO_LAB_MAX_UPLOAD_RESULT_BYTES = 64 * 1024
+DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES = 64 * 1024
 DEMO_LAB_ALTOOL_TIMEOUT_SECONDS = 30 * 60
 DEMO_LAB_PROCESS_TERMINATION_GRACE_SECONDS = 5
 DEMO_LAB_PINNED_SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
@@ -74,6 +75,8 @@ DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA =
   "orchardprobe.lab002.prebuild-request.v1"
 DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA =
   "orchardprobe.lab002.prebuild-result.v1"
+DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA =
+  "orchardprobe.lab002.published-directory.v1"
 DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
 DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES = %w[
@@ -1296,42 +1299,102 @@ def prepare_lab002_private_inputs!(
 
   binary = nil
   tool_workspace = nil
+  acknowledgement_reader = nil
+  acknowledgement_writer = nil
   begin
     binary, tool_workspace, tool_identity = build_lab002_private_tool
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     verify_selected_xcode_toolchain!(xcode_toolchain)
-    stdout, stderr, status = Open3.capture3(
+    acknowledgement_reader, acknowledgement_writer = IO.pipe
+    result_json = nil
+    stderr = ""
+    status = nil
+    Open3.popen3(
       sanitized_dynamic_loader_environment,
       binary,
       "prepare",
       "--output-root",
       output_root,
-      stdin_data: JSON.generate(request),
-      chdir: repository_root
-    )
+      3 => acknowledgement_reader,
+      chdir: repository_root,
+      close_others: true
+    ) do |stdin, stdout, error_stream, wait_thread|
+      acknowledgement_reader.close
+      stdin.write(JSON.generate(request))
+      stdin.close
+      identity_line = stdout.gets&.chomp
+      identity_match = /\A#{Regexp.escape(
+        DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA
+      )} (\.lab002-prebuild-[0-9a-f]{32}) (0|[1-9][0-9]*) (0|[1-9][0-9]*)\z/
+        .match(identity_line.to_s)
+      publication_state = if identity_match
+                            {
+                              "staging_name" => identity_match[1],
+                              "identity" => [
+                                Integer(identity_match[2], 10),
+                                Integer(identity_match[3], 10),
+                              ],
+                            }
+                          end
+      if publication_state
+        yield(publication_state) if block_given?
+        acknowledgement_writer.write("A")
+      else
+        acknowledgement_writer.write("X")
+      end
+      acknowledgement_writer.flush
+      acknowledgement_writer.close
+      result_json =
+        stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      stderr =
+        error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      status = wait_thread.value
+    ensure
+      acknowledgement_writer.close unless acknowledgement_writer.closed?
+    end
+    if result_json&.bytesize.to_i >
+       DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+       stderr.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+      UI.user_error!("LAB-002 private tool output exceeded its fixed limit.")
+    end
     unless status.success?
       UI.user_error!(
         "LAB-002 private input preparation failed: #{stderr.strip}"
       )
     end
-    yield if block_given?
-    verify_selected_xcode_toolchain!(xcode_toolchain)
-    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
-    result = JSON.parse(stdout)
+    unless publication_state && !result_json.to_s.empty?
+      UI.user_error!("LAB-002 private input result identity is missing.")
+    end
+    result = JSON.parse(result_json)
     require_exact_hash_keys!(
       result,
       %w[
         schema
         prebuild_directory
+        prebuild_directory_device
+        prebuild_directory_inode
         authorized_target_manifest_sha256
         build_binding_sha256
         target_identity_set_sha256
       ],
       "LAB-002 prebuild result"
     )
+    expected_prebuild_directory = File.join(
+      output_root,
+      "lab002-prebuild-#{marketing_version}-#{build_number}-#{source_commit}"
+    )
     unless result["schema"] == DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA &&
-           result["prebuild_directory"].is_a?(String) &&
-           Pathname.new(result["prebuild_directory"]).absolute? &&
+           result["prebuild_directory"] == expected_prebuild_directory &&
+           [
+             Integer(result["prebuild_directory_device"], 10),
+             Integer(result["prebuild_directory_inode"], 10),
+           ] == publication_state.fetch("identity") &&
+           %w[
+             prebuild_directory_device
+             prebuild_directory_inode
+           ].all? { |name|
+             /\A(?:0|[1-9][0-9]*)\z/.match?(result[name].to_s)
+           } &&
            %w[
              authorized_target_manifest_sha256
              build_binding_sha256
@@ -1341,19 +1404,57 @@ def prepare_lab002_private_inputs!(
            }
       UI.user_error!("LAB-002 private input result is invalid.")
     end
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     result
   ensure
+    acknowledgement_reader&.close unless acknowledgement_reader&.closed?
+    acknowledgement_writer&.close unless acknowledgement_writer&.closed?
     FileUtils.rm_rf(tool_workspace) if tool_workspace
   end
 end
 
-def cleanup_lab002_published_prebuild!(output_handle, final_name)
-  directory = lab002_open_directory_at(
-    output_handle,
-    final_name,
-    required_mode: nil
-  )
-  identity = [directory.stat.dev, directory.stat.ino]
+def cleanup_lab002_published_prebuild!(
+  output_handle,
+  final_name,
+  publication_state
+)
+  expected_identity = publication_state.fetch("identity")
+  staging_name = publication_state.fetch("staging_name")
+  directory = nil
+  active_name = nil
+  mismatched_names = []
+  [staging_name, final_name].each do |candidate|
+    begin
+      candidate_directory = lab002_open_directory_at(
+        output_handle,
+        candidate,
+        required_mode: 0o700
+      )
+      candidate_identity = [
+        candidate_directory.stat.dev,
+        candidate_directory.stat.ino,
+      ]
+      if candidate_identity == expected_identity
+        directory = candidate_directory
+        active_name = candidate
+        break
+      end
+      candidate_directory.close
+      mismatched_names << candidate
+    rescue Errno::ENOENT
+      nil
+    end
+  end
+  unless directory
+    output_handle.fsync
+    return if mismatched_names.empty?
+
+    UI.user_error!(
+      "LAB-002 publication entries changed identity before rollback; " \
+      "no files were removed."
+    )
+  end
   errors = []
   DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
     result = DemoLabDarwin.unlinkat(directory.fileno, name, 0)
@@ -1369,26 +1470,31 @@ def cleanup_lab002_published_prebuild!(output_handle, final_name)
   end
 
   begin
-    current = lab002_open_directory_at(
-      output_handle,
-      final_name,
-      required_mode: nil
-    )
-    current_identity = [current.stat.dev, current.stat.ino]
-    current.close
-    if current_identity == identity
-      result = DemoLabDarwin.unlinkat(
-        output_handle.fileno,
-        final_name,
-        DemoLabDarwin::AT_REMOVEDIR
-      )
-      if result.nonzero?
-        error = SystemCallError.new("unlinkat", Fiddle.last_error)
-        errors << error unless error.is_a?(Errno::ENOENT)
+    [active_name, staging_name, final_name].uniq.each do |candidate|
+      begin
+        current = lab002_open_directory_at(
+          output_handle,
+          candidate,
+          required_mode: nil
+        )
+        current_identity = [current.stat.dev, current.stat.ino]
+        current.close
+        next unless current_identity == expected_identity
+
+        result = DemoLabDarwin.unlinkat(
+          output_handle.fileno,
+          candidate,
+          DemoLabDarwin::AT_REMOVEDIR
+        )
+        if result.nonzero?
+          error = SystemCallError.new("unlinkat", Fiddle.last_error)
+          errors << error unless error.is_a?(Errno::ENOENT)
+        end
+        break
+      rescue Errno::ENOENT
+        nil
       end
     end
-  rescue Errno::ENOENT
-    nil
   end
   begin
     output_handle.fsync
@@ -4122,6 +4228,86 @@ platform :ios do
       end
     end
 
+    Dir.mktmpdir(
+      "orchardprobe-lab002-rollback-identity-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      final_name = "lab002-prebuild-replaced"
+      original = File.join(rollback_root, final_name)
+      moved_original = File.join(rollback_root, "moved-original")
+      Dir.mkdir(original, 0o700)
+      original_identity = [File.stat(original).dev, File.stat(original).ino]
+      File.rename(original, moved_original)
+      Dir.mkdir(original, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(original, name), "replacement")
+      end
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      replacement_rejected = false
+      begin
+        cleanup_lab002_published_prebuild!(
+          output_handle,
+          final_name,
+          {
+            "staging_name" => ".lab002-prebuild-#{"a" * 32}",
+            "identity" => original_identity,
+          }
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        replacement_rejected = true
+      ensure
+        output_handle.close
+      end
+      replacement_intact =
+        DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.all? { |name|
+          File.read(File.join(original, name)) == "replacement"
+        }
+      unless replacement_rejected && replacement_intact
+        UI.user_error!(
+          "LAB-002 rollback modified a substituted published directory."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-staging-rollback-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      staging_name = ".lab002-prebuild-#{"b" * 32}"
+      staging = File.join(rollback_root, staging_name)
+      Dir.mkdir(staging, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(staging, name), "private")
+      end
+      staging_stat = File.stat(staging)
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      begin
+        cleanup_lab002_published_prebuild!(
+          output_handle,
+          "lab002-prebuild-final",
+          {
+            "staging_name" => staging_name,
+            "identity" => [staging_stat.dev, staging_stat.ino],
+          }
+        )
+      ensure
+        output_handle.close
+      end
+      if File.exist?(staging)
+        UI.user_error!(
+          "LAB-002 rollback left an armed private staging directory behind."
+        )
+      end
+    end
+
     sandbox_vendor_workspace =
       external_temporary_directory(
         "orchardprobe-lab002-sandbox-vendor-check-"
@@ -5562,7 +5748,7 @@ platform :ios do
       unless reviewed_main_source_commit == source_commit
         UI.user_error!("LAB-002 source commit changed during preparation.")
       end
-      publication_succeeded = false
+      publication_state = nil
       begin
         result = prepare_lab002_private_inputs!(
           output_root: output_root,
@@ -5574,8 +5760,8 @@ platform :ios do
           app_group_identifier: app_group_identifier,
           team_identifier: team_identifier,
           xcode_toolchain: xcode_toolchain
-        ) do
-          publication_succeeded = true
+        ) do |state|
+          publication_state = state
         end
         verify_locked_directory!(
           output_handle,
@@ -5584,9 +5770,13 @@ platform :ios do
           "DEMO_LAB_OUTPUT_DIR"
         )
       rescue StandardError => original_error
-        if publication_succeeded
+        if publication_state
           begin
-            cleanup_lab002_published_prebuild!(output_handle, final_name)
+            cleanup_lab002_published_prebuild!(
+              output_handle,
+              final_name,
+              publication_state
+            )
           rescue StandardError => cleanup_error
             UI.user_error!(
               "LAB-002 preparation failed and rollback is indeterminate: " \
