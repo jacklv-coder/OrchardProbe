@@ -38,17 +38,17 @@ preceding row is complete.
 | 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
 | 3B.2.2 | Archive/IPA parity | `complete` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree; no role or slice may be skipped |
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
-| 3B.2.4 | Device-free closure tests | `local tests and Codex CR complete; final helper reproduction/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
+| 3B.2.4 | Device-free closure tests | `local tests, Codex CR, and helper reproduction complete; CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
 The final 3B.2 helper was independently built twice from the read-only source
-snapshot at commit `211edb28887864572d5e3699f1bf10e8a9e32b8b`; both products were
+snapshot at commit `727b7a4ca3a8328468f354c0f7f1957f3dc77273`; both products were
 byte-identical, and a third build passed after the mandatory allowlist path was
 restored. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`9fff2823e83732d1b0fbbaf1518103a2666046674b5d5886262307a54fad6c9b`,
-size `1891040`, SHA-256
-`1b688a77fc73bf80495a94c5cba1c59c87dd72936c345c8919cc4d0a2012d513`,
-and CDHash `8035934ac97d6225c2bf17451d6b379862b79124`.
+`09baf5dac518a4a5eeaf777fe0e723818a0d1b425cce11e4e1828c888e935e87`,
+size `1891344`, SHA-256
+`8b0582edf00e0de5f24267ac8cb8eb579c302de1a52ce0d21bc616e663ec7eeb`,
+and CDHash `f18ae9bd5c2cb4d965b97537885f0dad7d26719a`.
 
 ## Fixed safety boundaries
 
