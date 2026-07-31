@@ -3139,7 +3139,7 @@ end
 def parse_reviewed_github_main_ref!(output)
   lines = output.lines(chomp: true)
   match = if lines.length == 1
-            /\A([0-9a-f]{40})\t#{Regexp.escape(
+            /\A([0-9a-f]{40}|[0-9a-f]{64})\t#{Regexp.escape(
               DEMO_LAB_REVIEWED_GITHUB_MAIN_REF
             )}\z/.match(lines.first)
           end
@@ -5612,11 +5612,13 @@ platform :ios do
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     parser_commit = git_command_output("rev-parse", "HEAD")
-    parsed_reviewed_main = parse_reviewed_github_main_ref!(
-      "#{parser_commit}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n"
-    )
-    unless parsed_reviewed_main == parser_commit
-      UI.user_error!("The authenticated GitHub main parser changed its OID.")
+    [parser_commit, "a" * 40, "b" * 64].uniq.each do |candidate_oid|
+      parsed_reviewed_main = parse_reviewed_github_main_ref!(
+        "#{candidate_oid}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n"
+      )
+      unless parsed_reviewed_main == candidate_oid
+        UI.user_error!("The authenticated GitHub main parser changed its OID.")
+      end
     end
     [
       "#{parser_commit}\trefs/remotes/origin/main\n",
@@ -5672,7 +5674,7 @@ platform :ios do
       external_temporary_base
     ) do |output_root|
       File.chmod(0o700, output_root)
-      source_commit = git_command_output("rev-parse", "HEAD")
+      source_commit = parser_commit
       unless /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/.match?(source_commit)
         UI.user_error!("DemoLab check source commit has an invalid format.")
       end
@@ -6672,66 +6674,67 @@ platform :ios do
       end
     end
 
-    source_snapshot_workspace =
-      external_temporary_directory(
-        "orchardprobe-lab002-reviewed-source-check-"
-      )
-    begin
-      legacy_archive_path =
-        File.join(source_snapshot_workspace, "reviewed-source.tar")
-      File.write(legacy_archive_path, "must remain untouched")
-      snapshot_commit = git_command_output("rev-parse", "HEAD")
-      snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
-        lab002_reviewed_source_snapshot!(
-          source_snapshot_workspace,
-          snapshot_commit
+    if parser_commit.length == 40
+      source_snapshot_workspace =
+        external_temporary_directory(
+          "orchardprobe-lab002-reviewed-source-check-"
         )
-      expected_cargo_lock_blob = git_command_output(
-        "rev-parse",
-        "#{snapshot_commit}:Cargo.lock"
-      )
-      observed_cargo_lock_blob = git_command_output(
-        "hash-object",
-        File.join(snapshot_root, "Cargo.lock")
-      )
-      expected_gemfile_lock_blob = git_command_output(
-        "rev-parse",
-        "#{snapshot_commit}:Gemfile.lock"
-      )
-      observed_gemfile_lock_blob = git_command_output(
-        "hash-object",
-        File.join(snapshot_root, "Gemfile.lock")
-      )
-      unless expected_cargo_lock_blob == observed_cargo_lock_blob &&
-             expected_gemfile_lock_blob == observed_gemfile_lock_blob &&
-             gemfile_lock_sha256 ==
-               lab002_reviewed_snapshot_file_sha256!(
+      begin
+        legacy_archive_path =
+          File.join(source_snapshot_workspace, "reviewed-source.tar")
+        File.write(legacy_archive_path, "must remain untouched")
+        snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
+          lab002_reviewed_source_snapshot!(
+            source_snapshot_workspace,
+            parser_commit
+          )
+        expected_cargo_lock_blob = git_command_output(
+          "rev-parse",
+          "#{parser_commit}:Cargo.lock"
+        )
+        observed_cargo_lock_blob = git_command_output(
+          "hash-object",
+          File.join(snapshot_root, "Cargo.lock")
+        )
+        expected_gemfile_lock_blob = git_command_output(
+          "rev-parse",
+          "#{parser_commit}:Gemfile.lock"
+        )
+        observed_gemfile_lock_blob = git_command_output(
+          "hash-object",
+          File.join(snapshot_root, "Gemfile.lock")
+        )
+        unless expected_cargo_lock_blob == observed_cargo_lock_blob &&
+               expected_gemfile_lock_blob == observed_gemfile_lock_blob &&
+               gemfile_lock_sha256 ==
+                 lab002_reviewed_snapshot_file_sha256!(
+                   snapshot_root,
+                   "Gemfile.lock"
+                 ) &&
+               snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
                  snapshot_root,
-                 "Gemfile.lock"
+                 "LAB-002 reviewed source snapshot"
                ) &&
-             snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
-               snapshot_root,
-               "LAB-002 reviewed source snapshot"
-             ) &&
-             File.binread(legacy_archive_path) == "must remain untouched"
-        UI.user_error!(
-          "LAB-002 reviewed source snapshot is not bound to its commit."
-        )
-      end
-      Find.find(snapshot_root) do |path|
-        stat = File.lstat(path)
-        expected_mode = stat.directory? ? 0o500 : 0o400
-        unless (stat.mode & 0o777) == expected_mode
+               File.binread(legacy_archive_path) == "must remain untouched"
           UI.user_error!(
-            "LAB-002 reviewed source snapshot is not read-only."
+            "LAB-002 reviewed source snapshot is not bound to its commit."
           )
         end
+        Find.find(snapshot_root) do |path|
+          stat = File.lstat(path)
+          expected_mode = stat.directory? ? 0o500 : 0o400
+          unless (stat.mode & 0o777) == expected_mode
+            UI.user_error!(
+              "LAB-002 reviewed source snapshot is not read-only."
+            )
+          end
+        end
+      ensure
+        lab002_remove_readonly_workspace!(
+          source_snapshot_workspace,
+          "LAB-002 reviewed source workspace"
+        )
       end
-    ensure
-      lab002_remove_readonly_workspace!(
-        source_snapshot_workspace,
-        "LAB-002 reviewed source workspace"
-      )
     end
 
     Dir.mktmpdir(
