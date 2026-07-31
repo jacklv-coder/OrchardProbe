@@ -75,12 +75,12 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6b656ed7ac688a88efce668cb616a1fe88f9ee92",
       }.freeze,
     ].freeze,
-    "4c3dfcd4736aed11419a72bd5600691a246980504dc004f6f3758e35c6063771" => [
+    "f129b670b3215bcbf56d94a8f8ba6eb2e0d44f32730af96e222de8b9f10fe187" => [
       {
-        "size" => 1_106_176,
+        "size" => 1_106_400,
         "sha256" =>
-          "6d5bf2eaa235312b261391a9f8d9602cef13e1cc78d516052e2de86e7514d3f2",
-        "cdhash" => "68d75f071ab0f0ffc790afaa4f8ffd14ea8998c7",
+          "071af6453519872bb423b52b959ffa9141d821c4fe2e004fac7d6bb41e00e3d7",
+        "cdhash" => "c77499b79d597a6de2c0450b69e87b9005312915",
       }.freeze,
     ].freeze,
   }.freeze,
