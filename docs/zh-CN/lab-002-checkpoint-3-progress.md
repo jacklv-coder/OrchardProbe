@@ -110,6 +110,8 @@ Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper �
 名称分别绑定到发布后的 Device/Inode、Mode、Size 与 SHA-256。Fastlane 会验证这份
 封闭清单，要求 Manifest 文件 Digest 与 Result 中的 Manifest Digest 相等，再以
 Descriptor-relative 方式逐个重开、重新 Hash 并复核身份，最后再次重开最终目录。
+在这些 Hash 之前、期间及之后，Fork 子进程会通过 `fchdir(2)` 进入已持有目录并
+枚举目录项；集合必须精确等于三个固定 Artifact 名称，新增第四项也会 Fail-closed。
 任一文件被原位修改或替换都会让最终检查失败，并触发已经启用、按身份限定的
 Rollback。如果目录已被替换，Rollback 会拒绝接触
 替代目录。如果已启用 Rollback 的身份同时从 Staging 与最终名称消失，Rollback

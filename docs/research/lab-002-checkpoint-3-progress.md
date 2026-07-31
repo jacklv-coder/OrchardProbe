@@ -142,7 +142,10 @@ of the three fixed private artifact names to its device/inode, mode, size, and
 SHA-256 after publication. Fastlane validates that closed inventory, requires
 the manifest file digest to match the reported manifest digest, and
 descriptor-relatively reopens, rehashes, and identity-checks every artifact
-before reopening the final directory one last time. Any file mutation or
+before reopening the final directory one last time. Before, during, and after
+those hashes, a forked child enters the already-held directory with
+`fchdir(2)` and enumerates it; the entry set must equal exactly the three fixed
+artifact names, so an added fourth entry fails closed. Any file mutation or
 replacement fails the final check and invokes the already-armed,
 identity-scoped rollback. Rollback refuses to touch a
 substituted directory. If the armed identity disappears from both its staging

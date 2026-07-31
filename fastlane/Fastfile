@@ -2499,6 +2499,54 @@ ensure
   second&.close unless second&.closed?
 end
 
+def verify_lab002_closed_directory!(directory)
+  reader, writer = IO.pipe
+  pid = nil
+  waited = false
+  pid = fork do
+    reader.close
+    exit! 126 if DemoLabDarwin.fchdir(directory.fileno).nonzero?
+
+    entries = []
+    Dir.foreach(".") do |name|
+      next if [".", ".."].include?(name)
+
+      entries << name
+      if entries.length > DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.length
+        exit! 125
+      end
+    end
+    unless entries.sort == DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.sort
+      exit! 125
+    end
+    writer.write("closed")
+    writer.close
+    exit! 0
+  rescue StandardError
+    exit! 126
+  end
+  writer.close
+  response = reader.read(7)
+  _, status = Process.wait2(pid)
+  waited = true
+  unless status.success? && response == "closed"
+    UI.user_error!(
+      "LAB-002 published directory does not contain exactly the fixed " \
+      "private artifacts."
+    )
+  end
+  true
+rescue SystemCallError
+  UI.user_error!("Unable to enumerate the held LAB-002 publication safely.")
+ensure
+  reader&.close unless reader&.closed?
+  writer&.close unless writer&.closed?
+  if pid && !waited
+    Process.kill("TERM", pid) rescue nil
+    Process.wait(pid) rescue nil
+  end
+end
+
 def verify_lab002_published_prebuild!(
   output_handle,
   final_name,
@@ -2516,6 +2564,7 @@ def verify_lab002_published_prebuild!(
       "LAB-002 published directory changed identity before success."
     )
   end
+  verify_lab002_closed_directory!(directory)
   expected_artifacts = publication_state.fetch("artifacts")
   observed_artifacts =
     DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.map do |name|
@@ -2526,6 +2575,7 @@ def verify_lab002_published_prebuild!(
       "LAB-002 published private artifacts changed before success."
     )
   end
+  verify_lab002_closed_directory!(directory)
   final_directory = lab002_open_directory_at(
     output_handle,
     final_name,
@@ -2540,6 +2590,7 @@ def verify_lab002_published_prebuild!(
       "LAB-002 published directory changed during artifact verification."
     )
   end
+  verify_lab002_closed_directory!(final_directory)
 ensure
   directory&.close unless directory&.closed?
   final_directory&.close unless final_directory&.closed?
@@ -5836,6 +5887,36 @@ platform :ios do
       unless artifact_change_rejected && !File.exist?(published)
         UI.user_error!(
           "LAB-002 final publication accepted changed private artifacts."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-closed-publication-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      published = File.join(rollback_root, "published")
+      Dir.mkdir(published, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(published, name), "private")
+      end
+      File.write(File.join(published, "unexpected-private-entry"), "private")
+      directory = File.open(
+        published,
+        File::RDONLY | File::NOFOLLOW
+      )
+      extra_entry_rejected = false
+      begin
+        verify_lab002_closed_directory!(directory)
+      rescue FastlaneCore::Interface::FastlaneError
+        extra_entry_rejected = true
+      ensure
+        directory.close
+      end
+      unless extra_entry_rejected
+        UI.user_error!(
+          "LAB-002 accepted an extra published private artifact."
         )
       end
     end
