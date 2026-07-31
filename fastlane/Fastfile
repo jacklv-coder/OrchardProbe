@@ -508,8 +508,8 @@ def validate_demolab_authorization_public_key!(value)
   value
 end
 
-def lab002_rust_toolchain_name
-  toolchain_file = File.join(repository_root, "rust-toolchain.toml")
+def lab002_rust_toolchain_name(source_root = repository_root)
+  toolchain_file = File.join(source_root, "rust-toolchain.toml")
   content = File.read(toolchain_file, mode: "rb")
   matches = content.scan(/^channel = "([0-9]+\.[0-9]+\.[0-9]+)"$/)
   unless matches.length == 1 && content.start_with?("[toolchain]\n")
@@ -520,7 +520,7 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   UI.user_error!("Unable to read the pinned Rust toolchain safely.")
 end
 
-def lab002_rust_toolchain_tree_sha256(root)
+def lab002_rust_toolchain_tree_sha256(root, label = "Pinned Rust tree")
   root = File.realpath(root)
   entries = []
   Find.find(root) { |path| entries << path }
@@ -541,7 +541,7 @@ def lab002_rust_toolchain_tree_sha256(root)
            !stat.symlink? &&
            (stat.directory? || stat.file?)
       UI.user_error!(
-        "Pinned Rust toolchain contains an unsafe node."
+        "#{label} contains an unsafe node."
       )
     end
     type = stat.directory? ? "d" : "f"
@@ -561,7 +561,7 @@ def lab002_rust_toolchain_tree_sha256(root)
              opened.ino == stat.ino &&
              path_stat.dev == opened.dev &&
              path_stat.ino == opened.ino
-        UI.user_error!("Pinned Rust toolchain file identity changed.")
+        UI.user_error!("#{label} file identity changed.")
       end
       file_digest = Digest::SHA256.new
       while (chunk = file.read(1024 * 1024))
@@ -579,7 +579,7 @@ def lab002_rust_toolchain_tree_sha256(root)
         opened.size,
         opened.mtime.to_f,
       ]
-        UI.user_error!("Pinned Rust toolchain file changed while hashing.")
+        UI.user_error!("#{label} file changed while hashing.")
       end
       digest.update([opened.size].pack("Q>"))
       digest.update(file_digest.digest)
@@ -593,11 +593,11 @@ def lab002_rust_toolchain_tree_sha256(root)
     [path == root ? 0 : 1, relative_path.b]
   end
   unless entries == observed_entries
-    UI.user_error!("Pinned Rust toolchain inventory changed while hashing.")
+    UI.user_error!("#{label} inventory changed while hashing.")
   end
   digest.hexdigest
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
-  UI.user_error!("Unable to hash the pinned Rust toolchain safely.")
+  UI.user_error!("Unable to hash #{label.downcase} safely.")
 end
 
 def lab002_rust_target_architecture(host_architecture)
@@ -611,8 +611,8 @@ def lab002_rust_target_architecture(host_architecture)
   end
 end
 
-def selected_lab002_rust_toolchain
-  channel = lab002_rust_toolchain_name
+def selected_lab002_rust_toolchain(source_root = repository_root)
+  channel = lab002_rust_toolchain_name(source_root)
   architecture = lab002_rust_target_architecture(
     command_output("/usr/bin/uname", "-m")
   )
@@ -650,8 +650,7 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to resolve the pinned Rust toolchain safely.")
 end
 
-def lab002_locked_registry_packages
-  lock_path = File.join(repository_root, "Cargo.lock")
+def lab002_locked_registry_packages(lock_path = File.join(repository_root, "Cargo.lock"))
   content = File.read(lock_path, mode: "rb")
   content.force_encoding(Encoding::UTF_8)
   UI.user_error!("Cargo.lock is not valid UTF-8.") unless content.valid_encoding?
@@ -982,12 +981,12 @@ ensure
   destination_handle&.close unless destination_handle&.closed?
 end
 
-def lab002_verified_vendor_source(workspace)
+def lab002_verified_vendor_source(workspace, lock_path: File.join(repository_root, "Cargo.lock"))
   owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
   cargo_cache = File.join(owner_home, ".cargo")
   vendor_root = File.join(workspace, "verified-vendor")
   Dir.mkdir(vendor_root, 0o700)
-  lab002_locked_registry_packages.each do |package|
+  lab002_locked_registry_packages(lock_path).each do |package|
     archive = lab002_verified_crate_archive(package, cargo_cache)
     lab002_extract_verified_crate!(archive, package, vendor_root)
   end
@@ -995,17 +994,17 @@ def lab002_verified_vendor_source(workspace)
   [vendor_root, lab002_rust_toolchain_tree_sha256(vendor_root)]
 end
 
-def lab002_remove_verified_vendor!(workspace)
+def lab002_remove_readonly_workspace!(workspace, label)
   resolved = ensure_outside_repository!(
     File.realpath(workspace),
-    "LAB-002 verified Cargo source workspace"
+    label
   )
   directories = []
   Find.find(resolved) do |path|
     stat = File.lstat(path)
     if stat.symlink?
       UI.user_error!(
-        "The verified Cargo source gained a symbolic link before cleanup."
+        "#{label} gained a symbolic link before cleanup."
       )
     end
     directories << path if stat.directory?
@@ -1013,16 +1012,82 @@ def lab002_remove_verified_vendor!(workspace)
   directories.reverse_each { |path| File.chmod(0o700, path) }
   FileUtils.rm_rf(resolved)
   if File.exist?(resolved) || File.symlink?(resolved)
-    UI.user_error!("Unable to remove the verified Cargo source workspace.")
+    UI.user_error!("Unable to remove #{label}.")
   end
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
-  UI.user_error!("Unable to clean the verified Cargo source workspace safely.")
+  UI.user_error!("Unable to clean #{label} safely.")
+end
+
+def lab002_remove_verified_vendor!(workspace)
+  lab002_remove_readonly_workspace!(
+    workspace,
+    "LAB-002 verified Cargo source workspace"
+  )
+end
+
+def lab002_reviewed_source_snapshot!(workspace, source_commit)
+  unless /\A[0-9a-f]{40}\z/.match?(source_commit)
+    UI.user_error!("LAB-002 reviewed source commit has an invalid format.")
+  end
+  workspace = ensure_outside_repository!(
+    File.realpath(workspace),
+    "LAB-002 reviewed source workspace"
+  )
+  source_root = File.join(workspace, "reviewed-source")
+  archive = File.join(workspace, "reviewed-source.tar")
+  Dir.mkdir(source_root, 0o700)
+  git_command_output(
+    "archive",
+    "--format=tar",
+    "--output=#{archive}",
+    source_commit,
+    "--",
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "crates"
+  )
+  command_output("/usr/bin/tar", "-xf", archive, "-C", source_root)
+  FileUtils.rm_f(archive)
+
+  required = %w[Cargo.toml Cargo.lock rust-toolchain.toml].map do |name|
+    File.join(source_root, name)
+  end
+  unless required.all? { |path| File.file?(path) && !File.symlink?(path) }
+    UI.user_error!("LAB-002 reviewed source snapshot is incomplete.")
+  end
+
+  directories = []
+  Find.find(source_root) do |path|
+    stat = File.lstat(path)
+    unless stat.uid == Process.uid &&
+           !stat.symlink? &&
+           (stat.directory? || stat.file?)
+      UI.user_error!("LAB-002 reviewed source snapshot contains an unsafe node.")
+    end
+    if stat.directory?
+      directories << path
+    else
+      File.chmod(0o400, path)
+    end
+  end
+  directories.reverse_each { |path| File.chmod(0o500, path) }
+  source_sha256 = lab002_rust_toolchain_tree_sha256(
+    source_root,
+    "LAB-002 reviewed source snapshot"
+  )
+  [source_root, source_sha256]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to create the reviewed LAB-002 source snapshot safely.")
+ensure
+  FileUtils.rm_f(archive) if archive
 end
 
 def lab002_private_build_sandbox!(
   workspace:,
   toolchain_root:,
-  vendor_root:
+  vendor_root:,
+  source_root:
 )
   sandbox_exec = pinned_executable(
     "/usr/bin/sandbox-exec",
@@ -1032,7 +1097,7 @@ def lab002_private_build_sandbox!(
   Dir.mkdir(isolated_home, 0o700)
   profile_path = File.join(workspace, "cargo-build.sb")
   owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
-  readable_roots = [repository_root, toolchain_root, vendor_root, workspace]
+  readable_roots = [source_root, toolchain_root, vendor_root, workspace]
     .map { |path| File.realpath(path) }
     .uniq
   profile = [
@@ -1059,16 +1124,24 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to create the private Cargo build sandbox.")
 end
 
-def build_lab002_private_tool
+def build_lab002_private_tool(source_commit)
   workspace = nil
   vendor_workspace = nil
-  toolchain_root, cargo, rustc, toolchain_sha256 =
-    selected_lab002_rust_toolchain
+  source_workspace = nil
   workspace = external_temporary_directory("orchardprobe-lab002-tool-")
   vendor_workspace =
     external_temporary_directory("orchardprobe-lab002-vendor-")
+  source_workspace =
+    external_temporary_directory("orchardprobe-lab002-source-")
+  source_root, source_sha256 =
+    lab002_reviewed_source_snapshot!(source_workspace, source_commit)
+  toolchain_root, cargo, rustc, toolchain_sha256 =
+    selected_lab002_rust_toolchain(source_root)
   vendor_root, vendor_sha256 =
-    lab002_verified_vendor_source(vendor_workspace)
+    lab002_verified_vendor_source(
+      vendor_workspace,
+      lock_path: File.join(source_root, "Cargo.lock")
+    )
   cargo_home = File.join(workspace, "cargo-home")
   Dir.mkdir(cargo_home, 0o700)
   cargo_config = File.join(cargo_home, "config.toml")
@@ -1092,7 +1165,8 @@ def build_lab002_private_tool
     lab002_private_build_sandbox!(
       workspace: workspace,
       toolchain_root: toolchain_root,
-      vendor_root: vendor_root
+      vendor_root: vendor_root,
+      source_root: source_root
     )
   environment = {
     "CARGO_HOME" => cargo_home,
@@ -1118,7 +1192,7 @@ def build_lab002_private_tool
     "--release",
     "--package",
     "orchardprobe-lab002-tools",
-    chdir: repository_root,
+    chdir: source_root,
     unsetenv_others: true
   )
   unless status.success?
@@ -1129,6 +1203,12 @@ def build_lab002_private_tool
   end
   unless lab002_rust_toolchain_tree_sha256(vendor_root) == vendor_sha256
     UI.user_error!("The verified Cargo dependency source changed during the build.")
+  end
+  unless lab002_rust_toolchain_tree_sha256(
+    source_root,
+    "LAB-002 reviewed source snapshot"
+  ) == source_sha256
+    UI.user_error!("The reviewed LAB-002 source snapshot changed during the build.")
   end
   unless lab002_rust_toolchain_tree_sha256(toolchain_root) ==
          toolchain_sha256
@@ -1161,6 +1241,12 @@ rescue StandardError
   raise
 ensure
   lab002_remove_verified_vendor!(vendor_workspace) if vendor_workspace
+  if source_workspace
+    lab002_remove_readonly_workspace!(
+      source_workspace,
+      "LAB-002 reviewed source workspace"
+    )
+  end
 end
 
 def verify_lab002_private_tool!(binary, workspace, identity)
@@ -1302,7 +1388,8 @@ def prepare_lab002_private_inputs!(
   acknowledgement_reader = nil
   acknowledgement_writer = nil
   begin
-    binary, tool_workspace, tool_identity = build_lab002_private_tool
+    binary, tool_workspace, tool_identity =
+      build_lab002_private_tool(source_commit)
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     verify_selected_xcode_toolchain!(xcode_toolchain)
     acknowledgement_reader, acknowledgement_writer = IO.pipe
@@ -1509,6 +1596,70 @@ def cleanup_lab002_published_prebuild!(
   )
 ensure
   directory&.close unless directory&.closed?
+end
+
+def verify_lab002_published_prebuild!(
+  output_handle,
+  final_name,
+  publication_state
+)
+  directory = lab002_open_directory_at(
+    output_handle,
+    final_name,
+    required_mode: 0o700
+  )
+  observed_identity = [directory.stat.dev, directory.stat.ino]
+  unless observed_identity == publication_state.fetch("identity")
+    UI.user_error!(
+      "LAB-002 published directory changed identity before success."
+    )
+  end
+ensure
+  directory&.close unless directory&.closed?
+end
+
+def with_lab002_publication_rollback!(output_handle, final_name)
+  publication_state = nil
+  arm_rollback = lambda do |state|
+    if publication_state
+      UI.user_error!("LAB-002 publication rollback was armed more than once.")
+    end
+    publication_state = state
+  end
+  result = yield(arm_rollback)
+  unless publication_state
+    UI.user_error!("LAB-002 publication rollback identity is missing.")
+  end
+  verify_lab002_published_prebuild!(
+    output_handle,
+    final_name,
+    publication_state
+  )
+  result
+rescue StandardError, Interrupt => original_error
+  cleanup_error = nil
+  if publication_state
+    begin
+      cleanup_lab002_published_prebuild!(
+        output_handle,
+        final_name,
+        publication_state
+      )
+    rescue StandardError, Interrupt => error
+      cleanup_error = error
+    end
+  end
+  if cleanup_error
+    message =
+      "LAB-002 preparation failed and rollback is indeterminate: " \
+      "#{cleanup_error.message}; original failure: #{original_error.message}"
+    if original_error.is_a?(Interrupt) || cleanup_error.is_a?(Interrupt)
+      UI.error(message)
+      raise(original_error.is_a?(Interrupt) ? original_error : cleanup_error)
+    end
+    UI.user_error!(message)
+  end
+  raise
 end
 
 def valid_utc_timestamp?(value)
@@ -4274,6 +4425,57 @@ platform :ios do
     end
 
     Dir.mktmpdir(
+      "orchardprobe-lab002-final-revalidation-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      final_name = "lab002-prebuild-final"
+      published = File.join(rollback_root, final_name)
+      moved_published = File.join(rollback_root, "moved-published")
+      Dir.mkdir(published, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(published, name), "private")
+      end
+      published_stat = File.stat(published)
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      substitution_rejected = false
+      begin
+        with_lab002_publication_rollback!(
+          output_handle,
+          final_name
+        ) do |arm_rollback|
+          arm_rollback.call(
+            "staging_name" => ".lab002-prebuild-#{"d" * 32}",
+            "identity" => [published_stat.dev, published_stat.ino]
+          )
+          File.rename(published, moved_published)
+          Dir.mkdir(published, 0o700)
+          DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+            File.write(File.join(published, name), "replacement")
+          end
+          { "result" => "must not be returned" }
+        end
+      rescue FastlaneCore::Interface::FastlaneError => error
+        substitution_rejected =
+          error.message.include?("rollback is indeterminate")
+      ensure
+        output_handle.close
+      end
+      replacement_intact =
+        DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.all? { |name|
+          File.read(File.join(published, name)) == "replacement"
+        }
+      unless substitution_rejected && replacement_intact
+        UI.user_error!(
+          "LAB-002 final publication revalidation accepted a substitution."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
       "orchardprobe-lab002-staging-rollback-check-",
       external_temporary_base
     ) do |rollback_root|
@@ -4308,6 +4510,91 @@ platform :ios do
       end
     end
 
+    Dir.mktmpdir(
+      "orchardprobe-lab002-interrupt-rollback-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      staging_name = ".lab002-prebuild-#{"c" * 32}"
+      staging = File.join(rollback_root, staging_name)
+      Dir.mkdir(staging, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(staging, name), "private")
+      end
+      staging_stat = File.stat(staging)
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      interrupt_propagated = false
+      begin
+        with_lab002_publication_rollback!(
+          output_handle,
+          "lab002-prebuild-final"
+        ) do |arm_rollback|
+          arm_rollback.call(
+            "staging_name" => staging_name,
+            "identity" => [staging_stat.dev, staging_stat.ino]
+          )
+          raise Interrupt, "LAB-002 rollback regression interrupt"
+        end
+      rescue Interrupt => error
+        interrupt_propagated =
+          error.message == "LAB-002 rollback regression interrupt"
+      ensure
+        output_handle.close
+      end
+      unless interrupt_propagated && !File.exist?(staging)
+        UI.user_error!(
+          "LAB-002 interrupt rollback did not clean and propagate."
+        )
+      end
+    end
+
+    source_snapshot_workspace =
+      external_temporary_directory(
+        "orchardprobe-lab002-reviewed-source-check-"
+      )
+    begin
+      snapshot_commit = git_command_output("rev-parse", "HEAD")
+      snapshot_root, snapshot_sha256 =
+        lab002_reviewed_source_snapshot!(
+          source_snapshot_workspace,
+          snapshot_commit
+        )
+      expected_lock_blob = git_command_output(
+        "rev-parse",
+        "#{snapshot_commit}:Cargo.lock"
+      )
+      observed_lock_blob = git_command_output(
+        "hash-object",
+        File.join(snapshot_root, "Cargo.lock")
+      )
+      unless expected_lock_blob == observed_lock_blob &&
+             snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
+               snapshot_root,
+               "LAB-002 reviewed source snapshot"
+             )
+        UI.user_error!(
+          "LAB-002 reviewed source snapshot is not bound to its commit."
+        )
+      end
+      Find.find(snapshot_root) do |path|
+        stat = File.lstat(path)
+        expected_mode = stat.directory? ? 0o500 : 0o400
+        unless (stat.mode & 0o777) == expected_mode
+          UI.user_error!(
+            "LAB-002 reviewed source snapshot is not read-only."
+          )
+        end
+      end
+    ensure
+      lab002_remove_readonly_workspace!(
+        source_snapshot_workspace,
+        "LAB-002 reviewed source workspace"
+      )
+    end
+
     sandbox_vendor_workspace =
       external_temporary_directory(
         "orchardprobe-lab002-sandbox-vendor-check-"
@@ -4328,7 +4615,8 @@ platform :ios do
         sandbox_exec, sandbox_profile, = lab002_private_build_sandbox!(
           workspace: sandbox_build_workspace,
           toolchain_root: repository_root,
-          vendor_root: sandbox_vendor_root
+          vendor_root: sandbox_vendor_root,
+          source_root: repository_root
         )
         _, _, mutation_status = Open3.capture3(
           sanitized_dynamic_loader_environment,
@@ -5748,8 +6036,10 @@ platform :ios do
       unless reviewed_main_source_commit == source_commit
         UI.user_error!("LAB-002 source commit changed during preparation.")
       end
-      publication_state = nil
-      begin
+      result = with_lab002_publication_rollback!(
+        output_handle,
+        final_name
+      ) do |arm_rollback|
         result = prepare_lab002_private_inputs!(
           output_root: output_root,
           source_commit: source_commit,
@@ -5761,7 +6051,7 @@ platform :ios do
           team_identifier: team_identifier,
           xcode_toolchain: xcode_toolchain
         ) do |state|
-          publication_state = state
+          arm_rollback.call(state)
         end
         verify_locked_directory!(
           output_handle,
@@ -5769,23 +6059,7 @@ platform :ios do
           output_identity,
           "DEMO_LAB_OUTPUT_DIR"
         )
-      rescue StandardError => original_error
-        if publication_state
-          begin
-            cleanup_lab002_published_prebuild!(
-              output_handle,
-              final_name,
-              publication_state
-            )
-          rescue StandardError => cleanup_error
-            UI.user_error!(
-              "LAB-002 preparation failed and rollback is indeterminate: " \
-              "#{cleanup_error.message}; original failure: " \
-              "#{original_error.message}"
-            )
-          end
-        end
-        raise
+        result
       end
     end
     UI.success(

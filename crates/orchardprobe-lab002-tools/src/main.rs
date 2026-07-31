@@ -624,6 +624,7 @@ fn publish_prebuild_directory_with_arm(
             ));
         }
         verify_private_output_root_path(output_root)?;
+        verify_published_directory_identity(parent, final_name, staging_identity)?;
         Ok(())
     })();
 
@@ -651,6 +652,25 @@ fn publish_prebuild_directory_with_arm(
         }
     }
     result.map(|()| staging_identity)
+}
+
+fn verify_published_directory_identity(
+    parent: &File,
+    final_name: &str,
+    expected_identity: (u64, u64),
+) -> Result<(), String> {
+    let published = open_directory_entry(parent, final_name)
+        .map_err(|error| format!("could not reopen published prebuild directory: {error}"))?;
+    let metadata = published
+        .metadata()
+        .map_err(|error| format!("could not inspect published prebuild directory: {error}"))?;
+    if (metadata.dev(), metadata.ino()) != expected_identity
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return Err("published prebuild directory changed identity before success".into());
+    }
+    Ok(())
 }
 
 fn verify_private_output_root_path(output_root: &PrivateOutputRoot) -> Result<(), String> {
@@ -1194,6 +1214,50 @@ mod tests {
         assert!(error.contains("output root changed during publication"));
         assert!(fs::read_dir(&root_path).unwrap().next().is_none());
         assert!(fs::read_dir(&moved_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_detects_final_entry_substitution_and_removes_private_files() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let held_root = validate_private_output_root(&root_path).unwrap();
+        let final_name = "lab002-prebuild-test";
+        let final_path = root_path.join(final_name);
+        let moved_path = root_path.join("moved-published");
+        let mut substituted = false;
+
+        let error = publish_prebuild_directory_with(
+            &held_root,
+            final_name,
+            &[("private.bin", b"private")],
+            |directory| {
+                directory.sync_all()?;
+                if !substituted {
+                    fs::rename(&final_path, &moved_path)?;
+                    fs::create_dir(&final_path)?;
+                    fs::set_permissions(
+                        &final_path,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+                    )?;
+                    fs::write(final_path.join("replacement.bin"), b"replacement")?;
+                    substituted = true;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed identity before success"));
+        assert!(!moved_path.join("private.bin").exists());
+        assert_eq!(
+            fs::read(final_path.join("replacement.bin")).unwrap(),
+            b"replacement"
+        );
     }
 
     #[test]

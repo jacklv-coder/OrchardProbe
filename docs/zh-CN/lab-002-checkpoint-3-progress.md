@@ -49,15 +49,17 @@
 
 目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
 会拒绝尚未成为受评审 `origin/main` 祖先的干净本地 Commit，并在生成前再次核对
-同一 Source。Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
-它按受评审 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
+同一 Source。Helper 只从该精确 40-hex Commit 的只读 Git Archive 快照构建；
+快照位于独立私有 Workspace，不读取可变 Worktree，并在构建后重新 Hash 完整源码
+树。Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
+它按快照内 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
 归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
 Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让
 全新隔离的 `CARGO_HOME` 只使用该目录；随后再次 Hash 所持归档与完整依赖树。
 构建结束后只为经过检查的清理恢复该临时 Source 的目录权限。Cargo、Build
 Script 与 Procedural Macro 使用私有临时目录中的空隔离 `HOME`，并在 macOS
-Sandbox 内运行：禁止网络，除受评审仓库和固定 Rust Toolchain 外禁止读取操作员
-Home，且禁止写入私有临时 Workspace 之外的位置。如果认证归档缺失，须先运行
+Sandbox 内运行：禁止网络，除受评审源码快照和固定 Rust Toolchain 外禁止读取操作员
+Home，且禁止写入私有 Build Workspace 之外的位置。如果认证归档缺失，须先运行
 `cargo fetch --locked`。
 
 Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。文件
@@ -68,8 +70,12 @@ Result 或输出根复核失败，它会相对该 Descriptor 删除本次发布�
 Helper 会在写入任何私有字节前，通过已 Flush 的非秘密首行记录返回唯一 Staging
 名称及其 Device/Inode 身份。Fastlane 会在检查进程状态或解析结果 JSON 前据此
 启用 Rollback，再通过专用继承 Pipe 向 Helper 确认；Helper 收到确认前不能写入
-私有字节。此后 Helper 中断或结果畸形等任何失败都会清理身份匹配的 Staging 或
-最终目录；如果目录已被替换，Rollback 会拒绝接触替代目录。
+私有字节。此后 Helper 中断、结果畸形或操作员按 `Ctrl-C` 都会清理身份匹配的
+Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper 报告成功前还会
+相对 Parent Descriptor 重新打开最终入口，要求其 Device/Inode 仍等于 Staging
+身份；Fastlane 解析 Helper Result 后也会从所持输出根 Descriptor 独立重开最终
+入口，并在成功前再次执行同一身份检查。如果目录已被替换，Rollback 会拒绝接触
+替代目录。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
 Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
 签名、Archive/Export、上传、安装或设备操作。

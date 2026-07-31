@@ -59,9 +59,12 @@ The published pre-build directory contains exactly:
 The directory is created under an already-existing canonical mode-`0700`
 output root outside the repository. The lane rejects a clean local commit that
 is not an ancestor of the reviewed `origin/main` ref and rechecks the same
-source immediately before generation. The helper build never consumes the
+source immediately before generation. It compiles the helper from a read-only
+Git archive of that exact 40-hex commit in a separate private workspace, not
+from the mutable checkout, and rehashes the complete source snapshot after the
+build. The helper build never consumes the
 mutable extracted tree under `~/.cargo/registry/src`: it authenticates every
-cached `.crate` archive against the checksum recorded in the reviewed
+cached `.crate` archive against the checksum recorded in the snapshotted
 `Cargo.lock`, hashes the exact compressed bytes consumed by Gzip/Tar while
 extracting only through held directory descriptors into an owner-private,
 read-only temporary directory outside the build's writable workspace,
@@ -71,9 +74,9 @@ temporary verified source has its directory permissions restored solely for
 checked cleanup after the build. Cargo,
 build scripts, and procedural macros run with an empty isolated `HOME` inside a
 macOS sandbox that denies network access, denies reads of the operator home
-except the reviewed repository and pinned Rust toolchain, and denies writes
-outside the private temporary workspace. Run `cargo fetch --locked` before the
-lane if an authenticated archive is absent.
+except the reviewed source snapshot and pinned Rust toolchain, and denies
+writes outside the private build workspace. Run `cargo fetch --locked` before
+the lane if an authenticated archive is absent.
 
 The generator opens and retains directory descriptors for the output root and
 its unique staging directory. File creation, directory sync, no-replace rename,
@@ -87,8 +90,13 @@ non-secret first-line record. Fastlane arms rollback from that record before
 acknowledging the helper over a dedicated inherited pipe; the helper cannot
 write private bytes until that acknowledgement arrives. Fastlane then removes
 the identity-matching staging or final entry on any later failure, including an
-interrupted helper or malformed result. Rollback refuses to touch a substituted
-directory.
+interrupted helper, malformed result, or operator `Ctrl-C`; an `Interrupt`
+continues to propagate after rollback. Before reporting success, the helper
+reopens the final descriptor-relative entry and requires it to retain the
+staging device/inode. After parsing the helper result, Fastlane independently
+reopens the final entry from its held output-root descriptor and repeats that
+identity check immediately before success. Rollback refuses to touch a
+substituted directory.
 Files use exclusive creation and `fsync`, and the parent directory is fsynced
 after publication or cleanup. Reusing the same source/version/build tuple is
 rejected instead of overwriting its private inputs. This lane performs no
