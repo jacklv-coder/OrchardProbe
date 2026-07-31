@@ -75,6 +75,22 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6b656ed7ac688a88efce668cb616a1fe88f9ee92",
       }.freeze,
     ].freeze,
+    "f129b670b3215bcbf56d94a8f8ba6eb2e0d44f32730af96e222de8b9f10fe187" => [
+      {
+        "size" => 1_106_400,
+        "sha256" =>
+          "071af6453519872bb423b52b959ffa9141d821c4fe2e004fac7d6bb41e00e3d7",
+        "cdhash" => "c77499b79d597a6de2c0450b69e87b9005312915",
+      }.freeze,
+    ].freeze,
+    "a7ce0ef89ee96f3af35da1dfe8bc0e9d18192a226efb1e123d56457af57b725e" => [
+      {
+        "size" => 1_106_528,
+        "sha256" =>
+          "fc54ae5eb1b00bd6da21ddd31b356f84581c48c0148fb92ec0ec6ff628ddac9e",
+        "cdhash" => "1450a64a54327323d52d8ddab35de0511b6d836e",
+      }.freeze,
+    ].freeze,
   }.freeze,
 }.freeze
 DEMO_LAB_CRATES_IO_SOURCE =
@@ -90,6 +106,10 @@ DEMO_LAB_LAB002_PREBUILD_REQUEST_SCHEMA =
   "orchardprobe.lab002.prebuild-request.v1"
 DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA =
   "orchardprobe.lab002.prebuild-result.v1"
+DEMO_LAB_LAB002_INSPECT_REQUEST_SCHEMA =
+  "orchardprobe.lab002.inspect-prebuild-request.v1"
+DEMO_LAB_LAB002_INSPECT_RESULT_SCHEMA =
+  "orchardprobe.lab002.inspect-prebuild-result.v1"
 DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA =
   "orchardprobe.lab002.published-directory.v1"
 DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
@@ -2046,29 +2066,12 @@ def lab002_app_groups(presence, values = nil)
   record
 end
 
-def prepare_lab002_private_inputs!(
-  output_root:,
-  output_handle:,
-  output_identity:,
-  source_commit:,
-  marketing_version:,
-  build_number:,
+def lab002_authorized_targets(
   app_identifier:,
   share_identifier:,
   app_group_identifier:,
-  team_identifier:,
-  xcode_toolchain:
+  team_identifier:
 )
-  held_output_root = output_handle.stat
-  unless output_identity.is_a?(Array) &&
-         output_identity.length == 3 &&
-         held_output_root.directory? &&
-         held_output_root.uid == Process.uid &&
-         (held_output_root.mode & 0o777) == 0o700 &&
-         [held_output_root.dev, held_output_root.ino] ==
-           output_identity.drop(1)
-    UI.user_error!("LAB-002 output-root descriptor identity is invalid.")
-  end
   present_application_identifier = lambda do |bundle_identifier|
     lab002_entitlement(
       "present",
@@ -2081,7 +2084,7 @@ def prepare_lab002_private_inputs!(
     lab002_app_groups("present", [app_group_identifier])
   required_absent = lab002_entitlement("required_absent")
   groups_required_absent = lab002_app_groups("required_absent")
-  targets = [
+  [
     {
       "role" => "main_app",
       "bundle_id" => app_identifier,
@@ -2112,6 +2115,37 @@ def prepare_lab002_private_inputs!(
       "application_groups" => present_app_group,
     },
   ]
+end
+
+def prepare_lab002_private_inputs!(
+  output_root:,
+  output_handle:,
+  output_identity:,
+  source_commit:,
+  marketing_version:,
+  build_number:,
+  app_identifier:,
+  share_identifier:,
+  app_group_identifier:,
+  team_identifier:,
+  xcode_toolchain:
+)
+  held_output_root = output_handle.stat
+  unless output_identity.is_a?(Array) &&
+         output_identity.length == 3 &&
+         held_output_root.directory? &&
+         held_output_root.uid == Process.uid &&
+         (held_output_root.mode & 0o777) == 0o700 &&
+         [held_output_root.dev, held_output_root.ino] ==
+           output_identity.drop(1)
+    UI.user_error!("LAB-002 output-root descriptor identity is invalid.")
+  end
+  targets = lab002_authorized_targets(
+    app_identifier: app_identifier,
+    share_identifier: share_identifier,
+    app_group_identifier: app_group_identifier,
+    team_identifier: team_identifier
+  )
   binary = nil
   tool_workspace = nil
   acknowledgement_reader = nil
@@ -2137,8 +2171,9 @@ def prepare_lab002_private_inputs!(
     verify_selected_xcode_toolchain!(xcode_toolchain)
     acknowledgement_reader, acknowledgement_writer = IO.pipe
     result_json = nil
-    stderr = ""
+    helper_stderr = ""
     status = nil
+    publication_state = nil
     Open3.popen3(
       sanitized_dynamic_loader_environment,
       binary,
@@ -2183,7 +2218,7 @@ def prepare_lab002_private_inputs!(
       acknowledgement_writer.close
       result_json =
         stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
-      stderr =
+      helper_stderr =
         error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
       status = wait_thread.value
     ensure
@@ -2191,12 +2226,13 @@ def prepare_lab002_private_inputs!(
     end
     if result_json&.bytesize.to_i >
        DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
-       stderr.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+       helper_stderr.to_s.bytesize >
+         DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
       UI.user_error!("LAB-002 private tool output exceeded its fixed limit.")
     end
     unless status.success?
       UI.user_error!(
-        "LAB-002 private input preparation failed: #{stderr.strip}"
+        "LAB-002 private input preparation failed: #{helper_stderr.to_s.strip}"
       )
     end
     unless publication_state && !result_json.to_s.empty?
@@ -2288,6 +2324,161 @@ def prepare_lab002_private_inputs!(
   ensure
     acknowledgement_reader&.close unless acknowledgement_reader&.closed?
     acknowledgement_writer&.close unless acknowledgement_writer&.closed?
+    FileUtils.rm_rf(tool_workspace) if tool_workspace
+  end
+end
+
+def inspect_lab002_private_inputs!(
+  prebuild_directory:,
+  prebuild_handle:,
+  prebuild_identity:,
+  source_commit:,
+  marketing_version:,
+  build_number:,
+  app_identifier:,
+  share_identifier:,
+  app_group_identifier:,
+  team_identifier:,
+  xcode_toolchain:
+)
+  held = prebuild_handle.stat
+  unless prebuild_identity.is_a?(Array) &&
+         prebuild_identity.length == 3 &&
+         prebuild_identity.first == prebuild_directory &&
+         held.directory? &&
+         held.uid == Process.uid &&
+         (held.mode & 0o777) == 0o700 &&
+         [held.dev, held.ino] == prebuild_identity.drop(1)
+    UI.user_error!("LAB-002 prebuild-directory descriptor identity is invalid.")
+  end
+  targets = lab002_authorized_targets(
+    app_identifier: app_identifier,
+    share_identifier: share_identifier,
+    app_group_identifier: app_group_identifier,
+    team_identifier: team_identifier
+  )
+  binary = nil
+  tool_workspace = nil
+  begin
+    binary, tool_workspace, tool_identity, gemfile_lock_sha256 =
+      build_lab002_private_tool(source_commit)
+    toolchain, xcodegen_selection = lab002_toolchain_record(
+      xcode_toolchain,
+      gemfile_lock_sha256: gemfile_lock_sha256
+    )
+    request = {
+      "schema" => DEMO_LAB_LAB002_INSPECT_REQUEST_SCHEMA,
+      "source_commit" => source_commit,
+      "marketing_version" => marketing_version,
+      "build_number" => build_number,
+      "configuration" => "Release",
+      "observer_revision" => "lab002-observer-v1",
+      "toolchain" => toolchain,
+      "targets" => targets,
+    }
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_held_lab002_directory!(
+      prebuild_directory,
+      prebuild_handle,
+      prebuild_identity.drop(1),
+      "LAB-002 prebuild",
+      required_mode: 0o700
+    )
+    result_json = nil
+    helper_stderr = ""
+    status = nil
+    Open3.popen3(
+      sanitized_dynamic_loader_environment,
+      binary,
+      "inspect-prebuild",
+      "--prebuild-directory",
+      prebuild_directory,
+      "--prebuild-directory-device",
+      held.dev.to_s,
+      "--prebuild-directory-inode",
+      held.ino.to_s,
+      4 => prebuild_handle,
+      chdir: repository_root,
+      close_others: true
+    ) do |stdin, stdout, error_stream, wait_thread|
+      verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
+      stdin.write(JSON.generate(request))
+      stdin.close
+      result_json =
+        stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      helper_stderr =
+        error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      status = wait_thread.value
+    end
+    if result_json&.bytesize.to_i >
+       DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+       helper_stderr.to_s.bytesize >
+         DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+      UI.user_error!("LAB-002 private tool output exceeded its fixed limit.")
+    end
+    unless status.success?
+      UI.user_error!(
+        "LAB-002 private prebuild inspection failed: " \
+        "#{helper_stderr.to_s.strip}"
+      )
+    end
+    result = JSON.parse(result_json)
+    require_exact_hash_keys!(
+      result,
+      %w[
+        schema
+        prebuild_directory_device
+        prebuild_directory_inode
+        source_commit
+        marketing_version
+        build_number
+        identity_nonce
+        authorization_public_key
+        authorization_key_id
+        authorized_target_manifest_sha256
+        build_binding_sha256
+        target_identity_set_sha256
+        toolchain
+      ],
+      "LAB-002 inspected prebuild result"
+    )
+    unless result["schema"] == DEMO_LAB_LAB002_INSPECT_RESULT_SCHEMA &&
+           result["prebuild_directory_device"] == held.dev.to_s &&
+           result["prebuild_directory_inode"] == held.ino.to_s &&
+           result["source_commit"] == source_commit &&
+           result["marketing_version"] == marketing_version &&
+           result["build_number"] == build_number &&
+           result["toolchain"] == toolchain &&
+           %w[
+             identity_nonce
+             authorization_public_key
+             authorization_key_id
+             authorized_target_manifest_sha256
+             build_binding_sha256
+             target_identity_set_sha256
+           ].all? { |name|
+             /\A[0-9a-f]{64}\z/.match?(result[name].to_s)
+           }
+      UI.user_error!("LAB-002 inspected prebuild result is invalid.")
+    end
+    validate_demolab_authorization_public_key!(
+      result.fetch("authorization_public_key")
+    )
+    verify_held_lab002_directory!(
+      prebuild_directory,
+      prebuild_handle,
+      prebuild_identity.drop(1),
+      "LAB-002 prebuild",
+      required_mode: 0o700
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcodegen!(*xcodegen_selection)
+    result
+  rescue JSON::ParserError
+    UI.user_error!("LAB-002 private prebuild inspection returned invalid JSON.")
+  ensure
     FileUtils.rm_rf(tool_workspace) if tool_workspace
   end
 end
@@ -2956,7 +3147,7 @@ end
 def parse_reviewed_github_main_ref!(output)
   lines = output.lines(chomp: true)
   match = if lines.length == 1
-            /\A([0-9a-f]{40})\t#{Regexp.escape(
+            /\A([0-9a-f]{40}|[0-9a-f]{64})\t#{Regexp.escape(
               DEMO_LAB_REVIEWED_GITHUB_MAIN_REF
             )}\z/.match(lines.first)
           end
@@ -5429,11 +5620,13 @@ platform :ios do
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     parser_commit = git_command_output("rev-parse", "HEAD")
-    parsed_reviewed_main = parse_reviewed_github_main_ref!(
-      "#{parser_commit}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n"
-    )
-    unless parsed_reviewed_main == parser_commit
-      UI.user_error!("The authenticated GitHub main parser changed its OID.")
+    [parser_commit, "a" * 40, "b" * 64].uniq.each do |candidate_oid|
+      parsed_reviewed_main = parse_reviewed_github_main_ref!(
+        "#{candidate_oid}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n"
+      )
+      unless parsed_reviewed_main == candidate_oid
+        UI.user_error!("The authenticated GitHub main parser changed its OID.")
+      end
     end
     [
       "#{parser_commit}\trefs/remotes/origin/main\n",
@@ -5483,6 +5676,97 @@ platform :ios do
       UI.user_error!(
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
+    end
+    Dir.mktmpdir(
+      "orchardprobe-lab002-consumption-check-",
+      external_temporary_base
+    ) do |output_root|
+      File.chmod(0o700, output_root)
+      source_commit = git_command_output("rev-parse", "HEAD")
+      unless source_commit == parser_commit
+        UI.user_error!(
+          "DemoLab source HEAD changed during the regression check."
+        )
+      end
+      unless /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/.match?(source_commit)
+        UI.user_error!("DemoLab check source commit has an invalid format.")
+      end
+      # LAB-002 v1 freezes a 40-hex source_commit. Preserve the general
+      # DemoLab check on SHA-256 repositories while skipping only this
+      # checkpoint-specific round trip.
+      next if source_commit.length == 64
+
+      output_identity = private_directory_identity!(
+        output_root,
+        "LAB-002 consumption-check output root"
+      )
+      final_name =
+        "lab002-prebuild-" \
+        "#{DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION}-" \
+        "#{DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER}-#{source_commit}"
+      prepared = nil
+      with_locked_private_directory(
+        output_root,
+        output_identity,
+        "LAB-002 consumption-check output root"
+      ) do |output_handle|
+        prepared = with_lab002_publication_rollback!(
+          output_handle,
+          final_name
+        ) do |arm_rollback|
+          prepare_lab002_private_inputs!(
+            output_root: output_root,
+            output_handle: output_handle,
+            output_identity: output_identity,
+            source_commit: source_commit,
+            marketing_version:
+              DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
+            build_number: DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER,
+            app_identifier: "com.example.orchardprobe.demolab",
+            share_identifier: "com.example.orchardprobe.demolab.share",
+            app_group_identifier: "group.com.example.orchardprobe.demolab",
+            team_identifier: "ABCDE12345",
+            xcode_toolchain: xcode_toolchain
+          ) do |state|
+            arm_rollback.call(state)
+          end
+        end
+      end
+      prebuild_directory = prepared.fetch("prebuild_directory")
+      prebuild_identity = private_directory_identity!(
+        prebuild_directory,
+        "LAB-002 consumption-check prebuild directory"
+      )
+      inspected = nil
+      with_locked_private_directory(
+        prebuild_directory,
+        prebuild_identity,
+        "LAB-002 consumption-check prebuild directory"
+      ) do |prebuild_handle|
+        inspected = inspect_lab002_private_inputs!(
+          prebuild_directory: prebuild_directory,
+          prebuild_handle: prebuild_handle,
+          prebuild_identity: prebuild_identity,
+          source_commit: source_commit,
+          marketing_version:
+            DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
+          build_number: DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER,
+          app_identifier: "com.example.orchardprobe.demolab",
+          share_identifier: "com.example.orchardprobe.demolab.share",
+          app_group_identifier: "group.com.example.orchardprobe.demolab",
+          team_identifier: "ABCDE12345",
+          xcode_toolchain: xcode_toolchain
+        )
+      end
+      unless %w[
+        authorized_target_manifest_sha256
+        build_binding_sha256
+        target_identity_set_sha256
+      ].all? { |name| inspected.fetch(name) == prepared.fetch(name) }
+        UI.user_error!(
+          "LAB-002 closed prebuild consumption changed a prepared binding."
+        )
+      end
     end
     DEMO_LAB_WEAK_ED25519_PUBLIC_KEYS.each do |weak_key|
       weak_key_rejected = false
@@ -6403,66 +6687,67 @@ platform :ios do
       end
     end
 
-    source_snapshot_workspace =
-      external_temporary_directory(
-        "orchardprobe-lab002-reviewed-source-check-"
-      )
-    begin
-      legacy_archive_path =
-        File.join(source_snapshot_workspace, "reviewed-source.tar")
-      File.write(legacy_archive_path, "must remain untouched")
-      snapshot_commit = git_command_output("rev-parse", "HEAD")
-      snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
-        lab002_reviewed_source_snapshot!(
-          source_snapshot_workspace,
-          snapshot_commit
+    if parser_commit.length == 40
+      source_snapshot_workspace =
+        external_temporary_directory(
+          "orchardprobe-lab002-reviewed-source-check-"
         )
-      expected_cargo_lock_blob = git_command_output(
-        "rev-parse",
-        "#{snapshot_commit}:Cargo.lock"
-      )
-      observed_cargo_lock_blob = git_command_output(
-        "hash-object",
-        File.join(snapshot_root, "Cargo.lock")
-      )
-      expected_gemfile_lock_blob = git_command_output(
-        "rev-parse",
-        "#{snapshot_commit}:Gemfile.lock"
-      )
-      observed_gemfile_lock_blob = git_command_output(
-        "hash-object",
-        File.join(snapshot_root, "Gemfile.lock")
-      )
-      unless expected_cargo_lock_blob == observed_cargo_lock_blob &&
-             expected_gemfile_lock_blob == observed_gemfile_lock_blob &&
-             gemfile_lock_sha256 ==
-               lab002_reviewed_snapshot_file_sha256!(
+      begin
+        legacy_archive_path =
+          File.join(source_snapshot_workspace, "reviewed-source.tar")
+        File.write(legacy_archive_path, "must remain untouched")
+        snapshot_root, snapshot_sha256, gemfile_lock_sha256 =
+          lab002_reviewed_source_snapshot!(
+            source_snapshot_workspace,
+            parser_commit
+          )
+        expected_cargo_lock_blob = git_command_output(
+          "rev-parse",
+          "#{parser_commit}:Cargo.lock"
+        )
+        observed_cargo_lock_blob = git_command_output(
+          "hash-object",
+          File.join(snapshot_root, "Cargo.lock")
+        )
+        expected_gemfile_lock_blob = git_command_output(
+          "rev-parse",
+          "#{parser_commit}:Gemfile.lock"
+        )
+        observed_gemfile_lock_blob = git_command_output(
+          "hash-object",
+          File.join(snapshot_root, "Gemfile.lock")
+        )
+        unless expected_cargo_lock_blob == observed_cargo_lock_blob &&
+               expected_gemfile_lock_blob == observed_gemfile_lock_blob &&
+               gemfile_lock_sha256 ==
+                 lab002_reviewed_snapshot_file_sha256!(
+                   snapshot_root,
+                   "Gemfile.lock"
+                 ) &&
+               snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
                  snapshot_root,
-                 "Gemfile.lock"
+                 "LAB-002 reviewed source snapshot"
                ) &&
-             snapshot_sha256 == lab002_rust_toolchain_tree_sha256(
-               snapshot_root,
-               "LAB-002 reviewed source snapshot"
-             ) &&
-             File.binread(legacy_archive_path) == "must remain untouched"
-        UI.user_error!(
-          "LAB-002 reviewed source snapshot is not bound to its commit."
-        )
-      end
-      Find.find(snapshot_root) do |path|
-        stat = File.lstat(path)
-        expected_mode = stat.directory? ? 0o500 : 0o400
-        unless (stat.mode & 0o777) == expected_mode
+               File.binread(legacy_archive_path) == "must remain untouched"
           UI.user_error!(
-            "LAB-002 reviewed source snapshot is not read-only."
+            "LAB-002 reviewed source snapshot is not bound to its commit."
           )
         end
+        Find.find(snapshot_root) do |path|
+          stat = File.lstat(path)
+          expected_mode = stat.directory? ? 0o500 : 0o400
+          unless (stat.mode & 0o777) == expected_mode
+            UI.user_error!(
+              "LAB-002 reviewed source snapshot is not read-only."
+            )
+          end
+        end
+      ensure
+        lab002_remove_readonly_workspace!(
+          source_snapshot_workspace,
+          "LAB-002 reviewed source workspace"
+        )
       end
-    ensure
-      lab002_remove_readonly_workspace!(
-        source_snapshot_workspace,
-        "LAB-002 reviewed source workspace"
-      )
     end
 
     Dir.mktmpdir(
@@ -7989,28 +8274,30 @@ platform :ios do
       "DEMO_LAB_BUILD_NUMBER",
       pattern: /\A[1-9][0-9]{0,17}\z/
     )
-    build_binding_sha256 = required_environment(
-      "DEMO_LAB_BUILD_BINDING_SHA256",
-      pattern: /\A[0-9a-f]{64}\z/
-    )
-    identity_nonce = required_environment(
-      "DEMO_LAB_IDENTITY_NONCE",
-      pattern: /\A[0-9a-f]{64}\z/
-    )
-    authorization_public_key = required_environment(
-      "DEMO_LAB_AUTHORIZATION_PUBLIC_KEY",
-      pattern: /\A[0-9a-f]{64}\z/
-    )
-    validate_demolab_authorization_public_key!(authorization_public_key)
+    unless marketing_version ==
+             DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+           build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+      UI.user_error!(
+        "This reviewed LAB-002 checkpoint only authorizes DemoLab 1.0 (3)."
+      )
+    end
 
     output_identity = private_output_directory
     output_root = output_identity.first
-    source_commit = git_command_output("rev-parse", "HEAD")
+    source_commit = reviewed_main_source_commit
     unless /\A[0-9a-f]{40}\z/.match?(source_commit)
       UI.user_error!(
         "LAB-002 requires the frozen 40-hex source_commit wire format."
       )
     end
+    prebuild_directory = File.join(
+      output_root,
+      "lab002-prebuild-#{marketing_version}-#{build_number}-#{source_commit}"
+    )
+    prebuild_identity = private_directory_identity!(
+      prebuild_directory,
+      "LAB-002 prebuild directory"
+    )
     run_directory = File.join(
       output_root,
       "#{marketing_version}-#{build_number}-#{source_commit[0, 12]}"
@@ -8033,6 +8320,31 @@ platform :ios do
           output_identity,
           "DEMO_LAB_OUTPUT_DIR"
         )
+        prebuild_inputs = nil
+        with_locked_private_directory(
+          prebuild_directory,
+          prebuild_identity,
+          "LAB-002 prebuild directory"
+        ) do |prebuild_handle|
+          prebuild_inputs = inspect_lab002_private_inputs!(
+            prebuild_directory: prebuild_directory,
+            prebuild_handle: prebuild_handle,
+            prebuild_identity: prebuild_identity,
+            source_commit: source_commit,
+            marketing_version: marketing_version,
+            build_number: build_number,
+            app_identifier: app_identifier,
+            share_identifier: share_identifier,
+            app_group_identifier: app_group_identifier,
+            team_identifier: team_identifier,
+            xcode_toolchain: xcode_toolchain
+          )
+        end
+        build_binding_sha256 =
+          prebuild_inputs.fetch("build_binding_sha256")
+        identity_nonce = prebuild_inputs.fetch("identity_nonce")
+        authorization_public_key =
+          prebuild_inputs.fetch("authorization_public_key")
         if File.exist?(run_directory) || File.symlink?(run_directory)
           UI.user_error!("Refusing to overwrite an existing DemoLab run directory.")
         end

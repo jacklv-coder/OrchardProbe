@@ -35,16 +35,17 @@ authorization, strictly load the same-build state/key, and finish deletion.
 Run paths cannot invoke either recovery, a fresh re-enrollment cannot reuse
 persisted state, and another build is rejected.
 LAB-002 enrollment/run/discard production entry points source wall-clock time
-internally and require `DEMO_LAB_BUILD_BINDING_SHA256` to inject the exact
-lowercase 64-hex build binding into the app Info.plist. The checked-in setting
-is deliberately empty, so production coordination fails closed until the
-reviewed LAB-002 pre-build step derives it from every frozen binding input.
-The same pre-build step supplies the private 32-byte identity nonce as exact
-lowercase hex. The signed archive lane refuses a missing or malformed
-precomputed binding/nonce, requires the frozen 40-hex LAB-002 source-commit
-wire form, and injects those values plus the fixed observer revision into the
-compiled Info.plist; it does not invent defaults. A valid run authorization is
-fully validated against those compiled facts, enrollment continuity, the
+internally and require the exact lowercase 64-hex build binding in the app
+Info.plist. The checked-in setting is deliberately empty, so production
+coordination fails closed until the reviewed LAB-002 pre-build step derives it
+from every frozen binding input. The same pre-build step supplies the private
+32-byte identity nonce as exact lowercase hex. The signed archive lane derives
+the one expected private pre-build tuple, descriptor-relatively revalidates
+its seed, manifest, record, bindings, identities, and toolchain, and injects
+the closed values plus the fixed observer revision; the caller cannot supply
+or override the public key, binding, or nonce. The lane also requires the
+frozen 40-hex LAB-002 source-commit wire form and invents no defaults. A valid
+run authorization is fully validated against those compiled facts, enrollment continuity, the
 current installation binding, retained authorized-target manifest,
 experiment/enrollment binding, and exact next counter before it can consume
 authorization or counter state. It

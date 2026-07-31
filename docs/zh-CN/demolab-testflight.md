@@ -121,13 +121,14 @@ Beta App Review 或 App Store 提交。
 
 | 变量 | 用途 |
 |---|---|
-| `DEMO_LAB_APP_BUNDLE_ID` | 已注册的首方主 App ID。 |
-| `DEMO_LAB_SHARE_BUNDLE_ID` | 已注册且位于主 ID 下的 Share Extension App ID。 |
-| `DEMO_LAB_APP_GROUP_ID` | 已同时启用在主 App ID 与 Share Extension App ID 上的首方 App Group。Archive Lane 拒绝仓库内 `group.com.example.*` 默认值，并把精确 Group 注入两者的 Entitlement 与 Info.plist。 |
-| `DEMO_LAB_TEAM_ID` | Xcode 签名所用 10 字符 Apple Developer Team ID。 |
-| `DEMO_LAB_BUILD_BINDING_SHA256` | 已评审预构建步骤生成的精确 64 位小写 Hex Build Binding；Lane 不生成默认值。 |
-| `DEMO_LAB_IDENTITY_NONCE` | 同一步骤生成的精确 64 位小写 Hex 私有 Target-manifest Nonce。 |
-| `DEMO_LAB_AUTHORIZATION_PUBLIC_KEY` | Authorized-target Manifest 中精确 64 位小写 Hex、非弱 Ed25519 公钥；Archive Lane 与 App 会拒绝全部 8 种已编码低阶点。App 固定通过校验的值，只接受匹配私钥签署的 Host Enrollment/Run Envelope；私钥绝不进入 Xcode 或 Fastlane。 |
+| `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` | 预构建、Archive、上传与对账都要求精确值 `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`。 |
+| `DEMO_LAB_APP_BUNDLE_ID` | 预构建、Archive 与上传使用的已注册首方主 App ID。 |
+| `DEMO_LAB_SHARE_BUNDLE_ID` | 预构建、Archive 与上传使用的已注册 Share Extension App ID。 |
+| `DEMO_LAB_APP_GROUP_ID` | 预构建与 Archive 使用的首方 App Group，须同时启用在主 App ID 与 Share Extension App ID。Archive Lane 拒绝仓库内 `group.com.example.*` 默认值，并把精确 Group 注入两者的 Entitlement 与 Info.plist。 |
+| `DEMO_LAB_TEAM_ID` | 预构建与 Archive 使用的 10 字符 Apple Developer Team ID。 |
+| `DEMO_LAB_MARKETING_VERSION` | 预构建与 Archive 使用的可选点分版本；默认 `1.0`。 |
+| `DEMO_LAB_BUILD_NUMBER` | 预构建与 Archive 使用的正整数；检查点 3 当前只接受 `3`。 |
+| `DEMO_LAB_OUTPUT_DIR` | 仓库外已存在的绝对私有目录，必须由当前用户所有、不是 Symlink、Mode `0700`。Archive Lane 会在该根目录下自动推导并锁定精确 3A 目录。 |
 
 签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
 
@@ -135,7 +136,22 @@ Beta App Review 或 App Store 提交。
 mkdir -p /absolute/private/path/orchardprobe-demolab
 chmod 700 /absolute/private/path/orchardprobe-demolab
 export DEMO_LAB_OUTPUT_DIR=/absolute/private/path/orchardprobe-demolab
+export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_BUILD_NUMBER=3
+bundle _4.0.16_ exec fastlane ios demolab_prepare_lab002
+bundle _4.0.16_ exec fastlane ios demolab_archive
 ```
+
+预构建 Lane 会先为经实时认证的 GitHub `main` Source 与 DemoLab `1.0 (3)` 发布唯一
+三文件私有 3A Tuple。Archive Lane 从同一已锁定输出根推导该目录，只通过已持有
+Directory Descriptor 读取，并重新推导/校验 Manifest、非弱 Authorization 公钥、
+Identity Nonce、Build Binding、三个 Target Binding、Target-identity Set 与固定
+Toolchain 后才注入构建。Shell 不再提供这些私有 Binding 值。
+
+LAB-002 v1 的 `source_commit` 固定为 40 位小写 Hex。SHA-256 Git 仓库中的
+`demolab_check` 仍会执行全部通用 Fixture 检查，但会跳过无法表示 64 位 Commit 的
+检查点私有输入往返与审阅源码快照回归；签名 `demolab_archive` 则会在构建前拒绝该
+对象格式。
 
 项目固定使用 Fastlane 2.237.0 和 Bundler 4.0.16。不要依赖 macOS 自带的旧 Ruby：
 
