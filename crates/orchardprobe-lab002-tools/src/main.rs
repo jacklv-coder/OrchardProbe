@@ -476,6 +476,8 @@ struct ReadPrivateArtifact {
     bytes: Vec<u8>,
     device: u64,
     inode: u64,
+    owner: u32,
+    mode: u32,
     size: u64,
     modified_seconds: i64,
     modified_nanoseconds: i64,
@@ -625,6 +627,15 @@ fn read_private_artifact(
     name: &str,
     maximum_size: usize,
 ) -> Result<ReadPrivateArtifact, String> {
+    read_private_artifact_with(directory, name, maximum_size, || {})
+}
+
+fn read_private_artifact_with(
+    directory: &File,
+    name: &str,
+    maximum_size: usize,
+    after_read: impl FnOnce(),
+) -> Result<ReadPrivateArtifact, String> {
     let descriptor = rustix::fs::openat(
         directory,
         name,
@@ -654,6 +665,7 @@ fn read_private_artifact(
         .take(maximum_size as u64 + 1)
         .read_to_end(&mut bytes)
         .map_err(|error| format!("could not read private prebuild artifact {name}: {error}"))?;
+    after_read();
     let after = file
         .metadata()
         .map_err(|error| format!("could not recheck private prebuild artifact {name}: {error}"))?;
@@ -662,12 +674,16 @@ fn read_private_artifact(
         || (
             after.dev(),
             after.ino(),
+            after.uid(),
+            after.mode() & 0o777,
             after.len(),
             after.mtime(),
             after.mtime_nsec(),
         ) != (
             before.dev(),
             before.ino(),
+            before.uid(),
+            before.mode() & 0o777,
             before.len(),
             before.mtime(),
             before.mtime_nsec(),
@@ -681,6 +697,8 @@ fn read_private_artifact(
         bytes,
         device: before.dev(),
         inode: before.ino(),
+        owner: before.uid(),
+        mode: before.mode() & 0o777,
         size: before.len(),
         modified_seconds: before.mtime(),
         modified_nanoseconds: before.mtime_nsec(),
@@ -1602,6 +1620,35 @@ mod tests {
             inspected.authorization_key_id,
             sha256_hex(&expected_public_key)
         );
+    }
+
+    #[test]
+    fn private_artifact_read_rejects_permissions_changed_during_read() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let artifact_path = root.path().join(PRIVATE_SEED_NAME);
+        fs::write(&artifact_path, [0x42; 32]).unwrap();
+        fs::set_permissions(
+            &artifact_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        let directory = File::open(root.path()).unwrap();
+
+        let error = read_private_artifact_with(&directory, PRIVATE_SEED_NAME, 32, || {
+            fs::set_permissions(
+                &artifact_path,
+                std::os::unix::fs::PermissionsExt::from_mode(0o600),
+            )
+            .unwrap();
+        })
+        .unwrap_err();
+
+        assert!(error.contains("changed while it was read"));
     }
 
     #[test]
