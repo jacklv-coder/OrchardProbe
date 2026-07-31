@@ -77,7 +77,8 @@ Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper �
 相对 Parent Descriptor 重新打开最终入口，要求其 Device/Inode 仍等于 Staging
 身份；Fastlane 解析 Helper Result 后也会从所持输出根 Descriptor 独立重开最终
 入口，并在成功前再次执行同一身份检查。如果目录已被替换，Rollback 会拒绝接触
-替代目录。
+替代目录。如果已启用 Rollback 的身份同时从 Staging 与最终名称消失，Rollback
+会把私有状态报告为不确定，不会声称已经清理，也不会静默重试该 Tuple。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
 Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
 签名、Archive/Export、上传、安装或设备操作。

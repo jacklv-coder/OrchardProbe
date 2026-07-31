@@ -98,7 +98,9 @@ reopens the final descriptor-relative entry and requires it to retain the
 staging device/inode. After parsing the helper result, Fastlane independently
 reopens the final entry from its held output-root descriptor and repeats that
 identity check immediately before success. Rollback refuses to touch a
-substituted directory.
+substituted directory. If the armed identity disappears from both its staging
+and final names, rollback reports the private state as indeterminate instead
+of claiming cleanup; the lane will not silently retry that tuple.
 Files use exclusive creation and `fsync`, and the parent directory is fsynced
 after publication or cleanup. Reusing the same source/version/build tuple is
 rejected instead of overwriting its private inputs. This lane performs no

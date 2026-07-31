@@ -1617,7 +1617,12 @@ def cleanup_lab002_published_prebuild!(
   end
   unless directory
     output_handle.fsync
-    return if mismatched_names.empty?
+    if mismatched_names.empty?
+      UI.user_error!(
+        "LAB-002 publication entries disappeared before rollback; " \
+        "private state is indeterminate and no cleanup can be proven."
+      )
+    end
 
     UI.user_error!(
       "LAB-002 publication entries changed identity before rollback; " \
@@ -4502,6 +4507,50 @@ platform :ios do
       unless replacement_rejected && replacement_intact
         UI.user_error!(
           "LAB-002 rollback modified a substituted published directory."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-rollback-missing-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      staging_name = ".lab002-prebuild-#{"e" * 32}"
+      staging = File.join(rollback_root, staging_name)
+      moved_staging = File.join(rollback_root, "moved-staging")
+      Dir.mkdir(staging, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(staging, name), "private")
+      end
+      staging_stat = File.stat(staging)
+      File.rename(staging, moved_staging)
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      missing_rejected = false
+      begin
+        cleanup_lab002_published_prebuild!(
+          output_handle,
+          "lab002-prebuild-final",
+          {
+            "staging_name" => staging_name,
+            "identity" => [staging_stat.dev, staging_stat.ino],
+          }
+        )
+      rescue FastlaneCore::Interface::FastlaneError => error
+        missing_rejected = error.message.include?("indeterminate")
+      ensure
+        output_handle.close
+      end
+      moved_private_intact =
+        DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.all? { |name|
+          File.read(File.join(moved_staging, name)) == "private"
+        }
+      unless missing_rejected && moved_private_intact
+        UI.user_error!(
+          "LAB-002 rollback accepted a vanished publication as cleaned."
         )
       end
     end
