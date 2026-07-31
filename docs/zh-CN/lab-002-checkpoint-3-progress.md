@@ -37,13 +37,13 @@
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
 | 3B.2.4 | 纯设备无关闭环测试 | `本地测试、Codex CR 与 Helper 复现完成；等待 CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
 
-最终 3B.2 Helper 已从 Commit `727b7a4ca3a8328468f354c0f7f1957f3dc77273`
+最终 3B.2 Helper 已从 Commit `08f0fdeee7cf72484ebe642dc02ce96857600d53`
 的只读源码快照独立构建两次，产物字节完全一致；随后恢复强制白名单路径的第三次构建
 也通过。登记 Tuple 为：Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot
-SHA-256 `09baf5dac518a4a5eeaf777fe0e723818a0d1b425cce11e4e1828c888e935e87`，
-Size `1891344`，SHA-256
-`8b0582edf00e0de5f24267ac8cb8eb579c302de1a52ce0d21bc616e663ec7eeb`，
-CDHash `f18ae9bd5c2cb4d965b97537885f0dad7d26719a`。
+SHA-256 `99d57347456f102e4d56ccb9ac2c1ea2d8b7082920a428cd5e5f7c23658d71e8`，
+Size `1892336`，SHA-256
+`8a75fc72c18c8caa4ec6fceb2f4fdfdb2957f9b50332909f1464d4c7a0d60418`，
+CDHash `6173d47133962761001307b898809a4c118eb4a2`。
 
 ## 固定安全边界
 
