@@ -267,4 +267,6 @@ Output Directory；只要仍有 `.demolab-staging-*` 遗留项就拒绝继续，
 显式协调现场，不能静默累积私有 Artifact。这会同时保留
 预期字节及任何并发替代名称，避免误删同一用户放入的无关文件。本实现不会
 上传 TestFlight、观察设备、重建 IPA，也尚未提供未来“只交给工具一个 IPA、输出砸壳后
-IPA”的用户命令；3B.3 仍须把 Oracle 绑定进上传前 Evidence 并强制执行 Upload Gate。
+IPA”的用户命令。在 3B.3 把 Oracle 与 Authorization Manifest 身份持久绑定进
+Pre-upload Evidence 之前，现有 Upload Lane 会明确拒绝精确的 LAB-002 `1.0 (3)`
+Tuple，因此 Archive 阶段的临时比较不能绕过尚未完成的 Upload Gate。

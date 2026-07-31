@@ -5747,6 +5747,17 @@ def verify_evidence_bound_archive!(
   true
 end
 
+def reject_unbound_lab002_upload!(marketing_version, build_number)
+  return unless marketing_version ==
+                DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+                build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+
+  UI.user_error!(
+    "DemoLab 1.0 (3) upload is blocked until 3B.3 binds and verifies the " \
+    "authorization manifest and LAB-002 oracle in pre-upload evidence."
+  )
+end
+
 def load_upload_evidence(
   app_identifier:,
   share_identifier:,
@@ -5777,6 +5788,7 @@ def load_upload_evidence(
          filename == "DemoLab-#{build_number}.ipa"
     UI.user_error!("Evidence IPA filename does not match the DemoLab build.")
   end
+  reject_unbound_lab002_upload!(marketing_version, build_number)
   unless expected_size.is_a?(Integer) &&
          expected_size.positive? &&
          expected_size <= DEMO_LAB_MAX_IPA_BYTES
@@ -8846,6 +8858,20 @@ platform :ios do
           binary["expected_plaintext_status"] == "candidate_pre_upload_archive_only"
       end
       UI.user_error!("DemoLab package evidence status is incomplete.") unless statuses_valid
+
+      reject_unbound_lab002_upload!("1.0", "1")
+      lab002_upload_blocked = false
+      begin
+        reject_unbound_lab002_upload!(
+          DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
+          DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        lab002_upload_blocked = true
+      end
+      unless lab002_upload_blocked
+        UI.user_error!("The unbound LAB-002 candidate was uploadable.")
+      end
 
       source_commit = git_command_output("rev-parse", "HEAD")
       complete_evidence = {

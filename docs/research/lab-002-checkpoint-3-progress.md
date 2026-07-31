@@ -350,5 +350,7 @@ artifacts. This deliberately preserves both the expected bytes and any
 concurrently substituted name instead of risking deletion of an unrelated
 same-user file. This implementation does not upload to TestFlight, inspect a
 device, reconstruct an IPA, or provide the future one-file end-user
-decryption command; 3B.3 must still bind this oracle into pre-upload evidence
-and enforce the upload gate.
+decryption command. Until 3B.3 binds this oracle and the authorization manifest
+into pre-upload evidence, the existing upload lane explicitly rejects the
+exact LAB-002 `1.0 (3)` tuple, so transient archive-time comparison cannot be
+used to bypass the pending upload gate.

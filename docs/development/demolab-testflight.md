@@ -268,6 +268,11 @@ directory is rejected and malformed evidence prevents publication without
 deleting indeterminate private state. The lane refuses a missing output
 root instead of creating it beneath a caller-controlled parent.
 
+The existing upload lane explicitly rejects the LAB-002 checkpoint candidate
+`1.0 (3)` while 3B.3 is incomplete. It cannot be uploaded merely because the
+Archive, IPA, and oracle were generated together; 3B.3 must first persist the
+manifest/oracle identities in evidence and enforce them at upload time.
+
 The run directory contains local sensitive research artifacts:
 
 ```text
