@@ -69,8 +69,9 @@ Device/Inode；Build 子进程在执行沙箱化 Cargo 前通过 Darwin `fchdir(
 该已持有目录，并要求构建前后 Source Path 始终映射到同一身份。Build Binding
 记录的 `gemfile_lock_sha256` 也只从同一
 认证快照派生并随快照复核，Lane 不会 Hash 可变 Worktree 中的 `Gemfile.lock`。
-Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
-它按快照内 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
+Helper 构建绝不读取 Cargo `registry/src` 中可变的已解包源码；它会解析操作员
+配置的 `CARGO_HOME`（仅在未设置时回退到账户默认目录），再按快照内
+`Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
 归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
 Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让
 全新隔离的 `CARGO_HOME` 只使用该目录；随后再次 Hash 所持归档与完整依赖树。
@@ -93,11 +94,14 @@ Build Binding 使用的 XcodeGen Path、Version、Device/Inode、Size、修改�
 SHA-256 会作为同一 Selection 保留；生成完成后、Pre-build Result 返回前还会再次
 选择并重新 Hash，要求与原 Selection 精确相等。
 
-Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。文件
-创建、目录同步、No-replace Rename、Rollback 与清理都以 Descriptor-relative
-方式执行并禁止跟随链接；返回输出路径前还会重新核对其与所持输出根身份一致。
-Fastlane 在 Helper 调用前后始终持有并锁定自己的输出根 Descriptor；如果后续
-Result 或输出根复核失败，它会相对该 Descriptor 删除本次发布的精确 Tuple。
+Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。
+Fastlane 会把已经锁定的输出根 Descriptor 复制给 Helper，并传入预期的
+Device/Inode；Helper 验证后直接使用该继承 Descriptor，发布过程不再重新打开可被
+替换的输出根 Path。文件创建、目录同步、No-replace Rename、Rollback 与清理都以
+Descriptor-relative 方式执行并禁止跟随链接；返回输出路径前还会重新核对其与所持
+输出根身份一致。Fastlane 在 Helper 调用前后始终持有并锁定自己的输出根
+Descriptor；如果后续 Result 或输出根复核失败，它会相对该 Descriptor 删除本次
+发布的精确 Tuple。
 Helper 会在写入任何私有字节前，通过已 Flush 的非秘密首行记录返回唯一 Staging
 名称及其 Device/Inode 身份。Fastlane 会在检查进程状态或解析结果 JSON 前据此
 启用 Rollback，再通过专用继承 Pipe 向 Helper 确认；Helper 收到确认前不能写入

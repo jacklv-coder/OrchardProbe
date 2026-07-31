@@ -67,12 +67,12 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
   # Filled only with reproducible products independently reviewed for the
   # exact source snapshot and Rust toolchain tuple.
   "1.85.0-aarch64-apple-darwin" => {
-    "9a8f63f8888ce051c71a19a6c9942c36cc3533c068209e403e3db3562886548c" => [
+    "73966a3f51f748adc3a2529d5658c163489fc4eafc9caae2461069032273d685" => [
       {
-        "size" => 965_168,
+        "size" => 965_280,
         "sha256" =>
-          "735b4c81961f18ac640ff28fe42d2c1ce400c89526be15fa130eed84808e308f",
-        "cdhash" => "c9bfef8556c657bf33587bd773ecbe74676f9546",
+          "74eee24e37725befac06c27024686b78950662c41f1c119156948c9e38a57f19",
+        "cdhash" => "6b656ed7ac688a88efce668cb616a1fe88f9ee92",
       }.freeze,
     ].freeze,
   }.freeze,
@@ -1027,9 +1027,32 @@ ensure
   destination_handle&.close unless destination_handle&.closed?
 end
 
-def lab002_verified_vendor_source(workspace, lock_path: File.join(repository_root, "Cargo.lock"))
+def lab002_configured_cargo_home
   owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
-  cargo_cache = File.join(owner_home, ".cargo")
+  configured = ENV["CARGO_HOME"]
+  if configured&.empty?
+    UI.user_error!("CARGO_HOME must not be empty when configured.")
+  end
+  expanded = File.expand_path(
+    configured || File.join(owner_home, ".cargo"),
+    repository_root
+  )
+  validate_fastlane_path_characters!(expanded, "Cargo home")
+  resolved = File.realpath(expanded)
+  stat = File.lstat(resolved)
+  unless stat.directory? &&
+         !stat.symlink? &&
+         stat.uid == Process.uid &&
+         (stat.mode & 0o022).zero?
+    UI.user_error!("The configured Cargo home is unsafe.")
+  end
+  resolved
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to resolve the configured Cargo home safely.")
+end
+
+def lab002_verified_vendor_source(workspace, lock_path: File.join(repository_root, "Cargo.lock"))
+  cargo_cache = lab002_configured_cargo_home
   vendor_root = File.join(workspace, "verified-vendor")
   Dir.mkdir(vendor_root, 0o700)
   lab002_locked_registry_packages(lock_path).each do |package|
@@ -2025,6 +2048,8 @@ end
 
 def prepare_lab002_private_inputs!(
   output_root:,
+  output_handle:,
+  output_identity:,
   source_commit:,
   marketing_version:,
   build_number:,
@@ -2034,6 +2059,16 @@ def prepare_lab002_private_inputs!(
   team_identifier:,
   xcode_toolchain:
 )
+  held_output_root = output_handle.stat
+  unless output_identity.is_a?(Array) &&
+         output_identity.length == 3 &&
+         held_output_root.directory? &&
+         held_output_root.uid == Process.uid &&
+         (held_output_root.mode & 0o777) == 0o700 &&
+         [held_output_root.dev, held_output_root.ino] ==
+           output_identity.drop(1)
+    UI.user_error!("LAB-002 output-root descriptor identity is invalid.")
+  end
   present_application_identifier = lambda do |bundle_identifier|
     lab002_entitlement(
       "present",
@@ -2110,7 +2145,12 @@ def prepare_lab002_private_inputs!(
       "prepare",
       "--output-root",
       output_root,
+      "--output-root-device",
+      held_output_root.dev.to_s,
+      "--output-root-inode",
+      held_output_root.ino.to_s,
       3 => acknowledgement_reader,
+      4 => output_handle,
       chdir: repository_root,
       close_others: true
     ) do |stdin, stdout, error_stream, wait_thread|
@@ -6425,6 +6465,28 @@ platform :ios do
       )
     end
 
+    Dir.mktmpdir(
+      "orchardprobe-lab002-cargo-home-check-",
+      external_temporary_base
+    ) do |configured_cargo_home|
+      File.chmod(0o700, configured_cargo_home)
+      previous_cargo_home = ENV["CARGO_HOME"]
+      begin
+        ENV["CARGO_HOME"] = configured_cargo_home
+        unless lab002_configured_cargo_home == File.realpath(
+          configured_cargo_home
+        )
+          UI.user_error!("LAB-002 ignored the configured Cargo home.")
+        end
+      ensure
+        if previous_cargo_home
+          ENV["CARGO_HOME"] = previous_cargo_home
+        else
+          ENV.delete("CARGO_HOME")
+        end
+      end
+    end
+
     sandbox_vendor_workspace =
       external_temporary_directory(
         "orchardprobe-lab002-sandbox-vendor-check-"
@@ -7872,6 +7934,8 @@ platform :ios do
       ) do |arm_rollback|
         result = prepare_lab002_private_inputs!(
           output_root: output_root,
+          output_handle: output_handle,
+          output_identity: output_identity,
           source_commit: source_commit,
           marketing_version: marketing_version,
           build_number: build_number,

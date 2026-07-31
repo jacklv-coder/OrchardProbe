@@ -84,9 +84,11 @@ held directory before executing sandboxed Cargo; the source pathname must map
 to the same identity before and after the build. The `gemfile_lock_sha256`
 recorded in the Build Binding is
 derived from that same authenticated snapshot and is revalidated with it; the
-lane never hashes the mutable worktree `Gemfile.lock`. The helper build never consumes the
-mutable extracted tree under `~/.cargo/registry/src`: it authenticates every
-cached `.crate` archive against the checksum recorded in the snapshotted
+lane never hashes the mutable worktree `Gemfile.lock`. The helper build never
+consumes the mutable extracted tree under Cargo's `registry/src`: it resolves
+the operator's configured `CARGO_HOME` (falling back to the account default
+only when it is unset), then authenticates every cached `.crate` archive
+against the checksum recorded in the snapshotted
 `Cargo.lock`, hashes the exact compressed bytes consumed by Gzip/Tar while
 extracting only through held directory descriptors into an owner-private,
 read-only temporary directory outside the build's writable workspace,
@@ -118,12 +120,16 @@ rehash-verified, and compared again after generation immediately before the
 pre-build result returns.
 
 The generator opens and retains directory descriptors for the output root and
-its unique staging directory. File creation, directory sync, no-replace rename,
-rollback, and cleanup are descriptor-relative with no-follow semantics; the
-reported output path is revalidated against the held output-root identity.
-Fastlane retains its own locked output-root descriptor across the helper call
-and descriptor-relatively removes the exact published tuple if any subsequent
-result or root revalidation fails. Before writing any private bytes, the helper
+its unique staging directory. Fastlane duplicates its already-locked
+output-root descriptor into the helper and passes the expected device/inode;
+the helper verifies that inherited descriptor and uses it directly, so it
+never reopens a replaceable output-root pathname for publication. File
+creation, directory sync, no-replace rename, rollback, and cleanup are
+descriptor-relative with no-follow semantics; the reported output path is
+revalidated against the held output-root identity. Fastlane retains its own
+locked output-root descriptor across the helper call and descriptor-relatively
+removes the exact published tuple if any subsequent result or root
+revalidation fails. Before writing any private bytes, the helper
 reports the unique staging name and its device/inode identity in a flushed
 non-secret first-line record. Fastlane arms rollback from that record before
 acknowledging the helper over a dedicated inherited pipe; the helper cannot

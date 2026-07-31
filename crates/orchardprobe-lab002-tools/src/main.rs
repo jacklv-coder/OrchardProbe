@@ -27,6 +27,7 @@ const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
 const PREBUILD_SCHEMA: &str = "orchardprobe.lab002.prebuild.v1";
 const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directory.v1";
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
+const PRIVATE_OUTPUT_ROOT_PATH: &str = "/dev/fd/4";
 const MAX_REQUEST_BYTES: usize = 32 * 1024;
 const PRIVATE_SEED_NAME: &str = "lab-002-authorization-seed-v1.bin";
 const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
@@ -34,6 +35,7 @@ const PREBUILD_NAME: &str = "lab-002-prebuild-v1.json";
 const CHECKPOINT_MARKETING_VERSION: &str = "1.0";
 const CHECKPOINT_BUILD_NUMBER: &str = "3";
 
+#[derive(Debug)]
 struct PrivateOutputRoot {
     canonical_path: PathBuf,
     directory: File,
@@ -105,8 +107,20 @@ struct PrivateArtifactIdentity {
 
 fn main() -> ExitCode {
     let mut stdout = io::stdout().lock();
+    // Fastlane deliberately duplicates its already-locked output-root
+    // descriptor onto this fixed child descriptor. Opening its descriptor
+    // node duplicates that held file description instead of reopening an
+    // attacker-replaced output-root pathname.
+    let output_root_directory = match File::open(PRIVATE_OUTPUT_ROOT_PATH) {
+        Ok(directory) => directory,
+        Err(error) => {
+            eprintln!("error: could not receive the held prebuild output root: {error}");
+            return ExitCode::FAILURE;
+        }
+    };
     match execute(
         std::env::args_os().skip(1).collect(),
+        output_root_directory,
         |staging_name, identity| {
             write_publication_identity(&mut stdout, staging_name, identity)?;
             wait_for_publication_ack()
@@ -173,14 +187,45 @@ fn write_prepare_result(mut writer: impl Write, output: &PrepareOutput) -> Resul
 
 fn execute(
     arguments: Vec<std::ffi::OsString>,
+    output_root_directory: File,
     arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<PrepareOutput, String> {
-    if arguments.len() != 3 || arguments[0] != "prepare" || arguments[1] != "--output-root" {
-        return Err("usage: oprobe-lab002 prepare --output-root ABSOLUTE_PRIVATE_DIRECTORY".into());
+    if arguments.len() != 7
+        || arguments[0] != "prepare"
+        || arguments[1] != "--output-root"
+        || arguments[3] != "--output-root-device"
+        || arguments[5] != "--output-root-inode"
+    {
+        return Err(
+            "usage: oprobe-lab002 prepare --output-root ABSOLUTE_PRIVATE_DIRECTORY \
+             --output-root-device DECIMAL --output-root-inode DECIMAL"
+                .into(),
+        );
     }
     let output_root = PathBuf::from(&arguments[2]);
+    let expected_identity = (
+        parse_identity_component(&arguments[4], "output-root device")?,
+        parse_identity_component(&arguments[6], "output-root inode")?,
+    );
+    let output_root =
+        validate_bound_private_output_root(&output_root, output_root_directory, expected_identity)?;
     let request = read_request(io::stdin().lock())?;
-    prepare_with_publication_arm(&output_root, request, arm_publication)
+    prepare_with_bound_publication_arm(output_root, request, arm_publication)
+}
+
+fn parse_identity_component(value: &std::ffi::OsStr, label: &str) -> Result<u64, String> {
+    let value = value
+        .to_str()
+        .ok_or_else(|| format!("{label} must be canonical decimal"))?;
+    if value.is_empty()
+        || (value.len() > 1 && value.starts_with('0'))
+        || !value.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return Err(format!("{label} must be canonical decimal"));
+    }
+    value
+        .parse()
+        .map_err(|_| format!("{label} must fit in an unsigned 64-bit integer"))
 }
 
 fn read_request(mut input: impl Read) -> Result<PrepareRequest, String> {
@@ -206,13 +251,22 @@ fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput,
     prepare_with_publication_arm(output_root, request, |_, _| Ok(()))
 }
 
+#[cfg(test)]
 fn prepare_with_publication_arm(
     output_root: &Path,
     request: PrepareRequest,
     mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<PrepareOutput, String> {
-    validate_request(&request)?;
     let output_root = validate_private_output_root(output_root)?;
+    prepare_with_bound_publication_arm(output_root, request, &mut arm_publication)
+}
+
+fn prepare_with_bound_publication_arm(
+    output_root: PrivateOutputRoot,
+    request: PrepareRequest,
+    mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+) -> Result<PrepareOutput, String> {
+    validate_request(&request)?;
     let final_name = format!(
         "lab002-prebuild-{}-{}-{}",
         request.marketing_version, request.build_number, request.source_commit
@@ -417,7 +471,29 @@ fn app_groups(value: &RequiredAppGroups) -> Result<AppGroups, String> {
     }
 }
 
+#[cfg(test)]
 fn validate_private_output_root(path: &Path) -> Result<PrivateOutputRoot, String> {
+    let directory = rustix::fs::open(
+        path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| format!("could not hold prebuild output root safely: {error}"))?;
+    let opened = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect held prebuild output root: {error}"))?;
+    validate_bound_private_output_root(path, directory, (opened.dev(), opened.ino()))
+}
+
+fn validate_bound_private_output_root(
+    path: &Path,
+    directory: File,
+    expected_identity: (u64, u64),
+) -> Result<PrivateOutputRoot, String> {
     if !path.is_absolute() {
         return Err("prebuild output root must be absolute".into());
     }
@@ -443,20 +519,12 @@ fn validate_private_output_root(path: &Path) -> Result<PrivateOutputRoot, String
     if canonical.starts_with(&repository) {
         return Err("prebuild output root must be outside the repository".into());
     }
-    let directory = rustix::fs::open(
-        &canonical,
-        rustix::fs::OFlags::RDONLY
-            | rustix::fs::OFlags::DIRECTORY
-            | rustix::fs::OFlags::NOFOLLOW
-            | rustix::fs::OFlags::CLOEXEC,
-        rustix::fs::Mode::empty(),
-    )
-    .map(File::from)
-    .map_err(|error| format!("could not hold prebuild output root safely: {error}"))?;
     let opened = directory
         .metadata()
         .map_err(|error| format!("could not inspect held prebuild output root: {error}"))?;
     if !opened.is_dir()
+        || (opened.dev(), opened.ino()) != expected_identity
+        || (metadata.dev(), metadata.ino()) != expected_identity
         || opened.dev() != metadata.dev()
         || opened.ino() != metadata.ino()
         || opened.uid() != rustix::process::geteuid().as_raw()
@@ -1314,6 +1382,59 @@ mod tests {
         assert!(error.contains("output root changed during publication"));
         assert!(fs::read_dir(&root_path).unwrap().next().is_none());
         assert!(fs::read_dir(&moved_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn inherited_output_root_rejects_a_replaced_path_before_preparation() {
+        let parent = TempDir::new().unwrap();
+        let root_path = parent.path().join("output");
+        fs::create_dir(&root_path).unwrap();
+        fs::set_permissions(
+            &root_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let canonical = root_path.canonicalize().unwrap();
+        let held = File::open(&canonical).unwrap();
+        let held_metadata = held.metadata().unwrap();
+        let expected_identity = (held_metadata.dev(), held_metadata.ino());
+        let moved_path = parent.path().join("held-output");
+        fs::rename(&root_path, &moved_path).unwrap();
+        fs::create_dir(&root_path).unwrap();
+        fs::set_permissions(
+            &root_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+
+        let error =
+            validate_bound_private_output_root(&canonical, held, expected_identity).unwrap_err();
+
+        assert!(error.contains("changed before it could be held"));
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+        assert!(fs::read_dir(&moved_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn inherited_output_root_rejects_a_mismatched_expected_identity() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let canonical = root.path().canonicalize().unwrap();
+        let held = File::open(&canonical).unwrap();
+        let metadata = held.metadata().unwrap();
+
+        let error = validate_bound_private_output_root(
+            &canonical,
+            held,
+            (metadata.dev(), metadata.ino().wrapping_add(1)),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed before it could be held"));
     }
 
     #[test]
