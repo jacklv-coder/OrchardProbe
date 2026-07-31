@@ -63,7 +63,10 @@ immediately before generation. It obtains that OID with `git ls-remote` from a
 hard-coded SSH repository URL while running outside the checkout, excluding
 local, global, and system Git configuration, disabling prompts and SSH agent
 use, and authenticating `ssh.github.com:443` against the GitHub Ed25519 host
-key pinned in the reviewed source. A mutable local remote-tracking ref is never
+key pinned in the reviewed source. SSH reads no user-controlled known-hosts
+path: its `KnownHostsCommand` invokes the fixed, root-owned `/bin/echo` to emit
+that in-source key, and both `/bin/echo` and `/usr/bin/ssh` are content- and
+identity-revalidated after use. A mutable local remote-tracking ref is never
 used as review evidence. Through that same restricted transport, a quiet fetch
 materializes the advertised `main` history without writing `FETCH_HEAD` or a
 local ref; a second live query must return the same OID, and that exact commit

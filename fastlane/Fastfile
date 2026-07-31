@@ -2927,21 +2927,15 @@ def parse_reviewed_github_main_ref!(output)
 end
 
 def reviewed_github_main_commit
-  with_external_temporary_file(["github-host-", ".known-hosts"]) do |file|
-    expected_host_bytes =
-      "#{DEMO_LAB_GITHUB_SSH_ED25519_HOST_KEY}\n".b
-    file.binmode
-    file.write(expected_host_bytes)
-    file.flush
-    file.fsync
-    File.chmod(0o400, file.path)
-    host_identity = [
-      file.stat.dev,
-      file.stat.ino,
-      file.stat.size,
-      Digest::SHA256.hexdigest(expected_host_bytes),
-    ]
+  workspace = external_temporary_directory(
+    "orchardprobe-lab002-github-main-"
+  )
+  begin
     ssh = pinned_executable("/usr/bin/ssh", "System SSH")
+    host_key_writer = pinned_executable("/bin/echo", "System echo")
+    known_hosts_command =
+      "#{host_key_writer.fetch('path')} " \
+      "#{DEMO_LAB_GITHUB_SSH_ED25519_HOST_KEY}"
     ssh_command = Shellwords.join(
       [
         ssh.fetch("path"),
@@ -2958,9 +2952,11 @@ def reviewed_github_main_commit
         "-o",
         "StrictHostKeyChecking=yes",
         "-o",
-        "UserKnownHostsFile=#{file.path}",
+        "UserKnownHostsFile=/dev/null",
         "-o",
         "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "KnownHostsCommand=#{known_hosts_command}",
         "-o",
         "HostKeyAlgorithms=ssh-ed25519",
         "-o",
@@ -2994,7 +2990,7 @@ def reviewed_github_main_commit
       "--exit-code",
       DEMO_LAB_REVIEWED_GITHUB_SSH_URL,
       DEMO_LAB_REVIEWED_GITHUB_MAIN_REF,
-      chdir: File.dirname(file.path),
+      chdir: workspace,
       unsetenv_others: true
     )
     unless status.success? && stderr.empty?
@@ -3024,7 +3020,7 @@ def reviewed_github_main_commit
       "--exit-code",
       DEMO_LAB_REVIEWED_GITHUB_SSH_URL,
       DEMO_LAB_REVIEWED_GITHUB_MAIN_REF,
-      chdir: File.dirname(file.path),
+      chdir: workspace,
       unsetenv_others: true
     )
     confirmed_main = if confirmed_status.success? && confirmed_stderr.empty?
@@ -3040,9 +3036,6 @@ def reviewed_github_main_commit
       chdir: repository_root,
       unsetenv_others: true
     )
-    file.rewind
-    observed_host_bytes = file.read
-    observed_host_stat = file.stat
     unless fetch_status.success? &&
            fetch_stdout.empty? &&
            fetch_stderr.empty? &&
@@ -3050,20 +3043,16 @@ def reviewed_github_main_commit
            object_status.success? &&
            object_stdout.empty? &&
            object_stderr.empty? &&
-           observed_host_bytes == expected_host_bytes &&
-           [
-             observed_host_stat.dev,
-             observed_host_stat.ino,
-             observed_host_stat.size,
-             Digest::SHA256.hexdigest(observed_host_bytes),
-           ] == host_identity &&
-           pinned_executable("/usr/bin/ssh", "System SSH") == ssh
+           pinned_executable("/usr/bin/ssh", "System SSH") == ssh &&
+           pinned_executable("/bin/echo", "System echo") == host_key_writer
       UI.user_error!(
         "Unable to authenticate and materialize the reviewed GitHub main " \
         "reference over SSH."
       )
     end
     reviewed_main
+  ensure
+    FileUtils.rm_rf(workspace) if workspace
   end
 end
 

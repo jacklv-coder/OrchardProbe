@@ -52,7 +52,10 @@
 同一 Source。该 OID 由 `git ls-remote` 从写死的 SSH 仓库 URL 获取；命令在 Checkout
 之外运行，排除本地、全局与系统 Git Configuration，禁用交互 Prompt 与 SSH Agent，
 并使用受评审源码内固定的 GitHub Ed25519 Host Key 认证
-`ssh.github.com:443`，绝不把可变的本地 Remote-tracking Ref 当作评审证据。
+`ssh.github.com:443`。SSH 不读取任何用户可控 Known-hosts Path：
+`KnownHostsCommand` 只调用固定、Root-owned 的 `/bin/echo` 输出源码内 Key，使用后
+还会重新验证 `/bin/echo` 与 `/usr/bin/ssh` 的内容和身份。可变的本地
+Remote-tracking Ref 绝不作为评审证据。
 同一受限通道还会执行 Quiet Fetch，只把所公布的 `main` 历史物化进本地 Object
 Database，不写 `FETCH_HEAD`、不更新任何本地 Ref；随后第二次实时查询必须返回相同
 OID，且该精确 Commit Object 必须已能在本地验证。祖先检查及后续 Git 操作都会显式
