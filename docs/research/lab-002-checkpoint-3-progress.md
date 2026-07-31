@@ -17,7 +17,7 @@ preceding row is complete.
 
 | Order | Substep | Status | Completion gate |
 |---:|---|---|---|
-| 3A | Private pre-build input generator | `implemented; PR #62 review/merge pending` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the reviewed `origin/main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests pass; this row becomes complete only after [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) passes Codex CR/CI and merges |
+| 3A | Private pre-build input generator | `implemented; PR #62 review/merge pending` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the reviewed `origin/main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests pass; this row becomes complete only after [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) passes Codex CR/CI and merges |
 | 3B | Archive/oracle/evidence closure | `blocked` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
 | 3C | Device-free tests, Codex CR, CI, and implementation merge | `blocked` | Use only temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures; cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection; merge the reviewed implementation before any signed candidate is built |
 | 3D | Exact signed DemoLab `1.0 (3)` candidate | `blocked` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
@@ -59,8 +59,30 @@ The published pre-build directory contains exactly:
 The directory is created under an already-existing canonical mode-`0700`
 output root outside the repository. The lane rejects a clean local commit that
 is not an ancestor of the reviewed `origin/main` ref and rechecks the same
-source immediately before generation. Files use exclusive creation and
-`fsync`; the complete staging directory is published with no-replace rename
-and the parent directory is fsynced. Reusing the same source/version/build
-tuple is rejected instead of overwriting its private inputs. This lane performs
-no signing, Archive/export, upload, installation, or device operation.
+source immediately before generation. The helper build never consumes the
+mutable extracted tree under `~/.cargo/registry/src`: it authenticates every
+cached `.crate` archive against the checksum recorded in the reviewed
+`Cargo.lock`, hashes the exact compressed bytes consumed by Gzip/Tar while
+extracting only through held directory descriptors into an owner-private,
+read-only temporary directory outside the build's writable workspace,
+configures a fresh isolated `CARGO_HOME` to use only that directory, and
+rehashes both each held archive and the complete dependency tree. The
+temporary verified source has its directory permissions restored solely for
+checked cleanup after the build. Cargo,
+build scripts, and procedural macros run with an empty isolated `HOME` inside a
+macOS sandbox that denies network access, denies reads of the operator home
+except the reviewed repository and pinned Rust toolchain, and denies writes
+outside the private temporary workspace. Run `cargo fetch --locked` before the
+lane if an authenticated archive is absent.
+
+The generator opens and retains directory descriptors for the output root and
+its unique staging directory. File creation, directory sync, no-replace rename,
+rollback, and cleanup are descriptor-relative with no-follow semantics; the
+reported output path is revalidated against the held output-root identity.
+Fastlane retains its own locked output-root descriptor across the helper call
+and descriptor-relatively removes the exact published tuple if any subsequent
+result or root revalidation fails.
+Files use exclusive creation and `fsync`, and the parent directory is fsynced
+after publication or cleanup. Reusing the same source/version/build tuple is
+rejected instead of overwriting its private inputs. This lane performs no
+signing, Archive/export, upload, installation, or device operation.

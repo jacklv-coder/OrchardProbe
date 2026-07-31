@@ -8,6 +8,7 @@ require "json"
 require "open3"
 require "pathname"
 require "rbconfig"
+require "rubygems/package"
 require "securerandom"
 require "shellwords"
 require "stringio"
@@ -15,6 +16,7 @@ require "tempfile"
 require "tmpdir"
 require "time"
 require "zip"
+require "zlib"
 
 DEMO_LAB_EVIDENCE_PROFILE = "orchardprobe.demolab.testflight-preupload.v1"
 DEMO_LAB_EVIDENCE_PURPOSE = "LAB-001 controlled first-party TestFlight preparation"
@@ -59,6 +61,11 @@ DEMO_LAB_TRUSTED_RUST_TOOLCHAINS = {
   "1.85.0-aarch64-apple-darwin" =>
     "8662d91ca4cefb026309b47a1b6e4a581273fd5021eb68aec8a0ee81659384ec",
 }.freeze
+DEMO_LAB_CRATES_IO_SOURCE =
+  "registry+https://github.com/rust-lang/crates.io-index"
+DEMO_LAB_MAX_CRATE_ARCHIVE_BYTES = 64 * 1024 * 1024
+DEMO_LAB_MAX_CRATE_EXPANDED_BYTES = 256 * 1024 * 1024
+DEMO_LAB_MAX_CRATE_ENTRIES = 32_768
 DEMO_LAB_LOCAL_RUN_CONFIRMATION = "I_AM_RUNNING_LOCALLY_OUTSIDE_CI"
 DEMO_LAB_RETRY_CONFIRMATION =
   "I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT"
@@ -69,6 +76,11 @@ DEMO_LAB_LAB002_PREBUILD_RESULT_SCHEMA =
   "orchardprobe.lab002.prebuild-result.v1"
 DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
+DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES = %w[
+  lab-002-authorization-seed-v1.bin
+  lab-002-authorized-targets-v1.json
+  lab-002-prebuild-v1.json
+].freeze
 DEMO_LAB_LINEAGE_NOTE =
   "Pre-upload bytes are candidates, not proof of installed plaintext."
 DEMO_LAB_UPLOAD_INDETERMINATE_NOTE =
@@ -107,10 +119,35 @@ DEMO_LAB_BINARY_SPECS = [
 module DemoLabDarwin
   extend Fiddle::Importer
   dlload Fiddle.dlopen(nil)
+  extern "int mkdirat(int, const char *, unsigned int)"
+  extern "int openat(int, const char *, int, unsigned int)"
   extern "int renamex_np(const char *, const char *, unsigned int)"
+  extern "int unlinkat(int, const char *, int)"
 
   RENAME_EXCL = 0x00000004
   RENAME_NOFOLLOW_ANY = 0x00000010
+  AT_REMOVEDIR = 0x00000080
+end
+
+class Lab002DigestingReader
+  attr_reader :digest
+
+  def initialize(io)
+    @io = io
+    @digest = Digest::SHA256.new
+  end
+
+  def read(*arguments)
+    bytes = @io.read(*arguments)
+    @digest.update(bytes) if bytes
+    bytes
+  end
+
+  def readpartial(*arguments)
+    bytes = @io.readpartial(*arguments)
+    @digest.update(bytes)
+    bytes
+  end
 end
 
 DEMO_LAB_CI_ENVIRONMENT_KEYS = %w[
@@ -610,23 +647,455 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to resolve the pinned Rust toolchain safely.")
 end
 
+def lab002_locked_registry_packages
+  lock_path = File.join(repository_root, "Cargo.lock")
+  content = File.read(lock_path, mode: "rb")
+  content.force_encoding(Encoding::UTF_8)
+  UI.user_error!("Cargo.lock is not valid UTF-8.") unless content.valid_encoding?
+  packages = content.split(/(?=^\[\[package\]\]\n)/).each_with_object([]) do |block, result|
+    next unless block.start_with?("[[package]]\n")
+
+    fields = {}
+    %w[name version source checksum].each do |field|
+      matches = block.scan(/^#{field} = "([^"]+)"$/)
+      fields[field] = matches.fetch(0).fetch(0) if matches.length == 1
+    end
+    next unless fields["source"]
+
+    unless fields.keys.sort == %w[checksum name source version] &&
+           fields["source"] == DEMO_LAB_CRATES_IO_SOURCE &&
+           /\A[A-Za-z0-9_-]+\z/.match?(fields["name"]) &&
+           /\A[0-9A-Za-z.+-]+\z/.match?(fields["version"]) &&
+           /\A[0-9a-f]{64}\z/.match?(fields["checksum"])
+      UI.user_error!("Cargo.lock contains an unsupported registry package.")
+    end
+    result << fields
+  end
+  unless packages.any? &&
+         packages.map { |package| [package["name"], package["version"]] }.uniq.length ==
+           packages.length
+    UI.user_error!("Cargo.lock registry package inventory is empty or ambiguous.")
+  end
+  packages.sort_by { |package| [package["name"].b, package["version"].b] }
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to read Cargo.lock safely.")
+end
+
+def lab002_verified_crate_archive(package, cargo_home)
+  basename = "#{package.fetch('name')}-#{package.fetch('version')}.crate"
+  candidates = Dir.glob(
+    File.join(cargo_home, "registry", "cache", "*", basename)
+  ).sort
+  candidates.each do |candidate|
+    next if File.symlink?(candidate)
+
+    flags = File::RDONLY | File::NONBLOCK
+    flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+    File.open(candidate, flags) do |archive|
+      before = archive.stat
+      next unless before.file? &&
+                  before.uid == Process.uid &&
+                  (before.mode & 0o022).zero? &&
+                  before.size.positive? &&
+                  before.size <= DEMO_LAB_MAX_CRATE_ARCHIVE_BYTES
+
+      digest = digest_open_file(archive)
+      after = archive.stat
+      next unless [
+        after.dev,
+        after.ino,
+        after.size,
+        after.mtime.to_f,
+      ] == [
+        before.dev,
+        before.ino,
+        before.size,
+        before.mtime.to_f,
+      ]
+      return candidate if digest == package.fetch("checksum")
+    end
+  end
+  UI.user_error!(
+    "The Cargo cache has no checksum-verified archive for #{basename}; " \
+    "run `cargo fetch --locked` before the controlled lane."
+  )
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to inspect cached crate #{basename} safely.")
+end
+
+def lab002_safe_relative_crate_path(raw_name, expected_root)
+  name = raw_name.dup.force_encoding(Encoding::UTF_8)
+  unless name.valid_encoding? &&
+         !name.start_with?("/") &&
+         !name.include?("\\") &&
+         !name.include?("\0")
+    UI.user_error!("A verified crate contains an unsafe archive path.")
+  end
+  components = name.split("/")
+  components.pop while components.last == ""
+  unless components.first == expected_root &&
+         components.all? { |component| !component.empty? && !%w[. ..].include?(component) }
+    UI.user_error!("A verified crate escaped its package root.")
+  end
+  components.drop(1)
+end
+
+def lab002_open_directory_at(parent, name, required_mode: 0o700)
+  flags = File::RDONLY | File::NOFOLLOW
+  descriptor = DemoLabDarwin.openat(parent.fileno, name, flags, 0)
+  if descriptor.negative?
+    raise SystemCallError.new("openat", Fiddle.last_error)
+  end
+  directory = File.for_fd(descriptor)
+  directory.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
+  stat = directory.stat
+  unless stat.directory? &&
+         stat.uid == Process.uid &&
+         (required_mode.nil? || (stat.mode & 0o777) == required_mode)
+    directory.close
+    UI.user_error!("A verified crate directory has unsafe metadata.")
+  end
+  directory
+end
+
+def lab002_create_private_ancestors!(root, components, directories)
+  current = root.dup
+  relative = []
+  components.each do |component|
+    relative << component
+    result = DemoLabDarwin.mkdirat(current.fileno, component, 0o700)
+    if result.nonzero?
+      error = SystemCallError.new("mkdirat", Fiddle.last_error)
+      raise error unless error.is_a?(Errno::EEXIST)
+    end
+    next_directory = lab002_open_directory_at(current, component)
+    current.close
+    current = next_directory
+    directories[relative.join("/")] = true
+  end
+  current
+rescue
+  current&.close
+  raise
+end
+
+def lab002_open_private_file_at!(parent, name, mode)
+  flags = File::WRONLY | File::CREAT | File::EXCL
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  descriptor = DemoLabDarwin.openat(parent.fileno, name, flags, mode)
+  if descriptor.negative?
+    raise SystemCallError.new("openat", Fiddle.last_error)
+  end
+  file = File.for_fd(descriptor, "w")
+  file.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
+  file
+end
+
+def lab002_write_private_file!(parent, name, entry)
+  digest = Digest::SHA256.new
+  file = lab002_open_private_file_at!(parent, name, 0o600)
+  begin
+    while (chunk = entry.read(1024 * 1024))
+      file.write(chunk)
+      digest.update(chunk)
+    end
+    file.flush
+    file.fsync
+    file.chmod(0o400)
+  ensure
+    file.close
+  end
+  digest.hexdigest
+rescue Errno::EEXIST, Errno::ELOOP
+  UI.user_error!("A verified crate contains a duplicate archive path.")
+end
+
+def lab002_open_directory_path(root, relative)
+  current = root.dup
+  relative.split("/").each do |component|
+    next_directory = lab002_open_directory_at(current, component)
+    current.close
+    current = next_directory
+  end
+  current
+rescue
+  current&.close
+  raise
+end
+
+def lab002_extract_verified_crate!(archive_path, package, vendor_root)
+  package_root = "#{package.fetch('name')}-#{package.fetch('version')}"
+  destination = File.join(vendor_root, package_root)
+  Dir.mkdir(destination, 0o700)
+  created = File.lstat(destination)
+  destination_handle = File.open(destination, File::RDONLY | File::NOFOLLOW)
+  opened = destination_handle.stat
+  unless opened.directory? &&
+         opened.uid == Process.uid &&
+         (opened.mode & 0o777) == 0o700 &&
+         [opened.dev, opened.ino] == [created.dev, created.ino]
+    UI.user_error!("A verified crate package root changed after creation.")
+  end
+  file_hashes = {}
+  directories = {}
+  entry_count = 0
+  expanded_bytes = 0
+
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  File.open(archive_path, flags) do |archive|
+    before = archive.stat
+    observed_checksum = digest_open_file(archive)
+    unless observed_checksum == package.fetch("checksum")
+      UI.user_error!("A cached crate changed before extraction.")
+    end
+    archive.rewind
+    digesting_archive = Lab002DigestingReader.new(archive)
+    gzip = Zlib::GzipReader.new(digesting_archive)
+    begin
+      Gem::Package::TarReader.new(gzip) do |tar|
+        pending_long_name = nil
+        tar.each do |entry|
+          entry_count += 1
+          if entry_count > DEMO_LAB_MAX_CRATE_ENTRIES
+            UI.user_error!("A verified crate has too many archive entries.")
+          end
+          if entry.header.typeflag == "L"
+            unless pending_long_name.nil? &&
+                   entry.header.size.positive? &&
+                   entry.header.size <= 4096
+              UI.user_error!("A verified crate has an invalid GNU long-name entry.")
+            end
+            encoded_name = entry.read
+            unless encoded_name.end_with?("\0") &&
+                   !encoded_name.delete_suffix("\0").include?("\0")
+              UI.user_error!("A verified crate has a malformed GNU long-name entry.")
+            end
+            pending_long_name = encoded_name.delete_suffix("\0")
+            next
+          end
+          raw_name = pending_long_name || entry.full_name
+          pending_long_name = nil
+          components =
+            lab002_safe_relative_crate_path(raw_name, package_root)
+          next if components.empty? && entry.directory?
+          UI.user_error!("A verified crate has an invalid root entry.") if components.empty?
+
+          relative = components.join("/")
+          if entry.directory?
+            directory = lab002_create_private_ancestors!(
+              destination_handle,
+              components,
+              directories
+            )
+            directory.close
+          elsif entry.file?
+            expanded_bytes += entry.header.size
+            if expanded_bytes > DEMO_LAB_MAX_CRATE_EXPANDED_BYTES
+              UI.user_error!("A verified crate expands beyond the safety limit.")
+            end
+            parent = lab002_create_private_ancestors!(
+              destination_handle,
+              components[0...-1],
+              directories
+            )
+            begin
+              file_hashes[relative] = lab002_write_private_file!(
+                parent,
+                components.fetch(-1),
+                entry
+              )
+            ensure
+              parent.close
+            end
+          else
+            UI.user_error!(
+              "A verified crate contains a link or unsupported archive entry."
+            )
+          end
+        end
+        unless pending_long_name.nil?
+          UI.user_error!("A verified crate ends with an incomplete long-name entry.")
+        end
+      end
+      gzip.read
+    ensure
+      gzip.finish
+    end
+    consumed_checksum = digesting_archive.digest.hexdigest
+    final_checksum = digest_open_file(archive)
+    after = archive.stat
+    unless [
+      after.dev,
+      after.ino,
+      after.size,
+      after.mtime.to_f,
+    ] == [
+      before.dev,
+      before.ino,
+      before.size,
+      before.mtime.to_f,
+    ] &&
+           consumed_checksum == package.fetch("checksum") &&
+           final_checksum == package.fetch("checksum")
+      UI.user_error!("A cached crate changed during extraction.")
+    end
+  end
+  UI.user_error!("A verified crate extracted no files.") if file_hashes.empty?
+
+  checksum_path = File.join(destination, ".cargo-checksum.json")
+  checksum = JSON.generate(
+    "files" => file_hashes.sort.to_h,
+    "package" => package.fetch("checksum")
+  )
+  checksum_file =
+    lab002_open_private_file_at!(
+      destination_handle,
+      File.basename(checksum_path),
+      0o400
+    )
+  begin
+    file = checksum_file
+    file.write(checksum)
+    file.flush
+    file.fsync
+    file.chmod(0o400)
+  ensure
+    checksum_file.close
+  end
+  directories.keys.sort_by { |path| -path.count("/") }.each do |relative|
+    directory = lab002_open_directory_path(destination_handle, relative)
+    begin
+      directory.chmod(0o500)
+    ensure
+      directory.close
+    end
+  end
+  destination_handle.chmod(0o500)
+  destination_handle.close
+rescue Zlib::Error, Gem::Package::TarInvalidError, EOFError
+  UI.user_error!("A checksum-verified crate archive is structurally invalid.")
+ensure
+  destination_handle&.close unless destination_handle&.closed?
+end
+
+def lab002_verified_vendor_source(workspace)
+  owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
+  cargo_cache = File.join(owner_home, ".cargo")
+  vendor_root = File.join(workspace, "verified-vendor")
+  Dir.mkdir(vendor_root, 0o700)
+  lab002_locked_registry_packages.each do |package|
+    archive = lab002_verified_crate_archive(package, cargo_cache)
+    lab002_extract_verified_crate!(archive, package, vendor_root)
+  end
+  File.chmod(0o500, vendor_root)
+  [vendor_root, lab002_rust_toolchain_tree_sha256(vendor_root)]
+end
+
+def lab002_remove_verified_vendor!(workspace)
+  resolved = ensure_outside_repository!(
+    File.realpath(workspace),
+    "LAB-002 verified Cargo source workspace"
+  )
+  directories = []
+  Find.find(resolved) do |path|
+    stat = File.lstat(path)
+    if stat.symlink?
+      UI.user_error!(
+        "The verified Cargo source gained a symbolic link before cleanup."
+      )
+    end
+    directories << path if stat.directory?
+  end
+  directories.reverse_each { |path| File.chmod(0o700, path) }
+  FileUtils.rm_rf(resolved)
+  if File.exist?(resolved) || File.symlink?(resolved)
+    UI.user_error!("Unable to remove the verified Cargo source workspace.")
+  end
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to clean the verified Cargo source workspace safely.")
+end
+
+def lab002_private_build_sandbox!(
+  workspace:,
+  toolchain_root:,
+  vendor_root:
+)
+  sandbox_exec = pinned_executable(
+    "/usr/bin/sandbox-exec",
+    "System sandbox-exec"
+  )
+  isolated_home = File.join(workspace, "isolated-home")
+  Dir.mkdir(isolated_home, 0o700)
+  profile_path = File.join(workspace, "cargo-build.sb")
+  owner_home = File.realpath(Etc.getpwuid(Process.uid).dir)
+  readable_roots = [repository_root, toolchain_root, vendor_root, workspace]
+    .map { |path| File.realpath(path) }
+    .uniq
+  profile = [
+    "(version 1)",
+    "(allow default)",
+    "(deny network*)",
+    "(deny mach-lookup (global-name \"com.apple.securityd\"))",
+    "(deny mach-lookup (global-name \"com.apple.secd\"))",
+    "(deny file-read-data (subpath #{JSON.generate(owner_home)}))",
+    *readable_roots.map do |path|
+      "(allow file-read-data (subpath #{JSON.generate(path)}))"
+    end,
+    "(deny file-write*)",
+    "(allow file-write* (subpath #{JSON.generate(workspace)}))",
+    "(allow file-write* (literal \"/dev/null\"))",
+  ].join("\n") + "\n"
+  File.open(profile_path, File::WRONLY | File::CREAT | File::EXCL, 0o400) do |file|
+    file.write(profile)
+    file.flush
+    file.fsync
+  end
+  [sandbox_exec, profile_path, isolated_home]
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to create the private Cargo build sandbox.")
+end
+
 def build_lab002_private_tool
   workspace = nil
+  vendor_workspace = nil
   toolchain_root, cargo, rustc, toolchain_sha256 =
     selected_lab002_rust_toolchain
   workspace = external_temporary_directory("orchardprobe-lab002-tool-")
-  cargo_home = File.join(Etc.getpwuid(Process.uid).dir, ".cargo")
-  %w[config config.toml].each do |name|
-    if File.exist?(File.join(cargo_home, name)) ||
-       File.symlink?(File.join(cargo_home, name))
-      UI.user_error!("A user Cargo configuration is not allowed.")
-    end
+  vendor_workspace =
+    external_temporary_directory("orchardprobe-lab002-vendor-")
+  vendor_root, vendor_sha256 =
+    lab002_verified_vendor_source(vendor_workspace)
+  cargo_home = File.join(workspace, "cargo-home")
+  Dir.mkdir(cargo_home, 0o700)
+  cargo_config = File.join(cargo_home, "config.toml")
+  File.open(cargo_config, File::WRONLY | File::CREAT | File::EXCL, 0o400) do |file|
+    file.write(
+      <<~TOML
+        [net]
+        offline = true
+
+        [source.crates-io]
+        replace-with = "lab002-verified"
+
+        [source.lab002-verified]
+        directory = #{JSON.generate(vendor_root)}
+      TOML
+    )
+    file.flush
+    file.fsync
   end
+  sandbox_exec, sandbox_profile, isolated_home =
+    lab002_private_build_sandbox!(
+      workspace: workspace,
+      toolchain_root: toolchain_root,
+      vendor_root: vendor_root
+    )
   environment = {
     "CARGO_HOME" => cargo_home,
     "CARGO_NET_OFFLINE" => "true",
     "CARGO_TARGET_DIR" => workspace,
-    "HOME" => Etc.getpwuid(Process.uid).dir,
+    "HOME" => isolated_home,
     "LANG" => "en_US.UTF-8",
     "LC_ALL" => "en_US.UTF-8",
     "PATH" =>
@@ -634,8 +1103,11 @@ def build_lab002_private_tool
     "RUSTC" => rustc,
     "TMPDIR" => workspace,
   }
-  _, stderr, status = Open3.capture3(
+  stdout, stderr, status = Open3.capture3(
     environment,
+    sandbox_exec.fetch("path"),
+    "-f",
+    sandbox_profile,
     cargo,
     "build",
     "--offline",
@@ -647,7 +1119,13 @@ def build_lab002_private_tool
     unsetenv_others: true
   )
   unless status.success?
-    UI.user_error!("Private LAB-002 tool build failed: #{stderr.strip}")
+    detail = stderr.strip.empty? ? stdout.strip : stderr.strip
+    UI.user_error!(
+      "Private LAB-002 tool build failed (#{status.inspect}): #{detail}"
+    )
+  end
+  unless lab002_rust_toolchain_tree_sha256(vendor_root) == vendor_sha256
+    UI.user_error!("The verified Cargo dependency source changed during the build.")
   end
   unless lab002_rust_toolchain_tree_sha256(toolchain_root) ==
          toolchain_sha256
@@ -678,6 +1156,8 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
 rescue StandardError
   FileUtils.rm_rf(workspace) if workspace
   raise
+ensure
+  lab002_remove_verified_vendor!(vendor_workspace) if vendor_workspace
 end
 
 def verify_lab002_private_tool!(binary, workspace, identity)
@@ -829,13 +1309,14 @@ def prepare_lab002_private_inputs!(
       stdin_data: JSON.generate(request),
       chdir: repository_root
     )
-    verify_selected_xcode_toolchain!(xcode_toolchain)
-    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     unless status.success?
       UI.user_error!(
         "LAB-002 private input preparation failed: #{stderr.strip}"
       )
     end
+    yield if block_given?
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
     result = JSON.parse(stdout)
     require_exact_hash_keys!(
       result,
@@ -864,6 +1345,64 @@ def prepare_lab002_private_inputs!(
   ensure
     FileUtils.rm_rf(tool_workspace) if tool_workspace
   end
+end
+
+def cleanup_lab002_published_prebuild!(output_handle, final_name)
+  directory = lab002_open_directory_at(
+    output_handle,
+    final_name,
+    required_mode: nil
+  )
+  identity = [directory.stat.dev, directory.stat.ino]
+  errors = []
+  DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+    result = DemoLabDarwin.unlinkat(directory.fileno, name, 0)
+    next if result.zero?
+
+    error = SystemCallError.new("unlinkat", Fiddle.last_error)
+    errors << error unless error.is_a?(Errno::ENOENT)
+  end
+  begin
+    directory.fsync
+  rescue SystemCallError => error
+    errors << error
+  end
+
+  begin
+    current = lab002_open_directory_at(
+      output_handle,
+      final_name,
+      required_mode: nil
+    )
+    current_identity = [current.stat.dev, current.stat.ino]
+    current.close
+    if current_identity == identity
+      result = DemoLabDarwin.unlinkat(
+        output_handle.fileno,
+        final_name,
+        DemoLabDarwin::AT_REMOVEDIR
+      )
+      if result.nonzero?
+        error = SystemCallError.new("unlinkat", Fiddle.last_error)
+        errors << error unless error.is_a?(Errno::ENOENT)
+      end
+    end
+  rescue Errno::ENOENT
+    nil
+  end
+  begin
+    output_handle.fsync
+  rescue SystemCallError => error
+    errors << error
+  end
+  return if errors.empty?
+
+  UI.user_error!(
+    "LAB-002 post-publication rollback is indeterminate: " \
+    "#{errors.map(&:message).join('; ')}"
+  )
+ensure
+  directory&.close unless directory&.closed?
 end
 
 def valid_utc_timestamp?(value)
@@ -3549,6 +4088,83 @@ platform :ios do
       UI.user_error!("Rejected DemoLab output path left repository side effects.")
     end
 
+    Dir.mktmpdir(
+      "orchardprobe-lab002-descriptor-check-",
+      external_temporary_base
+    ) do |descriptor_workspace|
+      extraction_root = File.join(descriptor_workspace, "vendor")
+      outside_root = File.join(descriptor_workspace, "outside")
+      Dir.mkdir(extraction_root, 0o700)
+      Dir.mkdir(outside_root, 0o700)
+      File.symlink(outside_root, File.join(extraction_root, "redirect"))
+      root_handle = File.open(
+        extraction_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      symlink_ancestor_rejected = false
+      begin
+        escaped_handle = lab002_create_private_ancestors!(
+          root_handle,
+          %w[redirect escaped],
+          {}
+        )
+        escaped_handle.close
+      rescue SystemCallError, FastlaneCore::Interface::FastlaneError
+        symlink_ancestor_rejected = true
+      ensure
+        root_handle.close
+      end
+      unless symlink_ancestor_rejected &&
+             !File.exist?(File.join(outside_root, "escaped"))
+        UI.user_error!(
+          "LAB-002 descriptor extraction followed a symbolic-link ancestor."
+        )
+      end
+    end
+
+    sandbox_vendor_workspace =
+      external_temporary_directory(
+        "orchardprobe-lab002-sandbox-vendor-check-"
+      )
+    begin
+      sandbox_vendor_root =
+        File.join(sandbox_vendor_workspace, "verified-vendor")
+      Dir.mkdir(sandbox_vendor_root, 0o700)
+      sandbox_vendor_file =
+        File.join(sandbox_vendor_root, "Cargo.toml")
+      File.write(sandbox_vendor_file, "[package]\nname = \"check\"\n")
+      File.chmod(0o400, sandbox_vendor_file)
+      File.chmod(0o500, sandbox_vendor_root)
+      Dir.mktmpdir(
+        "orchardprobe-lab002-sandbox-build-check-",
+        external_temporary_base
+      ) do |sandbox_build_workspace|
+        sandbox_exec, sandbox_profile, = lab002_private_build_sandbox!(
+          workspace: sandbox_build_workspace,
+          toolchain_root: repository_root,
+          vendor_root: sandbox_vendor_root
+        )
+        _, _, mutation_status = Open3.capture3(
+          sanitized_dynamic_loader_environment,
+          sandbox_exec.fetch("path"),
+          "-f",
+          sandbox_profile,
+          "/bin/chmod",
+          "0700",
+          sandbox_vendor_root,
+          unsetenv_others: true
+        )
+        if mutation_status.success? ||
+           (File.stat(sandbox_vendor_root).mode & 0o777) != 0o500
+          UI.user_error!(
+            "The LAB-002 build sandbox allowed verified-source mutation."
+          )
+        end
+      end
+    ensure
+      lab002_remove_verified_vendor!(sandbox_vendor_workspace)
+    end
+
     workspace, _, project = prepare_demolab_project
     begin
       shadow_tools = File.join(workspace, "shadow-developer-tools")
@@ -4929,6 +5545,8 @@ platform :ios do
     end
 
     result = nil
+    final_name =
+      "lab002-prebuild-#{marketing_version}-#{build_number}-#{source_commit}"
     with_locked_private_directory(
       output_root,
       output_identity,
@@ -4944,23 +5562,41 @@ platform :ios do
       unless reviewed_main_source_commit == source_commit
         UI.user_error!("LAB-002 source commit changed during preparation.")
       end
-      result = prepare_lab002_private_inputs!(
-        output_root: output_root,
-        source_commit: source_commit,
-        marketing_version: marketing_version,
-        build_number: build_number,
-        app_identifier: app_identifier,
-        share_identifier: share_identifier,
-        app_group_identifier: app_group_identifier,
-        team_identifier: team_identifier,
-        xcode_toolchain: xcode_toolchain
-      )
-      verify_locked_directory!(
-        output_handle,
-        output_root,
-        output_identity,
-        "DEMO_LAB_OUTPUT_DIR"
-      )
+      publication_succeeded = false
+      begin
+        result = prepare_lab002_private_inputs!(
+          output_root: output_root,
+          source_commit: source_commit,
+          marketing_version: marketing_version,
+          build_number: build_number,
+          app_identifier: app_identifier,
+          share_identifier: share_identifier,
+          app_group_identifier: app_group_identifier,
+          team_identifier: team_identifier,
+          xcode_toolchain: xcode_toolchain
+        ) do
+          publication_succeeded = true
+        end
+        verify_locked_directory!(
+          output_handle,
+          output_root,
+          output_identity,
+          "DEMO_LAB_OUTPUT_DIR"
+        )
+      rescue StandardError => original_error
+        if publication_succeeded
+          begin
+            cleanup_lab002_published_prebuild!(output_handle, final_name)
+          rescue StandardError => cleanup_error
+            UI.user_error!(
+              "LAB-002 preparation failed and rollback is indeterminate: " \
+              "#{cleanup_error.message}; original failure: " \
+              "#{original_error.message}"
+            )
+          end
+        end
+        raise
+      end
     end
     UI.success(
       "Private LAB-002 inputs published: " \

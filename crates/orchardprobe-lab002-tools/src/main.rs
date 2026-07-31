@@ -3,9 +3,9 @@
 //! This binary is invoked by the hardened Fastlane flow. It has no device,
 //! upload, installation, decryption, or arbitrary-target operation.
 
-use std::fs::{self, File, OpenOptions};
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -31,6 +31,11 @@ const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
 const PREBUILD_NAME: &str = "lab-002-prebuild-v1.json";
 const CHECKPOINT_MARKETING_VERSION: &str = "1.0";
 const CHECKPOINT_BUILD_NUMBER: &str = "3";
+
+struct PrivateOutputRoot {
+    canonical_path: PathBuf,
+    directory: File,
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -230,7 +235,11 @@ fn prepare(output_root: &Path, request: PrepareRequest) -> Result<PrepareOutput,
 
     Ok(PrepareOutput {
         schema: "orchardprobe.lab002.prebuild-result.v1",
-        prebuild_directory: output_root.join(final_name).display().to_string(),
+        prebuild_directory: output_root
+            .canonical_path
+            .join(final_name)
+            .display()
+            .to_string(),
         authorized_target_manifest_sha256: manifest_sha256,
         build_binding_sha256: build_binding,
         target_identity_set_sha256: identity_set,
@@ -317,7 +326,7 @@ fn app_groups(value: &RequiredAppGroups) -> Result<AppGroups, String> {
     }
 }
 
-fn validate_private_output_root(path: &Path) -> Result<PathBuf, String> {
+fn validate_private_output_root(path: &Path) -> Result<PrivateOutputRoot, String> {
     if !path.is_absolute() {
         return Err("prebuild output root must be absolute".into());
     }
@@ -343,11 +352,35 @@ fn validate_private_output_root(path: &Path) -> Result<PathBuf, String> {
     if canonical.starts_with(&repository) {
         return Err("prebuild output root must be outside the repository".into());
     }
-    Ok(canonical)
+    let directory = rustix::fs::open(
+        &canonical,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| format!("could not hold prebuild output root safely: {error}"))?;
+    let opened = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect held prebuild output root: {error}"))?;
+    if !opened.is_dir()
+        || opened.dev() != metadata.dev()
+        || opened.ino() != metadata.ino()
+        || opened.uid() != rustix::process::geteuid().as_raw()
+        || opened.mode() & 0o777 != 0o700
+    {
+        return Err("prebuild output root changed before it could be held".into());
+    }
+    Ok(PrivateOutputRoot {
+        canonical_path: canonical,
+        directory,
+    })
 }
 
 fn publish_prebuild_directory(
-    output_root: &Path,
+    output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
 ) -> Result<(), String> {
@@ -355,72 +388,120 @@ fn publish_prebuild_directory(
 }
 
 fn publish_prebuild_directory_with(
-    output_root: &Path,
+    output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(), String> {
+    verify_private_output_root_path(output_root)?;
     let mut random = [0_u8; 16];
     OsRng.fill_bytes(&mut random);
     let staging_name = format!(".lab002-prebuild-{}", lower_hex(&random));
-    let staging = output_root.join(&staging_name);
-    fs::DirBuilder::new()
-        .mode(0o700)
-        .create(&staging)
-        .map_err(|error| format!("could not create private prebuild staging directory: {error}"))?;
-    let staging_metadata = fs::symlink_metadata(&staging);
-    if !matches!(
-        staging_metadata,
-        Ok(ref metadata)
-            if metadata.is_dir()
-                && !metadata.file_type().is_symlink()
-                && metadata.uid() == rustix::process::geteuid().as_raw()
-                && metadata.mode() & 0o777 == 0o700
+    let parent = &output_root.directory;
+    rustix::fs::mkdirat(
+        parent,
+        staging_name.as_str(),
+        rustix::fs::Mode::from_raw_mode(0o700),
+    )
+    .map_err(|error| format!("could not create private prebuild staging directory: {error}"))?;
+    let staging = match rustix::fs::openat(
+        parent,
+        staging_name.as_str(),
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
     ) {
-        let _ = fs::remove_dir(&staging);
-        return Err("private prebuild staging directory has unsafe permissions".into());
-    }
-    let parent = match File::open(output_root) {
-        Ok(parent) => parent,
+        Ok(directory) => File::from(directory),
         Err(error) => {
-            let cleanup = cleanup_staging_directory(&staging, files);
-            let cleanup_detail = cleanup
-                .map(|()| "removal attempted, but durability is unproven".to_string())
-                .unwrap_or_else(|cleanup_error| cleanup_error.to_string());
+            let cleanup = cleanup_unpublished_staging_entry(
+                parent,
+                staging_name.as_str(),
+                None,
+                &mut sync_parent,
+            );
+            if let Err(cleanup_error) = cleanup {
+                return Err(format!(
+                    "prebuild staging cleanup is indeterminate after its descriptor could not be \
+                     opened: {cleanup_error}; original failure: {error}"
+                ));
+            }
             return Err(format!(
-                "prebuild staging cleanup is indeterminate because the output root could not be \
-                 opened for fsync: {error}; cleanup attempt: {cleanup_detail}"
+                "could not hold private prebuild staging directory safely: {error}"
             ));
         }
     };
+    let staging_metadata = match staging.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            let cleanup = cleanup_unpublished_staging_entry(
+                parent,
+                staging_name.as_str(),
+                Some(&staging),
+                &mut sync_parent,
+            );
+            if let Err(cleanup_error) = cleanup {
+                return Err(format!(
+                    "prebuild staging cleanup is indeterminate after its metadata could not be \
+                     inspected: {cleanup_error}; original failure: {error}"
+                ));
+            }
+            return Err(format!(
+                "could not inspect held private prebuild staging directory: {error}"
+            ));
+        }
+    };
+    if !staging_metadata.is_dir()
+        || staging_metadata.uid() != rustix::process::geteuid().as_raw()
+        || staging_metadata.mode() & 0o777 != 0o700
+    {
+        let cleanup = cleanup_unpublished_staging_entry(
+            parent,
+            staging_name.as_str(),
+            Some(&staging),
+            &mut sync_parent,
+        );
+        if let Err(cleanup_error) = cleanup {
+            return Err(format!(
+                "prebuild staging cleanup is indeterminate after unsafe metadata was observed: \
+                 {cleanup_error}"
+            ));
+        }
+        return Err("private prebuild staging directory has unsafe permissions".into());
+    }
+    let staging_identity = (staging_metadata.dev(), staging_metadata.ino());
 
     let mut publication_renamed_back = false;
+    let mut publication_may_be_live = false;
     let result = (|| {
         for (name, bytes) in files {
-            write_private_file(&staging.join(name), bytes)?;
+            write_private_file(&staging, name, bytes)?;
         }
-        File::open(&staging)
-            .and_then(|directory| directory.sync_all())
+        staging
+            .sync_all()
             .map_err(|error| format!("could not fsync prebuild staging directory: {error}"))?;
 
+        publication_may_be_live = true;
         rustix::fs::renameat_with(
-            &parent,
+            parent,
             staging_name.as_str(),
-            &parent,
+            parent,
             final_name,
             rustix::fs::RenameFlags::NOREPLACE,
         )
         .map_err(|error| format!("could not publish prebuild directory exclusively: {error}"))?;
-        if let Err(sync_error) = sync_parent(&parent) {
+        if let Err(sync_error) = sync_parent(parent) {
             let rollback = rustix::fs::renameat_with(
-                &parent,
+                parent,
                 final_name,
-                &parent,
+                parent,
                 staging_name.as_str(),
                 rustix::fs::RenameFlags::NOREPLACE,
             );
             if rollback.is_ok() {
                 publication_renamed_back = true;
+                publication_may_be_live = false;
                 return Err(format!(
                     "could not fsync prebuild output root after publication: {sync_error}"
                 ));
@@ -431,13 +512,20 @@ fn publish_prebuild_directory_with(
                  {sync_error}"
             ));
         }
+        verify_private_output_root_path(output_root)?;
         Ok(())
     })();
 
-    if result.is_err() && staging.is_dir() {
-        if let Err(cleanup_error) =
-            cleanup_staging_directory_durably(&staging, files, &parent, &mut sync_parent)
-        {
+    if result.is_err() {
+        if let Err(cleanup_error) = cleanup_staging_directory_durably(
+            &staging,
+            staging_identity,
+            files,
+            parent,
+            &staging_name,
+            publication_may_be_live.then_some(final_name),
+            &mut sync_parent,
+        ) {
             return Err(format!(
                 "prebuild staging cleanup is indeterminate after preparation failed: \
                  {cleanup_error}; original failure: {}",
@@ -454,13 +542,71 @@ fn publish_prebuild_directory_with(
     result
 }
 
-fn cleanup_staging_directory_durably(
-    staging: &Path,
-    files: &[(&str, &[u8])],
+fn verify_private_output_root_path(output_root: &PrivateOutputRoot) -> Result<(), String> {
+    let path_metadata = fs::symlink_metadata(&output_root.canonical_path)
+        .map_err(|error| format!("prebuild output root changed during publication: {error}"))?;
+    let held_metadata = output_root
+        .directory
+        .metadata()
+        .map_err(|error| format!("held prebuild output root became invalid: {error}"))?;
+    if !path_metadata.is_dir()
+        || path_metadata.file_type().is_symlink()
+        || (path_metadata.dev(), path_metadata.ino()) != (held_metadata.dev(), held_metadata.ino())
+        || path_metadata.uid() != rustix::process::geteuid().as_raw()
+        || held_metadata.uid() != rustix::process::geteuid().as_raw()
+        || path_metadata.mode() & 0o777 != 0o700
+        || held_metadata.mode() & 0o777 != 0o700
+    {
+        return Err("prebuild output root changed during publication".into());
+    }
+    Ok(())
+}
+
+fn cleanup_unpublished_staging_entry(
     parent: &File,
+    staging_name: &str,
+    staging: Option<&File>,
     sync_parent: &mut impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(), String> {
-    let cleanup_error = cleanup_staging_directory(staging, files).err();
+    let staging_sync_error = staging.and_then(|directory| directory.sync_all().err());
+    let removal_error =
+        rustix::fs::unlinkat(parent, staging_name, rustix::fs::AtFlags::REMOVEDIR).err();
+    let parent_sync_error = sync_parent(parent).err();
+    if staging_sync_error.is_none() && removal_error.is_none() && parent_sync_error.is_none() {
+        return Ok(());
+    }
+    Err(format!(
+        "staging fsync: {}; removal: {}; parent fsync: {}",
+        staging_sync_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "synced".into()),
+        removal_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "removed".into()),
+        parent_sync_error
+            .map(|error| error.to_string())
+            .unwrap_or_else(|| "synced".into())
+    ))
+}
+
+fn cleanup_staging_directory_durably(
+    staging: &File,
+    staging_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    parent: &File,
+    staging_name: &str,
+    live_name: Option<&str>,
+    sync_parent: &mut impl FnMut(&File) -> io::Result<()>,
+) -> Result<(), String> {
+    let cleanup_error = cleanup_staging_directory(
+        staging,
+        staging_identity,
+        files,
+        parent,
+        staging_name,
+        live_name,
+    )
+    .err();
     let sync_error = sync_parent(parent).err();
     if cleanup_error.is_none() && sync_error.is_none() {
         return Ok(());
@@ -477,18 +623,45 @@ fn cleanup_staging_directory_durably(
     ))
 }
 
-fn cleanup_staging_directory(staging: &Path, files: &[(&str, &[u8])]) -> io::Result<()> {
+fn cleanup_staging_directory(
+    staging: &File,
+    staging_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    parent: &File,
+    staging_name: &str,
+    live_name: Option<&str>,
+) -> io::Result<()> {
     let mut first_error = None;
     for (name, _) in files {
-        if let Err(error) = fs::remove_file(staging.join(name)) {
+        if let Err(error) = rustix::fs::unlinkat(staging, *name, rustix::fs::AtFlags::empty()) {
             if error.kind() != io::ErrorKind::NotFound && first_error.is_none() {
-                first_error = Some(error);
+                first_error = Some(io::Error::from(error));
             }
         }
     }
-    if let Err(error) = fs::remove_dir(staging) {
-        if error.kind() != io::ErrorKind::NotFound && first_error.is_none() {
+    if let Err(error) = staging.sync_all() {
+        if first_error.is_none() {
             first_error = Some(error);
+        }
+    }
+    for candidate in [Some(staging_name), live_name].into_iter().flatten() {
+        match open_directory_entry(parent, candidate) {
+            Ok(directory) => {
+                let metadata = directory.metadata()?;
+                if (metadata.dev(), metadata.ino()) != staging_identity {
+                    continue;
+                }
+                if let Err(error) =
+                    rustix::fs::unlinkat(parent, candidate, rustix::fs::AtFlags::REMOVEDIR)
+                {
+                    if error.kind() != io::ErrorKind::NotFound && first_error.is_none() {
+                        first_error = Some(io::Error::from(error));
+                    }
+                }
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) if first_error.is_none() => first_error = Some(error),
+            Err(_) => {}
         }
     }
     if let Some(error) = first_error {
@@ -498,13 +671,33 @@ fn cleanup_staging_directory(staging: &Path, files: &[(&str, &[u8])]) -> io::Res
     }
 }
 
-fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o400)
-        .open(path)
-        .map_err(|error| format!("could not create private artifact: {error}"))?;
+fn open_directory_entry(parent: &File, name: &str) -> io::Result<File> {
+    rustix::fs::openat(
+        parent,
+        name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(io::Error::from)
+}
+
+fn write_private_file(directory: &File, name: &str, bytes: &[u8]) -> Result<(), String> {
+    let descriptor = rustix::fs::openat(
+        directory,
+        name,
+        rustix::fs::OFlags::WRONLY
+            | rustix::fs::OFlags::CREATE
+            | rustix::fs::OFlags::EXCL
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::from_raw_mode(0o400),
+    )
+    .map_err(|error| format!("could not create private artifact: {error}"))?;
+    let mut file = File::from(descriptor);
     file.write_all(bytes)
         .and_then(|()| file.sync_all())
         .map_err(|error| format!("could not durably write private artifact: {error}"))?;
@@ -686,7 +879,8 @@ mod tests {
             std::os::unix::fs::PermissionsExt::from_mode(0o700),
         )
         .unwrap();
-        let root = root.path().canonicalize().unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
         let mut sync_calls = 0;
         let error = publish_prebuild_directory_with(
             &root,
@@ -705,13 +899,19 @@ mod tests {
 
         assert!(error.contains("publication was durably rolled back"));
         assert_eq!(sync_calls, 2);
-        assert!(fs::read_dir(&root).unwrap().next().is_none());
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
     }
 
     #[test]
     fn failed_prepublication_is_durably_cleaned() {
         let root = TempDir::new().unwrap();
-        let root = root.path().canonicalize().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
         let mut sync_calls = 0;
         let error = publish_prebuild_directory_with(
             &root,
@@ -726,13 +926,19 @@ mod tests {
 
         assert!(error.contains("could not create private artifact"));
         assert_eq!(sync_calls, 1);
-        assert!(fs::read_dir(&root).unwrap().next().is_none());
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
     }
 
     #[test]
     fn failed_prepublication_reports_indeterminate_cleanup_durability() {
         let root = TempDir::new().unwrap();
-        let root = root.path().canonicalize().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
         let mut sync_calls = 0;
         let error = publish_prebuild_directory_with(
             &root,
@@ -748,7 +954,7 @@ mod tests {
         assert!(error.contains("staging cleanup is indeterminate"));
         assert!(error.contains("injected cleanup fsync failure"));
         assert_eq!(sync_calls, 1);
-        assert!(fs::read_dir(&root).unwrap().next().is_none());
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
     }
 
     #[test]
@@ -757,17 +963,103 @@ mod tests {
         let staging = root.path().join("staging");
         fs::create_dir(&staging).unwrap();
         fs::write(staging.join("created-later.bin"), b"private").unwrap();
+        let parent = File::open(root.path()).unwrap();
+        let staging_handle = open_directory_entry(&parent, "staging").unwrap();
+        let metadata = staging_handle.metadata().unwrap();
 
         cleanup_staging_directory(
-            &staging,
+            &staging_handle,
+            (metadata.dev(), metadata.ino()),
             &[
-                ("never-created.bin", b""),
-                ("created-later.bin", b"private"),
+                ("never-created.bin", b"" as &[u8]),
+                ("created-later.bin", b"private" as &[u8]),
             ],
+            &parent,
+            "staging",
+            None,
         )
         .unwrap();
 
         assert!(!staging.exists());
+    }
+
+    #[test]
+    fn publication_detects_output_root_replacement_and_removes_private_files() {
+        let parent = TempDir::new().unwrap();
+        let root_path = parent.path().join("output");
+        fs::create_dir(&root_path).unwrap();
+        fs::set_permissions(
+            &root_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let canonical = root_path.canonicalize().unwrap();
+        let root = validate_private_output_root(&canonical).unwrap();
+        let moved_path = parent.path().join("moved-output");
+        let mut replaced = false;
+
+        let error = publish_prebuild_directory_with(
+            &root,
+            "lab002-prebuild-test",
+            &[("private.bin", b"private")],
+            |directory| {
+                directory.sync_all()?;
+                if !replaced {
+                    fs::rename(&root_path, &moved_path)?;
+                    fs::create_dir(&root_path)?;
+                    fs::set_permissions(
+                        &root_path,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o700),
+                    )?;
+                    replaced = true;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("output root changed during publication"));
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+        assert!(fs::read_dir(&moved_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_detects_relaxed_output_root_permissions_and_rolls_back() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let held_root = validate_private_output_root(&root_path).unwrap();
+        let mut relaxed = false;
+
+        let error = publish_prebuild_directory_with(
+            &held_root,
+            "lab002-prebuild-test",
+            &[("private.bin", b"private")],
+            |directory| {
+                directory.sync_all()?;
+                if !relaxed {
+                    fs::set_permissions(
+                        &root_path,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+                    )?;
+                    relaxed = true;
+                }
+                Ok(())
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("output root changed during publication"));
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+        fs::set_permissions(
+            &root_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
     }
 
     #[test]

@@ -14,7 +14,7 @@
 
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链构建仓库内部 `oprobe-lab002` Helper，只从已进入受评审 `origin/main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
+| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入受评审 `origin/main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
 | 3B | Archive/Oracle/证据闭合 | `blocked` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
@@ -49,6 +49,22 @@
 
 目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
 会拒绝尚未成为受评审 `origin/main` 祖先的干净本地 Commit，并在生成前再次核对
-同一 Source。文件排他创建并 `fsync`；完整 Staging 目录通过 No-replace Rename
-发布，随后 `fsync` Parent。相同 Source/Version/Build Tuple 再次使用会拒绝，
-不会覆盖私有输入。该 Lane 不执行签名、Archive/Export、上传、安装或设备操作。
+同一 Source。Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
+它按受评审 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
+归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
+Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让
+全新隔离的 `CARGO_HOME` 只使用该目录；随后再次 Hash 所持归档与完整依赖树。
+构建结束后只为经过检查的清理恢复该临时 Source 的目录权限。Cargo、Build
+Script 与 Procedural Macro 使用私有临时目录中的空隔离 `HOME`，并在 macOS
+Sandbox 内运行：禁止网络，除受评审仓库和固定 Rust Toolchain 外禁止读取操作员
+Home，且禁止写入私有临时 Workspace 之外的位置。如果认证归档缺失，须先运行
+`cargo fetch --locked`。
+
+Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。文件
+创建、目录同步、No-replace Rename、Rollback 与清理都以 Descriptor-relative
+方式执行并禁止跟随链接；返回输出路径前还会重新核对其与所持输出根身份一致。
+Fastlane 在 Helper 调用前后始终持有并锁定自己的输出根 Descriptor；如果后续
+Result 或输出根复核失败，它会相对该 Descriptor 删除本次发布的精确 Tuple。
+文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
+Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
+签名、Archive/Export、上传、安装或设备操作。
