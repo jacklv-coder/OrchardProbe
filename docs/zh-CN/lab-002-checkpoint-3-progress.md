@@ -35,7 +35,15 @@
 | 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
 | 3B.2.2 | Archive/IPA 一致性 | `完成` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
-| 3B.2.4 | 纯设备无关闭环测试 | `本地测试完成；等待最终 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
+| 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；等待最终 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、Plaintext、规范化、权限、替换与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
+
+3B.2 Helper 已从 Commit `75964c6345495cface2499362d842aced89e7c9b`
+的只读源码快照独立构建两次，产物字节完全一致；随后恢复强制白名单路径的第三次构建
+也通过。登记 Tuple 为：Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot
+SHA-256 `8eff0f5130c2ecca59c1d07b76bb43f1f361e539f5168c23d3b696bb80e35fa1`，
+Size `1832944`，SHA-256
+`b63b14c1993194f04038a34c1447ff6df6fe234c069ebb305c408dbb2839e988`，
+CDHash `ef67c53d63b0110f35fdf0da3fa733e0b9a6098b`。
 
 ## 固定安全边界
 
