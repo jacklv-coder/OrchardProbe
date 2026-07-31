@@ -5674,7 +5674,12 @@ platform :ios do
       external_temporary_base
     ) do |output_root|
       File.chmod(0o700, output_root)
-      source_commit = parser_commit
+      source_commit = git_command_output("rev-parse", "HEAD")
+      unless source_commit == parser_commit
+        UI.user_error!(
+          "DemoLab source HEAD changed during the regression check."
+        )
+      end
       unless /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/.match?(source_commit)
         UI.user_error!("DemoLab check source commit has an invalid format.")
       end
