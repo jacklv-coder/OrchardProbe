@@ -80,6 +80,9 @@ Script 与 Procedural Macro 使用私有临时目录中的空隔离 `HOME`，并
 Sandbox 内运行：禁止网络，除受评审源码快照和固定 Rust Toolchain 外禁止读取操作员
 Home，且禁止写入私有 Build Workspace 之外的位置。如果认证归档缺失，须先运行
 `cargo fetch --locked`。
+Build Binding 使用的 XcodeGen Path、Version、Device/Inode、Size、修改时间与
+SHA-256 会作为同一 Selection 保留；生成完成后、Pre-build Result 返回前还会再次
+选择并重新 Hash，要求与原 Selection 精确相等。
 
 Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。文件
 创建、目录同步、No-replace Rename、Rollback 与清理都以 Descriptor-relative
@@ -97,7 +100,12 @@ Helper：系统 `lsof` 必须返回预期可执行映像的 Device/Inode，Darwi
 Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper 报告成功前还会
 相对 Parent Descriptor 重新打开最终入口，要求其 Device/Inode 仍等于 Staging
 身份；Fastlane 解析 Helper Result 后也会从所持输出根 Descriptor 独立重开最终
-入口，并在成功前再次执行同一身份检查。如果目录已被替换，Rollback 会拒绝接触
+入口，并在成功前再次执行同一身份检查。Helper Result 还会把三个固定私有 Artifact
+名称分别绑定到发布后的 Device/Inode、Mode、Size 与 SHA-256。Fastlane 会验证这份
+封闭清单，要求 Manifest 文件 Digest 与 Result 中的 Manifest Digest 相等，再以
+Descriptor-relative 方式逐个重开、重新 Hash 并复核身份，最后再次重开最终目录。
+任一文件被原位修改或替换都会让最终检查失败，并触发已经启用、按身份限定的
+Rollback。如果目录已被替换，Rollback 会拒绝接触
 替代目录。如果已启用 Rollback 的身份同时从 Staging 与最终名称消失，Rollback
 会把私有状态报告为不确定，不会声称已经清理，也不会静默重试该 Tuple。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同

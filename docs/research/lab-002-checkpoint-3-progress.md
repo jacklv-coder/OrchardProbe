@@ -102,6 +102,10 @@ macOS sandbox that denies network access, denies reads of the operator home
 except the reviewed source snapshot and pinned Rust toolchain, and denies
 writes outside the private build workspace. Run `cargo fetch --locked` before
 the lane if an authenticated archive is absent.
+The XcodeGen path, version, device/inode, size, modification time, and SHA-256
+used in the Build Binding are retained as one selection and reselected,
+rehash-verified, and compared again after generation immediately before the
+pre-build result returns.
 
 The generator opens and retains directory descriptors for the output root and
 its unique staging directory. File creation, directory sync, no-replace rename,
@@ -126,7 +130,14 @@ continues to propagate after rollback. Before reporting success, the helper
 reopens the final descriptor-relative entry and requires it to retain the
 staging device/inode. After parsing the helper result, Fastlane independently
 reopens the final entry from its held output-root descriptor and repeats that
-identity check immediately before success. Rollback refuses to touch a
+identity check immediately before success. The helper result also binds each
+of the three fixed private artifact names to its device/inode, mode, size, and
+SHA-256 after publication. Fastlane validates that closed inventory, requires
+the manifest file digest to match the reported manifest digest, and
+descriptor-relatively reopens, rehashes, and identity-checks every artifact
+before reopening the final directory one last time. Any file mutation or
+replacement fails the final check and invokes the already-armed,
+identity-scoped rollback. Rollback refuses to touch a
 substituted directory. If the armed identity disappears from both its staging
 and final names, rollback reports the private state as indeterminate instead
 of claiming cleanup; the lane will not silently retry that tuple.

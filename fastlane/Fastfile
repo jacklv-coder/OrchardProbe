@@ -67,12 +67,12 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
   # Filled only with reproducible products independently reviewed for the
   # exact source snapshot and Rust toolchain tuple.
   "1.85.0-aarch64-apple-darwin" => {
-    "9e2752f7e64536a225fa2740692956c109a0b9364d4076521bf1ae7f03a17d68" => [
+    "9a8f63f8888ce051c71a19a6c9942c36cc3533c068209e403e3db3562886548c" => [
       {
-        "size" => 945_872,
+        "size" => 965_168,
         "sha256" =>
-          "8f5029c79b10a8f86d57838488b4dcdc7693fb987a3494f08807b59b102a95c8",
-        "cdhash" => "2e1cf35be8ef9eb8853967555102b1878a5e0c88",
+          "735b4c81961f18ac640ff28fe42d2c1ce400c89526be15fa130eed84808e308f",
+        "cdhash" => "c9bfef8556c657bf33587bd773ecbe74676f9546",
       }.freeze,
     ].freeze,
   }.freeze,
@@ -1981,7 +1981,7 @@ def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
     UI.user_error!("Selected Xcode version metadata is invalid for LAB-002.")
   end
   xcodegen_path, xcodegen_version, xcodegen_identity = selected_xcodegen
-  {
+  record = {
     "xcode_version" => xcode_version,
     "xcode_build" => xcode_build,
     "iphoneos_sdk_version" =>
@@ -1993,18 +1993,14 @@ def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
     "xcodegen_executable_sha256" => xcodegen_identity.fetch(4),
     "fastlane_version" => Fastlane::VERSION,
     "gemfile_lock_sha256" => gemfile_lock_sha256,
-  }.tap do
-    current = File.stat(xcodegen_path)
-    unless [
-      current.dev,
-      current.ino,
-      current.size,
-      current.mtime.to_i,
-      Digest::SHA256.file(xcodegen_path).hexdigest,
-    ] == xcodegen_identity
-      UI.user_error!("The selected XcodeGen changed during LAB-002 preparation.")
-    end
-  end
+  }
+  xcodegen_selection = [
+    xcodegen_path,
+    xcodegen_version,
+    xcodegen_identity,
+  ]
+  verify_selected_xcodegen!(*xcodegen_selection)
+  [record, xcodegen_selection]
 end
 
 def lab002_entitlement(presence, value = nil)
@@ -2080,7 +2076,7 @@ def prepare_lab002_private_inputs!(
   begin
     binary, tool_workspace, tool_identity, gemfile_lock_sha256 =
       build_lab002_private_tool(source_commit)
-    toolchain = lab002_toolchain_record(
+    toolchain, xcodegen_selection = lab002_toolchain_record(
       xcode_toolchain,
       gemfile_lock_sha256: gemfile_lock_sha256
     )
@@ -2169,6 +2165,7 @@ def prepare_lab002_private_inputs!(
         authorized_target_manifest_sha256
         build_binding_sha256
         target_identity_set_sha256
+        private_artifacts
       ],
       "LAB-002 prebuild result"
     )
@@ -2194,11 +2191,51 @@ def prepare_lab002_private_inputs!(
              target_identity_set_sha256
            ].all? { |name|
              /\A[0-9a-f]{64}\z/.match?(result[name].to_s)
-           }
+           } &&
+           result["private_artifacts"].is_a?(Array) &&
+           result["private_artifacts"].length ==
+             DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.length
       UI.user_error!("LAB-002 private input result is invalid.")
     end
+    private_artifacts =
+      result["private_artifacts"].each_with_index.map do |artifact, index|
+        require_exact_hash_keys!(
+          artifact,
+          %w[name device inode mode size sha256],
+          "LAB-002 private artifact identity"
+        )
+        expected_name =
+          DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.fetch(index)
+        unless artifact["name"] == expected_name &&
+               /\A(?:0|[1-9][0-9]*)\z/.match?(artifact["device"].to_s) &&
+               /\A(?:0|[1-9][0-9]*)\z/.match?(artifact["inode"].to_s) &&
+               artifact["mode"] == 0o400 &&
+               artifact["size"].is_a?(Integer) &&
+               artifact["size"].positive? &&
+               artifact["size"] <= 1024 * 1024 &&
+               /\A[0-9a-f]{64}\z/.match?(artifact["sha256"].to_s)
+          UI.user_error!("LAB-002 private artifact identity is invalid.")
+        end
+        {
+          "name" => expected_name,
+          "device" => Integer(artifact["device"], 10),
+          "inode" => Integer(artifact["inode"], 10),
+          "mode" => artifact["mode"],
+          "size" => artifact["size"],
+          "sha256" => artifact["sha256"],
+        }
+      end
+    manifest_identity = private_artifacts.fetch(1)
+    unless manifest_identity.fetch("sha256") ==
+           result.fetch("authorized_target_manifest_sha256")
+      UI.user_error!(
+        "LAB-002 authorized-target manifest result digest changed."
+      )
+    end
+    publication_state["artifacts"] = private_artifacts
     verify_selected_xcode_toolchain!(xcode_toolchain)
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcodegen!(*xcodegen_selection)
     result
   ensure
     acknowledgement_reader&.close unless acknowledgement_reader&.closed?
@@ -2309,11 +2346,103 @@ ensure
   directory&.close unless directory&.closed?
 end
 
+def lab002_published_artifact_identity!(directory, name)
+  unless DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.include?(name)
+    UI.user_error!("LAB-002 published artifact name is invalid.")
+  end
+  flags = File::RDONLY | File::NONBLOCK
+  flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  descriptor = DemoLabDarwin.openat(directory.fileno, name, flags, 0)
+  if descriptor.negative?
+    raise SystemCallError.new("openat", Fiddle.last_error)
+  end
+  file = File.for_fd(descriptor, "r")
+  file.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
+  before = file.stat
+  digest = digest_open_file(file)
+  after = file.stat
+  second_descriptor = DemoLabDarwin.openat(
+    directory.fileno,
+    name,
+    flags,
+    0
+  )
+  if second_descriptor.negative?
+    raise SystemCallError.new("openat", Fiddle.last_error)
+  end
+  second = File.for_fd(second_descriptor, "r")
+  second.fcntl(Fcntl::F_SETFD, Fcntl::FD_CLOEXEC)
+  reopened_before = second.stat
+  reopened_digest = digest_open_file(second)
+  reopened_after = second.stat
+  unless before.file? &&
+         before.uid == Process.uid &&
+         (before.mode & 0o777) == 0o400 &&
+         before.size.positive? &&
+         before.size <= 1024 * 1024 &&
+         [
+           after.dev,
+           after.ino,
+           after.mode & 0o777,
+           after.size,
+           after.mtime.to_f,
+         ] == [
+           before.dev,
+           before.ino,
+           before.mode & 0o777,
+           before.size,
+           before.mtime.to_f,
+         ] &&
+         reopened_digest == digest &&
+         [
+           reopened_before.dev,
+           reopened_before.ino,
+           reopened_before.mode & 0o777,
+           reopened_before.size,
+           reopened_before.mtime.to_f,
+         ] == [
+           before.dev,
+           before.ino,
+           before.mode & 0o777,
+           before.size,
+           before.mtime.to_f,
+         ] &&
+         [
+           reopened_after.dev,
+           reopened_after.ino,
+           reopened_after.mode & 0o777,
+           reopened_after.size,
+           reopened_after.mtime.to_f,
+         ] == [
+           reopened_before.dev,
+           reopened_before.ino,
+           reopened_before.mode & 0o777,
+           reopened_before.size,
+           reopened_before.mtime.to_f,
+         ]
+    UI.user_error!("LAB-002 published private artifact changed identity.")
+  end
+  {
+    "name" => name,
+    "device" => before.dev,
+    "inode" => before.ino,
+    "mode" => before.mode & 0o777,
+    "size" => before.size,
+    "sha256" => reopened_digest,
+  }
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to bind a LAB-002 published private artifact.")
+ensure
+  file&.close unless file&.closed?
+  second&.close unless second&.closed?
+end
+
 def verify_lab002_published_prebuild!(
   output_handle,
   final_name,
   publication_state
 )
+  final_directory = nil
   directory = lab002_open_directory_at(
     output_handle,
     final_name,
@@ -2325,8 +2454,33 @@ def verify_lab002_published_prebuild!(
       "LAB-002 published directory changed identity before success."
     )
   end
+  expected_artifacts = publication_state.fetch("artifacts")
+  observed_artifacts =
+    DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.map do |name|
+      lab002_published_artifact_identity!(directory, name)
+    end
+  unless observed_artifacts == expected_artifacts
+    UI.user_error!(
+      "LAB-002 published private artifacts changed before success."
+    )
+  end
+  final_directory = lab002_open_directory_at(
+    output_handle,
+    final_name,
+    required_mode: 0o700
+  )
+  final_identity = [
+    final_directory.stat.dev,
+    final_directory.stat.ino,
+  ]
+  unless final_identity == publication_state.fetch("identity")
+    UI.user_error!(
+      "LAB-002 published directory changed during artifact verification."
+    )
+  end
 ensure
   directory&.close unless directory&.closed?
+  final_directory&.close unless final_directory&.closed?
 end
 
 def with_lab002_publication_rollback!(output_handle, final_name)
@@ -2438,6 +2592,16 @@ def selected_xcodegen
   ]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   UI.user_error!("Unable to resolve the selected XcodeGen safely.")
+end
+
+def verify_selected_xcodegen!(path, version, identity)
+  observed_path, observed_version, observed_identity = selected_xcodegen
+  unless observed_path == path &&
+         observed_version == version &&
+         observed_identity == identity
+    UI.user_error!("The selected XcodeGen changed during LAB-002 preparation.")
+  end
+  true
 end
 
 def verify_locked_xcodegen_snapshot!(
@@ -5316,6 +5480,70 @@ platform :ios do
       if File.exist?(staging)
         UI.user_error!(
           "LAB-002 rollback left an armed private staging directory behind."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-artifact-revalidation-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      final_name = "lab002-prebuild-artifact-check"
+      published = File.join(rollback_root, final_name)
+      Dir.mkdir(published, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each_with_index do |name, index|
+        path = File.join(published, name)
+        File.write(path, "private-#{index}")
+        File.chmod(0o400, path)
+      end
+      published_stat = File.stat(published)
+      expected_artifacts =
+        DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.map do |name|
+          path = File.join(published, name)
+          stat = File.stat(path)
+          {
+            "name" => name,
+            "device" => stat.dev,
+            "inode" => stat.ino,
+            "mode" => stat.mode & 0o777,
+            "size" => stat.size,
+            "sha256" => Digest::SHA256.file(path).hexdigest,
+          }
+        end
+      changed_path = File.join(
+        published,
+        DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.first
+      )
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      artifact_change_rejected = false
+      begin
+        with_lab002_publication_rollback!(
+          output_handle,
+          final_name
+        ) do |arm_rollback|
+          arm_rollback.call(
+            "staging_name" => ".lab002-prebuild-#{"f" * 32}",
+            "identity" => [published_stat.dev, published_stat.ino],
+            "artifacts" => expected_artifacts
+          )
+          File.chmod(0o600, changed_path)
+          File.write(changed_path, "substituted-private-seed")
+          File.chmod(0o400, changed_path)
+          { "result" => "must not be returned" }
+        end
+      rescue FastlaneCore::Interface::FastlaneError => error
+        artifact_change_rejected =
+          error.message.include?("private artifacts changed")
+      ensure
+        output_handle.close
+      end
+      unless artifact_change_rejected && !File.exist?(published)
+        UI.user_error!(
+          "LAB-002 final publication accepted changed private artifacts."
         )
       end
     end

@@ -90,6 +90,17 @@ struct PrepareOutput {
     authorized_target_manifest_sha256: String,
     build_binding_sha256: String,
     target_identity_set_sha256: String,
+    private_artifacts: Vec<PrivateArtifactIdentity>,
+}
+
+#[derive(Debug, Serialize)]
+struct PrivateArtifactIdentity {
+    name: String,
+    device: String,
+    inode: String,
+    mode: u32,
+    size: u64,
+    sha256: String,
 }
 
 fn main() -> ExitCode {
@@ -299,6 +310,16 @@ fn prepare_with_publication_arm(
         ],
         &mut arm_publication,
     )?;
+    let private_artifacts = inspect_published_artifacts(
+        &output_root.directory,
+        &final_name,
+        &[
+            (PRIVATE_SEED_NAME, signing_key.as_bytes().as_slice()),
+            (MANIFEST_NAME, &manifest_bytes),
+            (PREBUILD_NAME, &record_bytes),
+        ],
+        published_identity,
+    )?;
 
     Ok(PrepareOutput {
         schema: "orchardprobe.lab002.prebuild-result.v1",
@@ -312,6 +333,7 @@ fn prepare_with_publication_arm(
         authorized_target_manifest_sha256: manifest_sha256,
         build_binding_sha256: build_binding,
         target_identity_set_sha256: identity_set,
+        private_artifacts,
     })
 }
 
@@ -673,6 +695,68 @@ fn verify_published_directory_identity(
     Ok(())
 }
 
+fn inspect_published_artifacts(
+    parent: &File,
+    final_name: &str,
+    expected_files: &[(&str, &[u8])],
+    expected_directory_identity: (u64, u64),
+) -> Result<Vec<PrivateArtifactIdentity>, String> {
+    let published = open_directory_entry(parent, final_name)
+        .map_err(|error| format!("could not reopen published prebuild directory: {error}"))?;
+    let directory_metadata = published
+        .metadata()
+        .map_err(|error| format!("could not inspect published prebuild directory: {error}"))?;
+    if (directory_metadata.dev(), directory_metadata.ino()) != expected_directory_identity
+        || directory_metadata.uid() != rustix::process::geteuid().as_raw()
+        || directory_metadata.mode() & 0o777 != 0o700
+    {
+        return Err("published prebuild directory changed before artifact binding".into());
+    }
+
+    expected_files
+        .iter()
+        .map(|(name, expected_bytes)| {
+            let descriptor = rustix::fs::openat(
+                &published,
+                *name,
+                rustix::fs::OFlags::RDONLY
+                    | rustix::fs::OFlags::NOFOLLOW
+                    | rustix::fs::OFlags::CLOEXEC,
+                rustix::fs::Mode::empty(),
+            )
+            .map_err(|error| format!("could not bind published private artifact: {error}"))?;
+            let mut file = File::from(descriptor);
+            let before = file.metadata().map_err(|error| {
+                format!("could not inspect published private artifact: {error}")
+            })?;
+            let mut bytes = Vec::with_capacity(expected_bytes.len());
+            file.read_to_end(&mut bytes)
+                .map_err(|error| format!("could not read published private artifact: {error}"))?;
+            let after = file.metadata().map_err(|error| {
+                format!("could not recheck published private artifact: {error}")
+            })?;
+            if !before.is_file()
+                || before.uid() != rustix::process::geteuid().as_raw()
+                || before.mode() & 0o777 != 0o400
+                || before.len() != expected_bytes.len() as u64
+                || bytes != *expected_bytes
+                || (after.dev(), after.ino(), after.len(), after.mtime())
+                    != (before.dev(), before.ino(), before.len(), before.mtime())
+            {
+                return Err("published private artifact changed before binding".into());
+            }
+            Ok(PrivateArtifactIdentity {
+                name: (*name).into(),
+                device: before.dev().to_string(),
+                inode: before.ino().to_string(),
+                mode: before.mode() & 0o777,
+                size: before.len(),
+                sha256: sha256_hex(&bytes),
+            })
+        })
+        .collect()
+}
+
 fn verify_private_output_root_path(output_root: &PrivateOutputRoot) -> Result<(), String> {
     let path_metadata = fs::symlink_metadata(&output_root.canonical_path)
         .map_err(|error| format!("prebuild output root changed during publication: {error}"))?;
@@ -981,6 +1065,22 @@ mod tests {
             assert!(metadata.is_file());
             assert!(!metadata.file_type().is_symlink());
             assert_eq!(metadata.mode() & 0o777, 0o400);
+        }
+        assert_eq!(output.private_artifacts.len(), 3);
+        for (artifact, name) in
+            output
+                .private_artifacts
+                .iter()
+                .zip([PRIVATE_SEED_NAME, MANIFEST_NAME, PREBUILD_NAME])
+        {
+            let path = directory.join(name);
+            let metadata = fs::metadata(&path).unwrap();
+            assert_eq!(artifact.name, name);
+            assert_eq!(artifact.device, metadata.dev().to_string());
+            assert_eq!(artifact.inode, metadata.ino().to_string());
+            assert_eq!(artifact.mode, 0o400);
+            assert_eq!(artifact.size, metadata.len());
+            assert_eq!(artifact.sha256, sha256_hex(&fs::read(path).unwrap()));
         }
         assert_eq!(
             fs::read(directory.join(PRIVATE_SEED_NAME)).unwrap().len(),
