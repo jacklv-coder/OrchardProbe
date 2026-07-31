@@ -189,7 +189,10 @@ The LAB-002 artifact schema freezes `source_commit` as exactly 40 lowercase
 hex characters. `demolab_archive` therefore rejects a checkout using a
 different Git object-ID width before staging or archiving, even though shared
 source-staging helpers remain capable of handling wider identifiers for other
-workflows.
+workflows. On a SHA-256 Git repository, `demolab_check` keeps running its
+general fixture checks but skips only the checkpoint-specific private-input
+round trip because that LAB-002 v1 wire value cannot represent a 64-hex
+commit.
 
 The `.p8` file must not be a symlink and must have owner-only permissions:
 

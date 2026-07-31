@@ -148,6 +148,10 @@ Directory Descriptor 读取，并重新推导/校验 Manifest、非弱 Authoriza
 Identity Nonce、Build Binding、三个 Target Binding、Target-identity Set 与固定
 Toolchain 后才注入构建。Shell 不再提供这些私有 Binding 值。
 
+LAB-002 v1 的 `source_commit` 固定为 40 位小写 Hex。SHA-256 Git 仓库中的
+`demolab_check` 仍会执行全部通用 Fixture 检查，但会跳过唯一无法表示 64 位 Commit
+的检查点私有输入往返；签名 `demolab_archive` 则会在构建前拒绝该对象格式。
+
 项目固定使用 Fastlane 2.237.0 和 Bundler 4.0.16。不要依赖 macOS 自带的旧 Ruby：
 
 ```sh

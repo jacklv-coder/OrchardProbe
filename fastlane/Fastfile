@@ -5673,6 +5673,14 @@ platform :ios do
     ) do |output_root|
       File.chmod(0o700, output_root)
       source_commit = git_command_output("rev-parse", "HEAD")
+      unless /\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/.match?(source_commit)
+        UI.user_error!("DemoLab check source commit has an invalid format.")
+      end
+      # LAB-002 v1 freezes a 40-hex source_commit. Preserve the general
+      # DemoLab check on SHA-256 repositories while skipping only this
+      # checkpoint-specific round trip.
+      next if source_commit.length == 64
+
       output_identity = private_directory_identity!(
         output_root,
         "LAB-002 consumption-check output root"
