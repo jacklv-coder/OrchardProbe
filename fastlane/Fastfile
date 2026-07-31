@@ -161,6 +161,8 @@ DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
 DEMO_LAB_LAB002_CDHASH_BYTES = 20
 DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
+DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER =
+  "error: LAB-002 oracle publication is indeterminate; retained private state"
 DEMO_LAB_REVIEWED_GITHUB_SSH_URL =
   "ssh://git@ssh.github.com:443/jacklv-coder/OrchardProbe.git"
 DEMO_LAB_REVIEWED_GITHUB_MAIN_REF = "refs/heads/main"
@@ -2564,7 +2566,8 @@ def create_lab002_private_oracle!(
   share_identifier:,
   app_group_identifier:,
   team_identifier:,
-  xcode_toolchain:
+  xcode_toolchain:,
+  on_retention_change: ->(_retain) {}
 )
   verify_held_lab002_directory!(
     prebuild_directory,
@@ -2612,6 +2615,9 @@ def create_lab002_private_oracle!(
     result_json = nil
     helper_stderr = ""
     status = nil
+    # Arm conservatively before Open3 can fork. From this point onward even a
+    # spawn-time exception or interrupt must retain the private staging tree.
+    on_retention_change.call(true)
     Open3.popen3(
       sanitized_dynamic_loader_environment,
       binary,
@@ -2649,6 +2655,12 @@ def create_lab002_private_oracle!(
       UI.user_error!("LAB-002 oracle helper output exceeded its fixed limit.")
     end
     unless status.success?
+      if lab002_oracle_publication_indeterminate?(helper_stderr)
+        UI.important(
+          "Retained private DemoLab staging for reconciliation: " \
+          "#{run_directory}"
+        )
+      end
       UI.user_error!(
         "LAB-002 private oracle generation failed: " \
         "#{helper_stderr.to_s.strip}"
@@ -2745,6 +2757,77 @@ def create_lab002_private_oracle!(
   ensure
     FileUtils.rm_rf(tool_workspace) if tool_workspace
   end
+end
+
+def lab002_oracle_publication_indeterminate?(stderr)
+  stderr.to_s.start_with?(DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER)
+end
+
+def cleanup_unpublished_demolab_staging!(
+  staging_directory,
+  published:,
+  retain_staging:
+)
+  return unless staging_directory && !published && !retain_staging
+
+  FileUtils.rm_rf(staging_directory)
+end
+
+def retained_demolab_staging_names!(directory)
+  reader, writer = IO.pipe
+  pid = nil
+  waited = false
+  pid = fork do
+    reader.close
+    exit! 126 if DemoLabDarwin.fchdir(directory.fileno).nonzero?
+
+    retained = []
+    Dir.foreach(".") do |name|
+      next unless name.start_with?(".demolab-staging-")
+
+      unless /\A\.demolab-staging-[A-Za-z0-9._-]+\z/.match?(name)
+        exit! 125
+      end
+      retained << name
+      exit! 125 if retained.length > 64
+    end
+    payload = JSON.generate(retained.sort)
+    exit! 125 if payload.bytesize > 8 * 1024
+
+    writer.write(payload)
+    writer.close
+    exit! 0
+  rescue StandardError
+    exit! 126
+  end
+  writer.close
+  response = reader.read(8 * 1024 + 1)
+  _, status = Process.wait2(pid)
+  waited = true
+  unless status.success? && response.bytesize <= 8 * 1024
+    UI.user_error!("Unable to inspect retained DemoLab staging safely.")
+  end
+  retained = JSON.parse(response)
+  unless retained.is_a?(Array) &&
+         retained.length <= 64 &&
+         retained.all? { |name|
+           name.is_a?(String) &&
+             /\A\.demolab-staging-[A-Za-z0-9._-]+\z/.match?(name)
+         } &&
+         retained == retained.sort &&
+         retained.uniq == retained
+    UI.user_error!("Retained DemoLab staging inventory is invalid.")
+  end
+  retained
+rescue JSON::ParserError
+  UI.user_error!("Retained DemoLab staging inventory is invalid.")
+ensure
+  if pid && !waited
+    Process.kill("TERM", pid) rescue nil
+    Process.wait(pid) rescue nil
+  end
+  reader&.close unless reader&.closed?
+  writer&.close unless writer&.closed?
 end
 
 def cleanup_lab002_published_prebuild!(
@@ -5982,6 +6065,52 @@ platform :ios do
         UI.user_error!("An ambiguous GitHub main reference was accepted.")
       end
     end
+    unless lab002_oracle_publication_indeterminate?(
+      "#{DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER} must be reconciled"
+    ) &&
+           !lab002_oracle_publication_indeterminate?(
+             "prefix #{DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER}"
+           ) &&
+           !lab002_oracle_publication_indeterminate?(
+             DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER.delete_prefix("error: ")
+           )
+      UI.user_error!("LAB-002 indeterminate oracle marker parsing is invalid.")
+    end
+    Dir.mktmpdir(
+      "orchardprobe-lab002-oracle-retention-check-",
+      external_temporary_base
+    ) do |retention_root|
+      retained_staging = File.join(retention_root, "staging")
+      Dir.mkdir(retained_staging, 0o700)
+      retained_file = File.join(retained_staging, "retained-private-state")
+      File.write(retained_file, "private")
+      cleanup_unpublished_demolab_staging!(
+        retained_staging,
+        published: false,
+        retain_staging: true
+      )
+      unless File.read(retained_file) == "private"
+        UI.user_error!("Indeterminate LAB-002 staging was not retained.")
+      end
+      cleanup_unpublished_demolab_staging!(
+        retained_staging,
+        published: false,
+        retain_staging: false
+      )
+      if File.exist?(retained_staging) || File.symlink?(retained_staging)
+        UI.user_error!("Ordinary unpublished DemoLab staging was not cleaned.")
+      end
+      retained_directory = File.open(retention_root, File::RDONLY)
+      unless retained_demolab_staging_names!(retained_directory).empty?
+        UI.user_error!("Empty retained staging inventory was not recognized.")
+      end
+      retained_name = ".demolab-staging-retained-test"
+      Dir.mkdir(File.join(retention_root, retained_name), 0o700)
+      unless retained_demolab_staging_names!(retained_directory) == [retained_name]
+        UI.user_error!("Retained DemoLab staging was not detected.")
+      end
+      retained_directory.close
+    end
     trusted_toolchain_name, trusted_sources =
       DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS.first
     trusted_source_sha256, trusted_products = trusted_sources.first
@@ -8700,6 +8829,7 @@ platform :ios do
     staging_directory = nil
     gym_scratch_root = nil
     published = false
+    retain_staging = false
     begin
       with_locked_private_directory(
         output_root,
@@ -8712,6 +8842,14 @@ platform :ios do
           output_identity,
           "DEMO_LAB_OUTPUT_DIR"
         )
+        retained_staging_names =
+          retained_demolab_staging_names!(output_handle)
+        unless retained_staging_names.empty?
+          UI.user_error!(
+            "Reconcile retained DemoLab staging before retry: " \
+            "#{retained_staging_names.join(', ')}"
+          )
+        end
         prebuild_inputs = nil
         with_locked_private_directory(
           prebuild_directory,
@@ -8868,7 +9006,8 @@ platform :ios do
                 share_identifier: share_identifier,
                 app_group_identifier: app_group_identifier,
                 team_identifier: team_identifier,
-                xcode_toolchain: xcode_toolchain
+                xcode_toolchain: xcode_toolchain,
+                on_retention_change: ->(retain) { retain_staging = retain }
               )
             end
             evidence_path = write_pre_upload_evidence(
@@ -8904,6 +9043,7 @@ platform :ios do
             "DemoLab run directory"
           )
           published = true
+          retain_staging = false
           staging_directory = nil
 
           published_ipa = File.join(
@@ -8925,7 +9065,11 @@ platform :ios do
       end
     ensure
       FileUtils.rm_rf(gym_scratch_root) if gym_scratch_root && !published
-      FileUtils.rm_rf(staging_directory) if staging_directory && !published
+      cleanup_unpublished_demolab_staging!(
+        staging_directory,
+        published: published,
+        retain_staging: retain_staging
+      )
       FileUtils.rm_rf(workspace)
     end
   end

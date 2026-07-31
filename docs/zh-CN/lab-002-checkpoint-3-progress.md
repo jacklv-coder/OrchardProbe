@@ -202,7 +202,11 @@ Chained Fixup Layout 的域分离摘要上全部一致。它会分别解析两�
 `Info.plist`，从 Artifact 本身绑定 Bundle Identifier、Version/Build 与 Executable
 Name，而不借用授权请求里的值。闭合 CodeDirectory Parser 要求索引 Blob 精确消费
 声明的完整 SuperBlob，拒绝 Scatter Table，只接受完整 SHA-256 Page 覆盖，并校验
-已签名 Entitlements Special Slot；随后 Helper
+已签名 Entitlements Special Slot；CMS 验证前，选定 Entitlement 只通过有明确
+Event、Depth、Collection、Key 与累计 Scalar-byte 预算的 XML/Binary 流读取，
+Binary 输入还会在库 Reader 构造引用向量前，预检 Trailer、Object Count、Offset、
+Scalar Extent、Reference 与 Collection Length；重复 Root Key 或过大的未知结构
+都会失败关闭；随后 Helper
 验证精确 CodeDirectory 的 Detached CMS，要求 Signer 通过 macOS 本地 `codeSign`
 信任策略（使用有界的 CMS 内嵌证书链与本地 Apple Trust Root），且 Signer
 Certificate Team ID 必须等于已签名 CodeDirectory Team ID；验证只显式使用
@@ -229,8 +233,16 @@ Helper 发布前后发生的 Source 替换，不再信任单纯的 Pathname 交�
 Authorization-manifest 摘要、Target-identity Set 与 Build Binding，并以 Mode `0400`
 在锁定的私有 Run Directory 下原子发布。完整 Oracle 与私有 Target 标识始终留在
 Git 和日志之外。发布过程保持 Staging Descriptor，并使用验证文件的同一次 Metadata
-读取返回精确 Device/Inode。若后续失败需要 Rollback，清理会持有继承的 Run Directory
-排他锁，先用私有 Anchor 原子交换名称，再只删除已捕获身份；若 Oracle 名称已被并发
-替换，则恢复并保留替代文件，同时把清理结果报告为不确定，而不会误删它。本实现不会
+读取返回精确 Device/Inode。由于 Darwin 没有按 Descriptor 身份绑定的 Unlink 原语，
+Staging 创建后的任何失败都不再执行 Pathname 删除。Helper 会同步锁定目录，明确报告
+发布状态不确定，并保留 Owner-only 的 Staging 或已发布现场，要求重试前显式协调。
+Fastlane 在尝试启动 Oracle Helper 之前立即启用外层 Staging 保留，并贯穿 Result、
+Oracle 身份、Helper、Toolchain、XcodeGen 与 Evidence 验证；只有 Staging Directory
+原子发布为最终 Run 后才解除。Helper 的固定“不确定”标记只用于补充报告保留路径；
+即使 Spawn 失败、无 Marker 的终止、Panic、断管、畸形结果或后续发布前失败，
+Staging Tree 也会保留。此后的每次 Archive 尝试都会在创建新 Staging 前枚举已持有的
+Output Directory；只要仍有 `.demolab-staging-*` 遗留项就拒绝继续，因此必须由操作者
+显式协调现场，不能静默累积私有 Artifact。这会同时保留
+预期字节及任何并发替代名称，避免误删同一用户放入的无关文件。本实现不会
 上传 TestFlight、观察设备、重建 IPA，也尚未提供未来“只交给工具一个 IPA、输出砸壳后
 IPA”的用户命令；3B.3 仍须把 Oracle 绑定进上传前 Evidence 并强制执行 Upload Gate。

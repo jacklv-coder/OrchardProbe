@@ -12,10 +12,12 @@ pub mod host;
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::io::{BufReader, Cursor, Read, Seek, SeekFrom};
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use plist::Value as PlistValue;
+use plist::stream::{
+    BinaryReader as PlistBinaryReader, Event as PlistEvent, XmlReader as PlistXmlReader,
+};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -42,6 +44,14 @@ pub const MAX_LAB002_EXECUTABLE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_JCS_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 const MAX_TARGET_IDENTIFIER_BYTES: usize = 255;
 const MAX_FIXUP_PAYLOAD_BYTES: u32 = 16 * 1024 * 1024;
+const MAX_ENTITLEMENTS_EVENTS: u64 = 1_024;
+const MAX_ENTITLEMENTS_DEPTH: u64 = 16;
+const MAX_ENTITLEMENTS_COLLECTION_ITEMS: u64 = 256;
+const MAX_ENTITLEMENTS_ROOT_KEYS: u64 = 128;
+const MAX_ENTITLEMENTS_KEY_BYTES: u64 = 256;
+const MAX_ENTITLEMENTS_SCALAR_BYTES: u64 = 64 * 1024;
+const MAX_APPLICATION_GROUPS: u64 = 16;
+const MAX_ENTITLEMENTS_BINARY_OBJECTS: u64 = MAX_ENTITLEMENTS_EVENTS;
 const FIXUP_LAYOUT_DOMAIN: &[u8] = b"orchardprobe.lab002.fixup-layout.v1\0";
 const LC_DYSYMTAB: u32 = 0x0b;
 const LC_DYLD_INFO: u32 = 0x22;
@@ -1661,22 +1671,6 @@ fn code_signature_string(
     Ok(value.to_owned())
 }
 
-fn selected_entitlement_string(
-    dictionary: &plist::Dictionary,
-    key: &'static str,
-) -> Result<Option<String>, Lab002Error> {
-    dictionary
-        .get(key)
-        .map(|value| {
-            value.as_string().map(str::to_owned).ok_or_else(|| {
-                Lab002Error::InvalidMachO(format!(
-                    "selected code-signing entitlement `{key}` is not a string"
-                ))
-            })
-        })
-        .transpose()
-}
-
 struct SelectedCodeSigningEntitlements {
     application_identifier: Option<String>,
     developer_team_identifier: Option<String>,
@@ -1686,53 +1680,19 @@ struct SelectedCodeSigningEntitlements {
 fn parse_selected_entitlements(
     payload: &[u8],
 ) -> Result<SelectedCodeSigningEntitlements, Lab002Error> {
-    let value = PlistValue::from_reader(Cursor::new(payload)).map_err(|_| {
-        Lab002Error::InvalidMachO("embedded code-signing entitlements are invalid".into())
-    })?;
-    let dictionary = value.as_dictionary().ok_or_else(|| {
-        Lab002Error::InvalidMachO("embedded code-signing entitlements are not a dictionary".into())
-    })?;
-    let application_identifier = selected_entitlement_string(dictionary, "application-identifier")?;
-    let developer_team_identifier =
-        selected_entitlement_string(dictionary, "com.apple.developer.team-identifier")?;
-    let application_groups = dictionary
-        .get("com.apple.security.application-groups")
-        .map(|value| {
-            let values = value.as_array().ok_or_else(|| {
-                Lab002Error::InvalidMachO(
-                    "selected application-groups entitlement is not an array".into(),
-                )
-            })?;
-            let groups = values
-                .iter()
-                .map(|value| {
-                    value.as_string().map(str::to_owned).ok_or_else(|| {
-                        Lab002Error::InvalidMachO(
-                            "selected application-groups entry is not a string".into(),
-                        )
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            if groups.is_empty()
-                || groups.len() > 16
-                || groups.windows(2).any(|pair| pair[0] >= pair[1])
-            {
-                return Err(Lab002Error::InvalidMachO(
-                    "selected application-groups entitlement is not nonempty, unique, and sorted"
-                        .into(),
-                ));
-            }
-            for group in &groups {
-                let identifier = group.strip_prefix("group.").ok_or_else(|| {
-                    Lab002Error::InvalidMachO(
-                        "selected application group has an invalid prefix".into(),
-                    )
-                })?;
-                validate_bundle_identifier("application_group", identifier)?;
-            }
-            Ok(groups)
-        })
-        .transpose()?;
+    let parsed = if payload.starts_with(b"bplist00") {
+        preflight_binary_entitlements(payload)?;
+        parse_selected_entitlement_events(PlistBinaryReader::new(Cursor::new(payload)))
+    } else if entitlements_look_like_xml(payload) {
+        parse_selected_entitlement_events(PlistXmlReader::new(BufReader::new(Cursor::new(payload))))
+    } else {
+        return Err(invalid_entitlements(
+            "embedded code-signing entitlements have an unsupported encoding",
+        ));
+    }?;
+    let application_identifier = parsed.application_identifier;
+    let developer_team_identifier = parsed.developer_team_identifier;
+    let application_groups = parsed.application_groups;
     if let Some(value) = &application_identifier {
         validate_bundle_identifier("application_identifier", value)?;
     }
@@ -1744,6 +1704,550 @@ fn parse_selected_entitlements(
         developer_team_identifier,
         application_groups,
     })
+}
+
+fn preflight_binary_entitlements(payload: &[u8]) -> Result<(), Lab002Error> {
+    let trailer_start = payload
+        .len()
+        .checked_sub(32)
+        .filter(|offset| *offset >= 8)
+        .ok_or_else(|| invalid_entitlements("binary entitlement plist trailer is truncated"))?;
+    let offset_size = usize::from(payload[trailer_start + 6]);
+    let reference_size = usize::from(payload[trailer_start + 7]);
+    if !matches!(offset_size, 1 | 2 | 3 | 4 | 8) || !matches!(reference_size, 1 | 2 | 4 | 8) {
+        return Err(invalid_entitlements(
+            "binary entitlement plist trailer widths are invalid",
+        ));
+    }
+    let object_count = read_be_u64(
+        payload,
+        trailer_start + 8,
+        "binary entitlement object count",
+    )?;
+    let root_object = read_be_u64(
+        payload,
+        trailer_start + 16,
+        "binary entitlement root object",
+    )?;
+    let offset_table = read_be_u64(
+        payload,
+        trailer_start + 24,
+        "binary entitlement offset table",
+    )
+    .and_then(|offset| {
+        usize::try_from(offset)
+            .map_err(|_| invalid_entitlements("binary entitlement offset table overflows"))
+    })?;
+    if object_count == 0
+        || object_count > MAX_ENTITLEMENTS_BINARY_OBJECTS
+        || root_object >= object_count
+        || !(8..trailer_start).contains(&offset_table)
+    {
+        return Err(invalid_entitlements(
+            "binary entitlement plist object inventory is invalid or exceeds its limit",
+        ));
+    }
+    let object_count = usize::try_from(object_count)
+        .map_err(|_| invalid_entitlements("binary entitlement object count overflows"))?;
+    let offset_table_bytes = object_count
+        .checked_mul(offset_size)
+        .and_then(|size| offset_table.checked_add(size))
+        .filter(|end| *end <= trailer_start)
+        .ok_or_else(|| invalid_entitlements("binary entitlement offset table is invalid"))?;
+
+    for index in 0..object_count {
+        let entry =
+            offset_table
+                .checked_add(index.checked_mul(offset_size).ok_or_else(|| {
+                    invalid_entitlements("binary entitlement offset entry overflows")
+                })?)
+                .ok_or_else(|| invalid_entitlements("binary entitlement offset entry overflows"))?;
+        let object_offset =
+            read_binary_plist_uint(payload, entry, offset_size, offset_table_bytes)?;
+        let object_offset = usize::try_from(object_offset)
+            .map_err(|_| invalid_entitlements("binary entitlement object offset overflows"))?;
+        if !(8..offset_table).contains(&object_offset) {
+            return Err(invalid_entitlements(
+                "binary entitlement object offset is outside the object table",
+            ));
+        }
+        preflight_binary_entitlement_object(
+            payload,
+            object_offset,
+            offset_table,
+            reference_size,
+            object_count as u64,
+        )?;
+    }
+    Ok(())
+}
+
+fn preflight_binary_entitlement_object(
+    payload: &[u8],
+    object_offset: usize,
+    object_table_end: usize,
+    reference_size: usize,
+    object_count: u64,
+) -> Result<(), Lab002Error> {
+    let token = *payload
+        .get(object_offset)
+        .ok_or_else(|| invalid_entitlements("binary entitlement object is truncated"))?;
+    let kind = token >> 4;
+    let inline_length = token & 0x0f;
+    match kind {
+        0x4..=0x6 => {
+            let (length, body_start) =
+                read_binary_plist_length(payload, object_offset, inline_length, object_table_end)?;
+            let unit = if kind == 0x6 { 2 } else { 1 };
+            let body_bytes = length.checked_mul(unit).ok_or_else(|| {
+                invalid_entitlements("binary entitlement scalar length overflows")
+            })?;
+            enforce_entitlement_limit(
+                "binary scalar bytes",
+                body_bytes,
+                MAX_ENTITLEMENTS_SCALAR_BYTES,
+            )?;
+            checked_binary_plist_extent(body_start, body_bytes, object_table_end)?;
+        }
+        0xa | 0xd => {
+            let (length, references_start) =
+                read_binary_plist_length(payload, object_offset, inline_length, object_table_end)?;
+            enforce_entitlement_limit(
+                "binary collection items",
+                length,
+                MAX_ENTITLEMENTS_COLLECTION_ITEMS,
+            )?;
+            let reference_count = if kind == 0xd {
+                length.checked_mul(2).ok_or_else(|| {
+                    invalid_entitlements("binary entitlement reference count overflows")
+                })?
+            } else {
+                length
+            };
+            let reference_bytes = reference_count
+                .checked_mul(reference_size as u64)
+                .ok_or_else(|| {
+                    invalid_entitlements("binary entitlement reference bytes overflow")
+                })?;
+            let references_end =
+                checked_binary_plist_extent(references_start, reference_bytes, object_table_end)?;
+            let mut cursor = references_start;
+            while cursor < references_end {
+                let reference =
+                    read_binary_plist_uint(payload, cursor, reference_size, references_end)?;
+                if reference >= object_count {
+                    return Err(invalid_entitlements(
+                        "binary entitlement object reference is out of range",
+                    ));
+                }
+                cursor += reference_size;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn read_binary_plist_length(
+    payload: &[u8],
+    object_offset: usize,
+    inline_length: u8,
+    object_table_end: usize,
+) -> Result<(u64, usize), Lab002Error> {
+    let body_start = object_offset
+        .checked_add(1)
+        .ok_or_else(|| invalid_entitlements("binary entitlement object offset overflows"))?;
+    if inline_length < 0x0f {
+        return Ok((u64::from(inline_length), body_start));
+    }
+    let marker = *payload
+        .get(body_start)
+        .filter(|_| body_start < object_table_end)
+        .ok_or_else(|| invalid_entitlements("binary entitlement length marker is truncated"))?;
+    if marker >> 4 != 0x1 || marker & 0x0f > 3 {
+        return Err(invalid_entitlements(
+            "binary entitlement length marker is invalid",
+        ));
+    }
+    let width = 1usize << (marker & 0x0f);
+    let length_start = body_start
+        .checked_add(1)
+        .ok_or_else(|| invalid_entitlements("binary entitlement length offset overflows"))?;
+    let length = read_binary_plist_uint(payload, length_start, width, object_table_end)?;
+    let value_start = length_start
+        .checked_add(width)
+        .ok_or_else(|| invalid_entitlements("binary entitlement value offset overflows"))?;
+    Ok((length, value_start))
+}
+
+fn read_binary_plist_uint(
+    payload: &[u8],
+    offset: usize,
+    width: usize,
+    upper_bound: usize,
+) -> Result<u64, Lab002Error> {
+    let end = offset
+        .checked_add(width)
+        .filter(|end| *end <= upper_bound)
+        .ok_or_else(|| invalid_entitlements("binary entitlement integer is truncated"))?;
+    payload
+        .get(offset..end)
+        .ok_or_else(|| invalid_entitlements("binary entitlement integer is truncated"))?
+        .iter()
+        .try_fold(0_u64, |value, byte| {
+            value
+                .checked_mul(256)
+                .and_then(|value| value.checked_add(u64::from(*byte)))
+                .ok_or_else(|| invalid_entitlements("binary entitlement integer overflows"))
+        })
+}
+
+fn checked_binary_plist_extent(
+    start: usize,
+    byte_length: u64,
+    upper_bound: usize,
+) -> Result<usize, Lab002Error> {
+    usize::try_from(byte_length)
+        .ok()
+        .and_then(|length| start.checked_add(length))
+        .filter(|end| *end <= upper_bound)
+        .ok_or_else(|| invalid_entitlements("binary entitlement object extent is invalid"))
+}
+
+#[derive(Default)]
+struct EntitlementFields {
+    application_identifier: Option<String>,
+    developer_team_identifier: Option<String>,
+    application_groups: Option<Vec<String>>,
+}
+
+#[derive(Default)]
+struct EntitlementEventBudget {
+    events: u64,
+    scalar_bytes: u64,
+}
+
+fn parse_selected_entitlement_events<I>(
+    events: I,
+) -> Result<SelectedCodeSigningEntitlements, Lab002Error>
+where
+    I: IntoIterator<Item = Result<PlistEvent<'static>, plist::Error>>,
+{
+    let mut events = events.into_iter();
+    let mut budget = EntitlementEventBudget::default();
+    let first = next_entitlement_event(&mut events, &mut budget)?
+        .ok_or_else(|| invalid_entitlements("embedded entitlement event stream is empty"))?;
+    let declared_keys = match first {
+        PlistEvent::StartDictionary(len) => len,
+        other => {
+            return Err(invalid_entitlements(format!(
+                "embedded entitlements root must be a dictionary, found {}",
+                entitlement_event_kind(&other)
+            )));
+        }
+    };
+    if let Some(actual) = declared_keys {
+        enforce_entitlement_limit(
+            "root dictionary key count",
+            actual,
+            MAX_ENTITLEMENTS_ROOT_KEYS,
+        )?;
+    }
+
+    let mut parsed = EntitlementFields::default();
+    let mut keys = HashSet::new();
+    loop {
+        let event =
+            next_required_entitlement_event(&mut events, &mut budget, "root dictionary key")?;
+        let key = match event {
+            PlistEvent::EndCollection => break,
+            PlistEvent::String(key) => key.into_owned(),
+            other => {
+                return Err(invalid_entitlements(format!(
+                    "embedded entitlement key must be a string, found {}",
+                    entitlement_event_kind(&other)
+                )));
+            }
+        };
+        enforce_entitlement_limit(
+            "root dictionary key bytes",
+            key.len() as u64,
+            MAX_ENTITLEMENTS_KEY_BYTES,
+        )?;
+        enforce_entitlement_limit(
+            "root dictionary key count",
+            keys.len() as u64 + 1,
+            MAX_ENTITLEMENTS_ROOT_KEYS,
+        )?;
+        if !keys.insert(key.clone()) {
+            return Err(invalid_entitlements(format!(
+                "embedded entitlements repeat root key `{key}`"
+            )));
+        }
+
+        let value =
+            next_required_entitlement_event(&mut events, &mut budget, "root dictionary value")?;
+        match key.as_str() {
+            "application-identifier" => {
+                parsed.application_identifier =
+                    Some(require_entitlement_string(value, "application-identifier")?);
+            }
+            "com.apple.developer.team-identifier" => {
+                parsed.developer_team_identifier = Some(require_entitlement_string(
+                    value,
+                    "com.apple.developer.team-identifier",
+                )?);
+            }
+            "com.apple.security.application-groups" => {
+                parsed.application_groups =
+                    Some(parse_application_groups(value, &mut events, &mut budget)?);
+            }
+            _ => skip_entitlement_value(value, &mut events, &mut budget, 2)?,
+        }
+    }
+    if let Some(event) = next_entitlement_event(&mut events, &mut budget)? {
+        return Err(invalid_entitlements(format!(
+            "trailing event after embedded entitlements dictionary: {}",
+            entitlement_event_kind(&event)
+        )));
+    }
+    Ok(SelectedCodeSigningEntitlements {
+        application_identifier: parsed.application_identifier,
+        developer_team_identifier: parsed.developer_team_identifier,
+        application_groups: parsed.application_groups,
+    })
+}
+
+fn parse_application_groups<I>(
+    first: PlistEvent<'static>,
+    events: &mut I,
+    budget: &mut EntitlementEventBudget,
+) -> Result<Vec<String>, Lab002Error>
+where
+    I: Iterator<Item = Result<PlistEvent<'static>, plist::Error>>,
+{
+    let declared_items = match first {
+        PlistEvent::StartArray(len) => len,
+        other => {
+            return Err(invalid_entitlements(format!(
+                "selected application-groups entitlement is not an array, found {}",
+                entitlement_event_kind(&other)
+            )));
+        }
+    };
+    if let Some(actual) = declared_items {
+        enforce_entitlement_limit("application groups", actual, MAX_APPLICATION_GROUPS)?;
+    }
+    let mut groups = Vec::new();
+    loop {
+        let event =
+            next_required_entitlement_event(events, budget, "application group or array end")?;
+        if matches!(event, PlistEvent::EndCollection) {
+            break;
+        }
+        enforce_entitlement_limit(
+            "application groups",
+            groups.len() as u64 + 1,
+            MAX_APPLICATION_GROUPS,
+        )?;
+        groups.push(require_entitlement_string(
+            event,
+            "com.apple.security.application-groups entry",
+        )?);
+    }
+    if groups.is_empty() || groups.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(invalid_entitlements(
+            "selected application-groups entitlement is not nonempty, unique, and sorted",
+        ));
+    }
+    for group in &groups {
+        let identifier = group.strip_prefix("group.").ok_or_else(|| {
+            invalid_entitlements("selected application group has an invalid prefix")
+        })?;
+        validate_bundle_identifier("application_group", identifier)?;
+    }
+    Ok(groups)
+}
+
+fn skip_entitlement_value<I>(
+    first: PlistEvent<'static>,
+    events: &mut I,
+    budget: &mut EntitlementEventBudget,
+    depth: u64,
+) -> Result<(), Lab002Error>
+where
+    I: Iterator<Item = Result<PlistEvent<'static>, plist::Error>>,
+{
+    enforce_entitlement_limit("collection depth", depth, MAX_ENTITLEMENTS_DEPTH)?;
+    match first {
+        PlistEvent::StartArray(_) => {
+            let mut items = 0u64;
+            loop {
+                let event = next_required_entitlement_event(events, budget, "array value or end")?;
+                if matches!(event, PlistEvent::EndCollection) {
+                    return Ok(());
+                }
+                items = items.checked_add(1).ok_or_else(|| {
+                    invalid_entitlements("embedded entitlement collection item count overflowed")
+                })?;
+                enforce_entitlement_limit(
+                    "collection items",
+                    items,
+                    MAX_ENTITLEMENTS_COLLECTION_ITEMS,
+                )?;
+                skip_entitlement_value(event, events, budget, depth + 1)?;
+            }
+        }
+        PlistEvent::StartDictionary(_) => {
+            let mut items = 0u64;
+            loop {
+                let event =
+                    next_required_entitlement_event(events, budget, "dictionary key or end")?;
+                if matches!(event, PlistEvent::EndCollection) {
+                    return Ok(());
+                }
+                if !matches!(event, PlistEvent::String(_)) {
+                    return Err(invalid_entitlements(format!(
+                        "nested entitlement dictionary key must be a string, found {}",
+                        entitlement_event_kind(&event)
+                    )));
+                }
+                items = items.checked_add(1).ok_or_else(|| {
+                    invalid_entitlements("embedded entitlement collection item count overflowed")
+                })?;
+                enforce_entitlement_limit(
+                    "collection items",
+                    items,
+                    MAX_ENTITLEMENTS_COLLECTION_ITEMS,
+                )?;
+                let value =
+                    next_required_entitlement_event(events, budget, "nested dictionary value")?;
+                if matches!(value, PlistEvent::EndCollection) {
+                    return Err(invalid_entitlements(
+                        "nested entitlement dictionary key has no value",
+                    ));
+                }
+                skip_entitlement_value(value, events, budget, depth + 1)?;
+            }
+        }
+        PlistEvent::EndCollection => Err(invalid_entitlements(
+            "unexpected entitlement collection end where a value was required",
+        )),
+        _ => Ok(()),
+    }
+}
+
+fn require_entitlement_string(
+    event: PlistEvent<'static>,
+    field: &'static str,
+) -> Result<String, Lab002Error> {
+    match event {
+        PlistEvent::String(value) => Ok(value.into_owned()),
+        other => Err(invalid_entitlements(format!(
+            "selected code-signing entitlement `{field}` is not a string, found {}",
+            entitlement_event_kind(&other)
+        ))),
+    }
+}
+
+fn next_required_entitlement_event<I>(
+    events: &mut I,
+    budget: &mut EntitlementEventBudget,
+    expected: &'static str,
+) -> Result<PlistEvent<'static>, Lab002Error>
+where
+    I: Iterator<Item = Result<PlistEvent<'static>, plist::Error>>,
+{
+    next_entitlement_event(events, budget)?.ok_or_else(|| {
+        invalid_entitlements(format!(
+            "embedded entitlement event stream ended while reading {expected}"
+        ))
+    })
+}
+
+fn next_entitlement_event<I>(
+    events: &mut I,
+    budget: &mut EntitlementEventBudget,
+) -> Result<Option<PlistEvent<'static>>, Lab002Error>
+where
+    I: Iterator<Item = Result<PlistEvent<'static>, plist::Error>>,
+{
+    let Some(event) = events.next() else {
+        return Ok(None);
+    };
+    let event = event.map_err(|_| invalid_entitlements("embedded entitlement plist is invalid"))?;
+    budget.events = budget
+        .events
+        .checked_add(1)
+        .ok_or_else(|| invalid_entitlements("embedded entitlement event count overflowed"))?;
+    enforce_entitlement_limit("event count", budget.events, MAX_ENTITLEMENTS_EVENTS)?;
+
+    let scalar_bytes = match &event {
+        PlistEvent::String(value) => value.len() as u64,
+        PlistEvent::Data(value) => value.len() as u64,
+        _ => 0,
+    };
+    budget.scalar_bytes = budget
+        .scalar_bytes
+        .checked_add(scalar_bytes)
+        .ok_or_else(|| invalid_entitlements("embedded entitlement scalar byte count overflowed"))?;
+    enforce_entitlement_limit(
+        "cumulative scalar bytes",
+        budget.scalar_bytes,
+        MAX_ENTITLEMENTS_SCALAR_BYTES,
+    )?;
+    match &event {
+        PlistEvent::StartArray(Some(actual)) | PlistEvent::StartDictionary(Some(actual)) => {
+            enforce_entitlement_limit(
+                "declared collection items",
+                *actual,
+                MAX_ENTITLEMENTS_COLLECTION_ITEMS,
+            )?;
+        }
+        _ => {}
+    }
+    Ok(Some(event))
+}
+
+fn enforce_entitlement_limit(
+    label: &'static str,
+    actual: u64,
+    maximum: u64,
+) -> Result<(), Lab002Error> {
+    if actual > maximum {
+        return Err(invalid_entitlements(format!(
+            "embedded entitlements exceeded the {label} limit: {actual} > {maximum}"
+        )));
+    }
+    Ok(())
+}
+
+fn entitlements_look_like_xml(bytes: &[u8]) -> bool {
+    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(bytes);
+    bytes
+        .iter()
+        .copied()
+        .find(|byte| !byte.is_ascii_whitespace())
+        == Some(b'<')
+}
+
+fn entitlement_event_kind(event: &PlistEvent<'_>) -> &'static str {
+    match event {
+        PlistEvent::StartArray(_) => "array",
+        PlistEvent::StartDictionary(_) => "dictionary",
+        PlistEvent::EndCollection => "collection end",
+        PlistEvent::Boolean(_) => "boolean",
+        PlistEvent::Data(_) => "data",
+        PlistEvent::Date(_) => "date",
+        PlistEvent::Integer(_) => "integer",
+        PlistEvent::Real(_) => "real",
+        PlistEvent::String(_) => "string",
+        _ => "unsupported scalar",
+    }
+}
+
+fn invalid_entitlements(reason: impl Into<String>) -> Lab002Error {
+    Lab002Error::InvalidMachO(reason.into())
 }
 
 fn code_directory_hash_size(hash_type: u8) -> Option<usize> {
@@ -3293,6 +3797,118 @@ mod tests {
             fastlane_version: "2.228.0".into(),
             gemfile_lock_sha256: "44".repeat(32),
         }
+    }
+
+    #[test]
+    fn selected_entitlements_accept_bounded_binary_plist() {
+        let mut dictionary = plist::Dictionary::new();
+        dictionary.insert(
+            "application-identifier".into(),
+            plist::Value::String("TEAM123456.com.example.demolab".into()),
+        );
+        dictionary.insert(
+            "com.apple.developer.team-identifier".into(),
+            plist::Value::String("TEAM123456".into()),
+        );
+        dictionary.insert(
+            "com.apple.security.application-groups".into(),
+            plist::Value::Array(vec![plist::Value::String(
+                "group.com.example.demolab".into(),
+            )]),
+        );
+        let mut encoded = Vec::new();
+        plist::Value::Dictionary(dictionary)
+            .to_writer_binary(&mut encoded)
+            .unwrap();
+
+        let parsed = parse_selected_entitlements(&encoded).unwrap();
+        assert_eq!(
+            parsed.application_identifier.as_deref(),
+            Some("TEAM123456.com.example.demolab")
+        );
+        assert_eq!(
+            parsed.developer_team_identifier.as_deref(),
+            Some("TEAM123456")
+        );
+        assert_eq!(
+            parsed.application_groups.as_deref(),
+            Some(["group.com.example.demolab".to_owned()].as_slice())
+        );
+    }
+
+    #[test]
+    fn selected_entitlements_reject_binary_allocation_amplification() {
+        let mut oversized_collection = b"bplist00".to_vec();
+        oversized_collection.extend_from_slice(&[
+            0xaf, // Array with an extended length.
+            0x13, // Eight-byte integer length.
+        ]);
+        oversized_collection
+            .extend_from_slice(&(MAX_ENTITLEMENTS_COLLECTION_ITEMS + 1).to_be_bytes());
+        let offset_table = oversized_collection.len() as u64;
+        oversized_collection.push(8);
+        let mut trailer = [0_u8; 32];
+        trailer[6] = 1;
+        trailer[7] = 1;
+        trailer[15] = 1;
+        trailer[24..].copy_from_slice(&offset_table.to_be_bytes());
+        oversized_collection.extend_from_slice(&trailer);
+        assert!(matches!(
+            parse_selected_entitlements(&oversized_collection),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("binary collection items")
+        ));
+
+        let mut excessive_objects = b"bplist00\xd0\x08".to_vec();
+        let offset_table = 9_u64;
+        let mut trailer = [0_u8; 32];
+        trailer[6] = 1;
+        trailer[7] = 1;
+        trailer[8..16].copy_from_slice(&(MAX_ENTITLEMENTS_BINARY_OBJECTS + 1).to_be_bytes());
+        trailer[24..].copy_from_slice(&offset_table.to_be_bytes());
+        excessive_objects.extend_from_slice(&trailer);
+        assert!(matches!(
+            parse_selected_entitlements(&excessive_objects),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("object inventory")
+        ));
+    }
+
+    #[test]
+    fn selected_entitlements_reject_duplicate_root_keys() {
+        let encoded = br#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict>
+<key>application-identifier</key><string>TEAM123456.com.example.demolab</string>
+<key>application-identifier</key><string>TEAM123456.com.example.replacement</string>
+</dict></plist>"#;
+        assert!(matches!(
+            parse_selected_entitlements(encoded),
+            Err(Lab002Error::InvalidMachO(message)) if message.contains("repeat root key")
+        ));
+    }
+
+    #[test]
+    fn selected_entitlements_reject_excessive_unknown_structure() {
+        let too_many_items = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>unknown</key><array>{}</array></dict></plist>"#,
+            "<true/>".repeat(MAX_ENTITLEMENTS_COLLECTION_ITEMS as usize + 1)
+        );
+        assert!(matches!(
+            parse_selected_entitlements(too_many_items.as_bytes()),
+            Err(Lab002Error::InvalidMachO(message)) if message.contains("collection items")
+        ));
+
+        let nested = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0"><dict><key>unknown</key>{}<true/>{}</dict></plist>"#,
+            "<array>".repeat(MAX_ENTITLEMENTS_DEPTH as usize),
+            "</array>".repeat(MAX_ENTITLEMENTS_DEPTH as usize)
+        );
+        assert!(matches!(
+            parse_selected_entitlements(nested.as_bytes()),
+            Err(Lab002Error::InvalidMachO(message)) if message.contains("collection depth")
+        ));
     }
 
     #[test]

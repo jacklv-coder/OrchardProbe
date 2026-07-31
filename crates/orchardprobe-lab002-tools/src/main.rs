@@ -2091,6 +2091,20 @@ fn publish_oracle_with(
     oracle_bytes: &[u8],
     after_publish: impl FnOnce() -> Result<(), String>,
 ) -> Result<PrivateArtifactIdentity, String> {
+    publish_oracle_with_staging(
+        run_directory,
+        oracle_bytes,
+        write_private_file,
+        after_publish,
+    )
+}
+
+fn publish_oracle_with_staging(
+    run_directory: &PrivateOutputRoot,
+    oracle_bytes: &[u8],
+    write_staging: impl FnOnce(&File, &str, &[u8]) -> Result<(File, (u64, u64)), String>,
+    after_publish: impl FnOnce() -> Result<(), String>,
+) -> Result<PrivateArtifactIdentity, String> {
     if oracle_bytes.is_empty() || oracle_bytes.len() > MAX_PRIVATE_ARTIFACT_BYTES {
         return Err("closed LAB-002 oracle has an invalid encoded size".into());
     }
@@ -2103,10 +2117,17 @@ fn publish_oracle_with(
     let mut random = [0_u8; 16];
     OsRng.fill_bytes(&mut random);
     let staging_name = format!(".lab-002-oracle-{}.tmp", lower_hex(&random));
-    let (_staging_file, published_identity) =
-        write_private_file(&run_directory.directory, &staging_name, oracle_bytes)?;
-    let mut published = false;
-    let result = (|| {
+    let (_staging_file, _staging_identity) =
+        match write_staging(&run_directory.directory, &staging_name, oracle_bytes) {
+            Ok(staging) => staging,
+            Err(error) => {
+                return Err(indeterminate_oracle_publication_error(
+                    &run_directory.directory,
+                    error,
+                ));
+            }
+        };
+    let result: Result<PrivateArtifactIdentity, String> = (|| {
         rustix::fs::renameat_with(
             &run_directory.directory,
             staging_name.as_str(),
@@ -2115,7 +2136,6 @@ fn publish_oracle_with(
             rustix::fs::RenameFlags::NOREPLACE,
         )
         .map_err(|error| format!("could not publish LAB-002 oracle exclusively: {error}"))?;
-        published = true;
         after_publish()?;
         run_directory
             .directory
@@ -2139,106 +2159,25 @@ fn publish_oracle_with(
             sha256: sha256_hex(&artifact.bytes),
         })
     })();
-    if result.is_err() {
-        let cleanup = if published {
-            cleanup_published_oracle(&run_directory.directory, ORACLE_NAME, published_identity)
-        } else {
-            rustix::fs::unlinkat(
-                &run_directory.directory,
-                staging_name.as_str(),
-                rustix::fs::AtFlags::empty(),
-            )
-            .map_err(io::Error::from)
-            .map_err(|error| format!("could not remove private oracle staging file: {error}"))
-        };
-        let sync = run_directory.directory.sync_all();
-        if cleanup.is_err() || sync.is_err() {
-            return Err(format!(
-                "LAB-002 oracle cleanup is indeterminate after publication failed: {}",
-                result.as_ref().unwrap_err()
-            ));
-        }
+    match result {
+        Ok(identity) => Ok(identity),
+        Err(error) => Err(indeterminate_oracle_publication_error(
+            &run_directory.directory,
+            error,
+        )),
     }
-    result
 }
 
-fn cleanup_published_oracle(
-    directory: &File,
-    name: &str,
-    expected_identity: (u64, u64),
-) -> Result<(), String> {
-    let mut random = [0_u8; 16];
-    OsRng.fill_bytes(&mut random);
-    let cleanup_name = format!(".lab-002-oracle-cleanup-{}.tmp", lower_hex(&random));
-    let (cleanup_anchor, cleanup_identity) = write_private_file(directory, &cleanup_name, b"\0")?;
-    rustix::fs::renameat_with(
-        directory,
-        name,
-        directory,
-        cleanup_name.as_str(),
-        rustix::fs::RenameFlags::EXCHANGE,
+fn indeterminate_oracle_publication_error(directory: &File, error: String) -> String {
+    let sync_detail = directory
+        .sync_all()
+        .err()
+        .map(|sync_error| format!("; directory sync also failed: {sync_error}"))
+        .unwrap_or_default();
+    format!(
+        "LAB-002 oracle publication is indeterminate; retained private state must be \
+         reconciled before retry: {error}{sync_detail}"
     )
-    .map_err(|error| {
-        format!("could not atomically capture published oracle for cleanup: {error}")
-    })?;
-    let captured = rustix::fs::openat(
-        directory,
-        cleanup_name.as_str(),
-        rustix::fs::OFlags::RDONLY
-            | rustix::fs::OFlags::NONBLOCK
-            | rustix::fs::OFlags::NOFOLLOW
-            | rustix::fs::OFlags::CLOEXEC,
-        rustix::fs::Mode::empty(),
-    )
-    .map(File::from)
-    .map_err(|error| format!("could not open captured oracle for bound cleanup: {error}"))?;
-    let captured_metadata = captured
-        .metadata()
-        .map_err(|error| format!("could not inspect captured oracle for bound cleanup: {error}"))?;
-    if !captured_metadata.is_file()
-        || (captured_metadata.dev(), captured_metadata.ino()) != expected_identity
-    {
-        rustix::fs::renameat_with(
-            directory,
-            name,
-            directory,
-            cleanup_name.as_str(),
-            rustix::fs::RenameFlags::EXCHANGE,
-        )
-        .map_err(|error| {
-            format!("published oracle identity changed and atomic restoration failed: {error}")
-        })?;
-        remove_identity_bound_entry(
-            directory,
-            cleanup_name.as_str(),
-            &cleanup_anchor,
-            cleanup_identity,
-        )?;
-        return Err("published oracle changed identity before cleanup; refusing removal".into());
-    }
-    remove_identity_bound_entry(
-        directory,
-        cleanup_name.as_str(),
-        &captured,
-        expected_identity,
-    )?;
-    remove_identity_bound_entry(directory, name, &cleanup_anchor, cleanup_identity)
-}
-
-fn remove_identity_bound_entry(
-    directory: &File,
-    name: &str,
-    held: &File,
-    expected_identity: (u64, u64),
-) -> Result<(), String> {
-    let metadata = held
-        .metadata()
-        .map_err(|error| format!("could not inspect held cleanup entry: {error}"))?;
-    if !metadata.is_file() || (metadata.dev(), metadata.ino()) != expected_identity {
-        return Err("held cleanup entry changed identity; refusing removal".into());
-    }
-    rustix::fs::unlinkat(directory, name, rustix::fs::AtFlags::empty())
-        .map_err(|error| format!("could not remove serialized identity-bound entry: {error}"))
 }
 
 fn read_private_artifact(
@@ -4198,22 +4137,34 @@ mod tests {
             fs::read(root_path.join(ORACLE_NAME)).unwrap(),
             br#"{"schema":"test"}"#
         );
-        assert!(publish_oracle(&held, br#"{"schema":"replacement"}"#).is_err());
+        let error = publish_oracle(&held, br#"{"schema":"replacement"}"#).unwrap_err();
+        assert!(error.contains("publication is indeterminate"));
+        assert!(error.contains("retained private state"));
         assert_eq!(
             fs::read(root_path.join(ORACLE_NAME)).unwrap(),
             br#"{"schema":"test"}"#
         );
-        assert_eq!(
-            fs::read_dir(&root_path)
-                .unwrap()
-                .map(|entry| entry.unwrap().file_name())
-                .collect::<Vec<_>>(),
-            [std::ffi::OsString::from(ORACLE_NAME)]
-        );
+        let entries = fs::read_dir(&root_path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(entries.len(), 2);
+        let retained = entries
+            .iter()
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        name.starts_with(".lab-002-oracle-") && name.ends_with(".tmp")
+                    })
+            })
+            .unwrap();
+        assert_eq!(fs::read(retained).unwrap(), br#"{"schema":"replacement"}"#);
+        assert_eq!(fs::metadata(retained).unwrap().mode() & 0o777, 0o400);
     }
 
     #[test]
-    fn oracle_failure_cleanup_refuses_replaced_published_name() {
+    fn oracle_failure_retains_replaced_published_name() {
         let root = TempDir::new().unwrap();
         fs::set_permissions(
             root.path(),
@@ -4233,9 +4184,48 @@ mod tests {
         })
         .unwrap_err();
 
-        assert!(error.contains("cleanup is indeterminate"));
+        assert!(error.contains("publication is indeterminate"));
+        assert!(error.contains("retained private state"));
         assert_eq!(fs::read(root_path.join(ORACLE_NAME)).unwrap(), replacement);
         assert_eq!(fs::read(moved).unwrap(), br#"{"schema":"test"}"#);
+    }
+
+    #[test]
+    fn oracle_staging_write_failure_is_indeterminate_and_retained() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let held = validate_private_output_root(&root_path).unwrap();
+        let error = publish_oracle_with_staging(
+            &held,
+            br#"{"schema":"test"}"#,
+            |directory, staging_name, bytes| {
+                let _retained = write_private_file(directory, staging_name, bytes)?;
+                Err("injected staging write failure".into())
+            },
+            || Ok(()),
+        )
+        .unwrap_err();
+
+        assert!(error.contains("publication is indeterminate"));
+        assert!(error.contains("retained private state"));
+        let retained = fs::read_dir(&root_path)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        name.starts_with(".lab-002-oracle-") && name.ends_with(".tmp")
+                    })
+            })
+            .unwrap();
+        assert_eq!(fs::read(&retained).unwrap(), br#"{"schema":"test"}"#);
+        assert_eq!(fs::metadata(&retained).unwrap().mode() & 0o777, 0o400);
     }
 
     #[test]

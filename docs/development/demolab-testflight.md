@@ -241,15 +241,20 @@ random mode-`0700` temporary root beneath that locked staging directory, so its
 export plist, intermediate IPA, and other export scratch cannot be left in the
 system temporary directory. The lane verifies Gym's actual export directory is
 a direct child of that root, removes the root after a successful export, and
-removes all unpublished staging output on failure. It revalidates output and
+removes ordinary unpublished staging output on failures before the private
+oracle helper is launched. Immediately before that launch it switches to
+fail-safe retention: any spawn, helper, evidence, or later pre-publication
+failure preserves the owner-only staging tree, and the next archive attempt
+refuses to proceed until the retained `.demolab-staging-*` entry is explicitly
+reconciled. It revalidates output and
 staging filesystem identity and mode before and after the build, creates the
 evidence inside staging, validates that the completed evidence satisfies the
 same strict schema consumed by Stage 2, and only then publishes the completed
 directory with Darwin's exclusive, no-follow rename. Concurrent controlled
 invocations therefore cannot share, mix, or overwrite build output; an
 existing final directory is never reused. A replaced or permission-weakened
-directory is rejected, malformed evidence prevents publication, and a failed
-build removes unpublished staging output. The lane refuses a missing output
+directory is rejected and malformed evidence prevents publication without
+deleting indeterminate private state. The lane refuses a missing output
 root instead of creating it beneath a caller-controlled parent.
 
 The run directory contains local sensitive research artifacts:

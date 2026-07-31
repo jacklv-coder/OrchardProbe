@@ -259,7 +259,13 @@ bundle identifier, version/build, and executable name instead of borrowing
 those values from the authorization request. The closed CodeDirectory parser
 requires indexed blobs to consume the declared SuperBlob exactly, rejects
 scatter tables, accepts only complete SHA-256 page coverage, and checks the
-signed entitlements special slot. The helper then verifies the
+signed entitlements special slot. Before CMS verification, selected
+entitlements are read through a bounded XML/binary event stream with explicit
+event, depth, collection, key, and cumulative scalar-byte budgets. Binary
+inputs additionally receive a pre-allocation trailer, object-count, offset,
+scalar-extent, reference, and collection-length preflight before the library
+reader can construct reference vectors; duplicate root keys and oversized
+unknown structures fail closed. The helper then verifies the
 detached CMS over that exact CodeDirectory, requires its signer to pass
 macOS's local `codeSign` trust policy using the bounded embedded certificate
 chain plus the explicit root-owned Apple system-root keychain while disabling
@@ -294,12 +300,24 @@ version/build, authorization-manifest digest, target-identity set, and Build
 Binding, and publish it atomically with mode `0400` below the locked private
 run directory. The full oracle and its target identifiers remain outside
 Git and logs. Publication retains the staging descriptor and exact
-device/inode returned by the same metadata read that validates the file. If a
-later failure requires rollback, cleanup holds the inherited exclusive run
-directory lock and uses an atomic name exchange with a private anchor before
-removing only the captured identity. A concurrently substituted oracle name
-is restored and preserved, and cleanup reports an indeterminate failure
-instead of unlinking the replacement. This implementation does not upload to
-TestFlight, inspect a device, reconstruct an IPA, or provide the future
-one-file end-user decryption command; 3B.3 must still bind this oracle into
-pre-upload evidence and enforce the upload gate.
+device/inode returned by the same metadata read that validates the file.
+Because Darwin has no identity-bound unlink-by-descriptor primitive, any
+failure after staging creation performs no pathname deletion. The helper
+syncs the locked directory, reports publication as indeterminate, and retains
+the owner-only staging or published state for explicit reconciliation before
+retry. Fastlane arms outer staging retention immediately before attempting to
+spawn the oracle helper and keeps it armed through result, oracle identity,
+helper, toolchain, XcodeGen, and evidence validation. It disarms only after
+the staging directory is atomically published as the final run. The helper's fixed
+indeterminate marker adds the retained-path diagnostic, but spawn failure,
+markerless termination, panic, broken output, malformed results, and any
+downstream pre-publication failure retain the staging tree. Every later archive attempt enumerates
+the held output directory before creating new staging and refuses to proceed
+while any retained `.demolab-staging-*` entry remains, so retry requires
+explicit operator reconciliation rather than silently accumulating private
+artifacts. This deliberately preserves both the expected bytes and any
+concurrently substituted name instead of risking deletion of an unrelated
+same-user file. This implementation does not upload to TestFlight, inspect a
+device, reconstruct an IPA, or provide the future one-file end-user
+decryption command; 3B.3 must still bind this oracle into pre-upload evidence
+and enforce the upload gate.
