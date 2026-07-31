@@ -14,7 +14,7 @@
 
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 3A | 私有预构建输入生成器 | `planned` | 实现仅本机使用的操作 Lane：从干净已合并 Commit 与固定工具链，为精确 `1.0 (3)` 创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest 和域分离 Build Binding；全部私有输出位于 Git 外，Owner-only、No-follow、Fsync 且原子发布 |
+| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
 | 3B | Archive/Oracle/证据闭合 | `blocked` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
@@ -30,3 +30,103 @@
   Tuple 任一变化，都须重新授权并使用全新 Run 目录。
 - 检查点 3 完成只证明存在独立冻结的本地 Candidate/Oracle 对，不证明已安装保护、
   映射明文、砸壳、IPA 重建或设备支持。
+
+## 3A 实现边界
+
+公共实现没有增加 `oprobe` 用户命令。内部 `oprobe-lab002` 可执行文件只在
+私有临时目录构建并由 Fastlane 调用。Prepare 操作从标准输入接收固定三 Role
+请求，只输出不含秘密的结果 Envelope；私有 Target Identifier 不会成为命令行
+参数或结果字段。
+
+发布的预构建目录精确包含：
+
+- `lab-002-authorization-seed-v1.bin`：32 字节原始 Ed25519 Seed，Mode
+  `0400`；
+- `lab-002-authorized-targets-v1.json`：规范私有 Authorization Manifest，
+  Mode `0400`；
+- `lab-002-prebuild-v1.json`：规范 Build/Toolchain/Binding 记录，Mode
+  `0400`。
+
+目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
+会拒绝尚未成为 GitHub 实时 `main` OID 祖先的干净本地 Commit，并在生成前再次核对
+同一 Source。该 OID 由 `git ls-remote` 从写死的 SSH 仓库 URL 获取；命令在 Checkout
+之外运行，排除本地、全局与系统 Git Configuration，禁用交互 Prompt 与 SSH Agent，
+并使用受评审源码内固定的 GitHub Ed25519 Host Key 认证
+`ssh.github.com:443`。SSH 不读取任何用户可控 Known-hosts Path：
+`KnownHostsCommand` 只调用固定、Root-owned 的 `/bin/echo` 输出源码内 Key，使用后
+还会重新验证 `/bin/echo` 与 `/usr/bin/ssh` 的内容和身份。可变的本地
+Remote-tracking Ref 绝不作为评审证据。
+同一受限通道还会执行 Quiet Fetch，只把所公布的 `main` 历史物化进本地 Object
+Database，不写 `FETCH_HEAD`、不更新任何本地 Ref；随后第二次实时查询必须返回相同
+OID，且该精确 Commit Object 必须已能在本地验证。祖先检查及后续 Git 操作都会显式
+禁用 Git Replacement Ref。Helper 只从该精确 40-hex Commit 的只读 Git
+Archive 快照构建；解包后的 Path/Blob OID 清单还必须与 `git ls-tree` 精确相等；外部 Attributes
+造成的变换会被拒绝。Git Archive 的标准输出直接以无路径中间归档的 Pipe 交给
+Extractor，且两个进程状态都必须成功。快照位于独立私有 Workspace，不读取
+可变 Worktree，并在构建后
+重新 Hash 完整源码树。Fastlane 会记录并持续持有受评审 Source Root 的
+Device/Inode；Build 子进程在执行沙箱化 Cargo 前通过 Darwin `fchdir(2)` 进入
+该已持有目录，并要求构建前后 Source Path 始终映射到同一身份。Build Binding
+记录的 `gemfile_lock_sha256` 也只从同一
+认证快照派生并随快照复核，Lane 不会 Hash 可变 Worktree 中的 `Gemfile.lock`。
+Helper 构建绝不读取 Cargo `registry/src` 中可变的已解包源码；它会解析操作员
+配置的 `CARGO_HOME`（仅在未设置时回退到账户默认目录），再按快照内
+`Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始
+归档，对 Gzip/Tar 实际消费的压缩字节流同步 Hash，并只通过持有的 Directory
+Descriptor 解包到构建可写 Workspace 之外的 Owner-private、只读临时目录，让
+全新隔离的 `CARGO_HOME` 只使用该目录；随后再次 Hash 所持归档与完整依赖树。
+Fastlane 还会持续持有已验证 Vendor Root 与 Rust Toolchain 的 Directory
+Descriptor，并要求构建期间对应 Path 身份始终不变。由于同 UID 恶意进程仍可能在
+前后检查之间短暂替换再恢复这些基于 Path 的输入，构建会固定 Archive 时间，并把
+Source、Vendor 与 Toolchain Root 重映射到固定名称以获得可复现产物。在生成任何
+Authorization Seed 之前，最终 Mach-O 必须精确命中按
+`Source Snapshot SHA-256 + Rust Toolchain` 独立评审的白名单 Tuple；该 Tuple
+同时固定文件大小、完整 SHA-256 与 SHA-256 CodeDirectory CDHash。因此瞬时替换
+Toolchain 或 Vendor 不能生成任意 Helper 后再靠恢复受评审目录隐藏，任何不同产物
+都会被拒绝。Helper Source 或受支持 Toolchain 改变时，必须重新评审并登记新的产物
+Tuple。
+构建结束后只为经过检查的清理恢复该临时 Source 的目录权限。Cargo、Build
+Script 与 Procedural Macro 使用私有临时目录中的空隔离 `HOME`，并在 macOS
+Sandbox 内运行：禁止网络，除受评审源码快照和固定 Rust Toolchain 外禁止读取操作员
+Home，且禁止写入私有 Build Workspace 之外的位置。如果认证归档缺失，须先运行
+`cargo fetch --locked`。
+Build Binding 使用的 XcodeGen Path、Version、Device/Inode、Size、修改时间与
+SHA-256 会作为同一 Selection 保留；生成完成后、Pre-build Result 返回前还会再次
+选择并重新 Hash，要求与原 Selection 精确相等。
+
+Generator 从开始就持有输出根与唯一 Staging 目录的 Directory Descriptor。
+Fastlane 会把已经锁定的输出根 Descriptor 复制给 Helper，并传入预期的
+Device/Inode；Helper 验证后直接使用该继承 Descriptor，发布过程不再重新打开可被
+替换的输出根 Path。文件创建、目录同步、No-replace Rename、Rollback 与清理都以
+Descriptor-relative 方式执行并禁止跟随链接；返回输出路径前还会重新核对其与所持
+输出根身份一致。Fastlane 在 Helper 调用前后始终持有并锁定自己的输出根
+Descriptor；如果后续 Result 或输出根复核失败，它会相对该 Descriptor 删除本次
+发布的精确 Tuple。
+Helper 会在写入任何私有字节前，通过已 Flush 的非秘密首行记录返回唯一 Staging
+名称及其 Device/Inode 身份。Fastlane 会在检查进程状态或解析结果 JSON 前据此
+启用 Rollback，再通过专用继承 Pipe 向 Helper 确认；Helper 收到确认前不能写入
+私有字节。Fastlane 在发送请求前及确认 Rollback 前还会把运行中 PID 绑定到已验证
+Helper：系统 `lsof` 必须返回预期可执行映像的 Device/Inode，Darwin `csops`
+必须返回从完整 Hash 的 Mach-O CodeDirectory 解析出的 SHA-256 CDHash。因此即使
+路径被替换后恢复，也无法冒充受评审 Helper。此后 Helper 中断、结果畸形或操作员
+按 `Ctrl-C` 都会清理身份匹配的
+Staging 或最终目录，并在 Rollback 后继续传播 `Interrupt`。Helper 报告成功前还会
+相对 Parent Descriptor 重新打开最终入口，要求其 Device/Inode 仍等于 Staging
+身份；Fastlane 解析 Helper Result 后也会从所持输出根 Descriptor 独立重开最终
+入口，并在成功前再次执行同一身份检查。Helper Result 还会把三个固定私有 Artifact
+名称分别绑定到发布后的 Device/Inode、Mode、Size 与 SHA-256。Fastlane 会验证这份
+封闭清单，要求 Manifest 文件 Digest 与 Result 中的 Manifest Digest 相等，再以
+Descriptor-relative 方式逐个重开、重新 Hash 并复核身份，最后再次重开最终目录。
+在这些 Hash 之前、期间及之后，Fork 子进程会通过 `fchdir(2)` 进入已持有目录并
+枚举目录项；集合必须精确等于三个固定 Artifact 名称，新增第四项也会 Fail-closed。
+任一文件被原位修改或替换都会让最终检查失败，并触发已经启用、按身份限定的
+Rollback。如果目录已被替换，Rollback 会拒绝接触
+替代目录。如果已启用 Rollback 的身份同时从 Staging 与最终名称消失，Rollback
+会把私有状态报告为不确定，不会声称已经清理。三个固定 Artifact 的每次 Unlink
+都必须成功，目录删除也必须成功；随后还会通过已持有 Directory Descriptor 查询
+路径，证明对应 Inode 没有被并发改名后继续可达。因此 Artifact 缺失或改名、目录
+在打开后改名、Descriptor Path 仍存在或被替换，都会得到“不确定”而不是成功；
+Lane 不会静默重试该 Tuple。
+文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
+Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
+签名、Archive/Export、上传、安装或设备操作。
