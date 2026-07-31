@@ -4,20 +4,21 @@
 //! upload, installation, decryption, or arbitrary-target operation.
 
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use ed25519_dalek::SigningKey;
+use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
 use orchardprobe_core::lab002::artifacts::{
-    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, Presence, RequiredAppGroups,
-    RequiredEntitlement, Toolchain,
+    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, LabOracle, OracleRole, OracleSlice,
+    Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
 };
 use orchardprobe_core::lab002::{
-    AppGroups, BuildBindingInput, EntitlementValue, LAB002_PROFILE, LabRole, TargetIdentityInput,
-    build_binding_sha256, canonical_json, target_identity_binding_sha256,
-    target_identity_set_sha256,
+    AppGroups, BuildBindingInput, EntitlementValue, FixedSectionReport, LAB002_PROFILE, LabRole,
+    PreuploadSigningMetadata, TargetIdentityInput, build_binding_sha256, canonical_json,
+    parse_fixed_sections, target_identity_binding_sha256, target_identity_set_sha256,
 };
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
@@ -26,10 +27,13 @@ use sha2::{Digest, Sha256};
 const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
 const INSPECT_REQUEST_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-request.v1";
 const INSPECT_RESULT_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-result.v1";
+const ORACLE_REQUEST_SCHEMA: &str = "orchardprobe.lab002.oracle-request.v1";
+const ORACLE_RESULT_SCHEMA: &str = "orchardprobe.lab002.oracle-result.v1";
 const PREBUILD_SCHEMA: &str = "orchardprobe.lab002.prebuild.v1";
 const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directory.v1";
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
 const PRIVATE_OUTPUT_ROOT_PATH: &str = "/dev/fd/4";
+const PRIVATE_RUN_DIRECTORY_PATH: &str = "/dev/fd/5";
 const MAX_REQUEST_BYTES: usize = 32 * 1024;
 const PRIVATE_SEED_NAME: &str = "lab-002-authorization-seed-v1.bin";
 const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
@@ -37,6 +41,9 @@ const PREBUILD_NAME: &str = "lab-002-prebuild-v1.json";
 const CHECKPOINT_MARKETING_VERSION: &str = "1.0";
 const CHECKPOINT_BUILD_NUMBER: &str = "3";
 const MAX_PRIVATE_ARTIFACT_BYTES: usize = 16 * 1024;
+const MAX_IPA_BYTES: u64 = 250 * 1024 * 1024;
+const MAX_EXECUTABLE_BYTES: u64 = 100 * 1024 * 1024;
+const ORACLE_NAME: &str = "lab-002-oracle-v1.json";
 
 #[derive(Debug)]
 struct PrivateOutputRoot {
@@ -60,6 +67,19 @@ struct PrepareRequest {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct InspectPrebuildRequest {
+    schema: String,
+    source_commit: String,
+    marketing_version: String,
+    build_number: String,
+    configuration: String,
+    observer_revision: String,
+    toolchain: Toolchain,
+    targets: Vec<AuthorizedTarget>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OracleRequest {
     schema: String,
     source_commit: String,
     marketing_version: String,
@@ -129,10 +149,24 @@ struct InspectPrebuildOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct OracleOutput {
+    schema: &'static str,
+    oracle_name: &'static str,
+    oracle_device: String,
+    oracle_inode: String,
+    oracle_mode: u32,
+    oracle_size: u64,
+    oracle_sha256: String,
+    ipa_size: u64,
+    ipa_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum CommandOutput {
     Prepare(PrepareOutput),
     InspectPrebuild(Box<InspectPrebuildOutput>),
+    Oracle(OracleOutput),
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +181,7 @@ struct PrivateArtifactIdentity {
 
 fn main() -> ExitCode {
     let mut stdout = io::stdout().lock();
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     // Fastlane deliberately duplicates its already-locked output-root
     // descriptor onto this fixed child descriptor. Opening its descriptor
     // node duplicates that held file description instead of reopening an
@@ -158,9 +193,22 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+    let run_directory =
+        if arguments.first().and_then(|value| value.to_str()) == Some("create-oracle") {
+            match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
+                Ok(directory) => Some(directory),
+                Err(error) => {
+                    eprintln!("error: could not receive the held private run directory: {error}");
+                    return ExitCode::FAILURE;
+                }
+            }
+        } else {
+            None
+        };
     match execute(
-        std::env::args_os().skip(1).collect(),
+        arguments,
         output_root_directory,
+        run_directory,
         |staging_name, identity| {
             write_publication_identity(&mut stdout, staging_name, identity)?;
             wait_for_publication_ack()
@@ -228,6 +276,7 @@ fn write_command_result(mut writer: impl Write, output: &CommandOutput) -> Resul
 fn execute(
     arguments: Vec<std::ffi::OsString>,
     output_root_directory: File,
+    run_directory: Option<File>,
     arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<CommandOutput, String> {
     match arguments.first().and_then(|value| value.to_str()) {
@@ -265,10 +314,84 @@ fn execute(
                 .map(Box::new)
                 .map(CommandOutput::InspectPrebuild)
         }
+        Some("create-oracle") => {
+            let directories = parse_oracle_directory_arguments(&arguments)?;
+            let prebuild_directory = validate_bound_private_output_root(
+                &directories.prebuild_path,
+                output_root_directory,
+                directories.prebuild_identity,
+            )?;
+            let run_directory = validate_bound_private_output_root(
+                &directories.run_path,
+                run_directory.ok_or_else(|| "held private run directory is missing".to_owned())?,
+                directories.run_identity,
+            )?;
+            let request: OracleRequest = read_request(io::stdin().lock())?;
+            if request.schema != ORACLE_REQUEST_SCHEMA {
+                return Err("oracle request schema is invalid".into());
+            }
+            create_oracle(prebuild_directory, run_directory, request).map(CommandOutput::Oracle)
+        }
         _ => Err(
-            "usage: oprobe-lab002 prepare|inspect-prebuild with one fixed private directory".into(),
+            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle with fixed private \
+             directories"
+                .into(),
         ),
     }
+}
+
+struct OracleDirectoryArguments {
+    prebuild_path: PathBuf,
+    prebuild_identity: (u64, u64),
+    run_path: PathBuf,
+    run_identity: (u64, u64),
+}
+
+fn parse_oracle_directory_arguments(
+    arguments: &[std::ffi::OsString],
+) -> Result<OracleDirectoryArguments, String> {
+    let expected = [
+        "create-oracle",
+        "--prebuild-directory",
+        "",
+        "--prebuild-directory-device",
+        "",
+        "--prebuild-directory-inode",
+        "",
+        "--run-directory",
+        "",
+        "--run-directory-device",
+        "",
+        "--run-directory-inode",
+        "",
+    ];
+    if arguments.len() != expected.len()
+        || expected
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| !value.is_empty())
+            .any(|(index, value)| arguments[index] != *value)
+    {
+        return Err(
+            "usage: oprobe-lab002 create-oracle --prebuild-directory ABSOLUTE_DIRECTORY \
+             --prebuild-directory-device DECIMAL --prebuild-directory-inode DECIMAL \
+             --run-directory ABSOLUTE_DIRECTORY --run-directory-device DECIMAL \
+             --run-directory-inode DECIMAL"
+                .into(),
+        );
+    }
+    Ok(OracleDirectoryArguments {
+        prebuild_path: PathBuf::from(&arguments[2]),
+        prebuild_identity: (
+            parse_identity_component(&arguments[4], "prebuild-directory device")?,
+            parse_identity_component(&arguments[6], "prebuild-directory inode")?,
+        ),
+        run_path: PathBuf::from(&arguments[8]),
+        run_identity: (
+            parse_identity_component(&arguments[10], "run-directory device")?,
+            parse_identity_component(&arguments[12], "run-directory inode")?,
+        ),
+    })
 }
 
 fn parse_bound_directory_arguments(
@@ -620,6 +743,599 @@ fn inspect_prebuild_directory(
         target_identity_set_sha256: expected_identity_set,
         toolchain: request.toolchain,
     })
+}
+
+fn oracle_inspect_request(request: &OracleRequest) -> InspectPrebuildRequest {
+    InspectPrebuildRequest {
+        schema: INSPECT_REQUEST_SCHEMA.into(),
+        source_commit: request.source_commit.clone(),
+        marketing_version: request.marketing_version.clone(),
+        build_number: request.build_number.clone(),
+        configuration: request.configuration.clone(),
+        observer_revision: request.observer_revision.clone(),
+        toolchain: request.toolchain.clone(),
+        targets: request.targets.clone(),
+    }
+}
+
+fn create_oracle(
+    prebuild_directory: PrivateOutputRoot,
+    run_directory: PrivateOutputRoot,
+    request: OracleRequest,
+) -> Result<OracleOutput, String> {
+    validate_request_fields(
+        &request.source_commit,
+        &request.marketing_version,
+        &request.build_number,
+        &request.configuration,
+        &request.targets,
+    )?;
+    if request.observer_revision != "lab002-observer-v1" {
+        return Err("oracle request observer revision is outside the closed checkpoint".into());
+    }
+    let inspected =
+        inspect_prebuild_directory(prebuild_directory, oracle_inspect_request(&request))?;
+    verify_private_output_root_path(&run_directory)?;
+
+    let archive_paths: [&[&str]; 3] = [
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "DemoLab",
+        ],
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "Frameworks",
+            "DemoFramework.framework",
+            "DemoFramework",
+        ],
+        &[
+            "DemoLab.xcarchive",
+            "Products",
+            "Applications",
+            "DemoLab.app",
+            "PlugIns",
+            "DemoShareExtension.appex",
+            "DemoShareExtension",
+        ],
+    ];
+    let archive_reports = archive_paths
+        .iter()
+        .map(|components| {
+            let mut file = open_regular_beneath(
+                &run_directory.directory,
+                components,
+                MAX_EXECUTABLE_BYTES,
+                "Archive executable",
+            )?;
+            parse_stable_fixed_sections(&mut file, MAX_EXECUTABLE_BYTES, "Archive executable")
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let ipa_name = format!("DemoLab-{}.ipa", request.build_number);
+    let mut ipa_file = open_regular_beneath(
+        &run_directory.directory,
+        &[ipa_name.as_str()],
+        MAX_IPA_BYTES,
+        "exported IPA",
+    )?;
+    let ipa_identity = stable_file_identity(&ipa_file, MAX_IPA_BYTES, "exported IPA")?;
+    let ipa_sha256 = hash_stable_file(&mut ipa_file, &ipa_identity, MAX_IPA_BYTES, "exported IPA")?;
+    let inventory = inspect_ipa(&mut ipa_file, ipa_identity.size)
+        .map_err(|error| format!("exported IPA inventory is invalid: {error}"))?;
+    if inventory.app_root != "Payload/DemoLab.app" {
+        return Err("exported IPA does not contain the fixed DemoLab app root".into());
+    }
+    let ipa_paths = [
+        "Payload/DemoLab.app/DemoLab",
+        "Payload/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+        "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+    ];
+    let executable_entries = inventory
+        .entries
+        .iter()
+        .filter(|entry| entry.executable)
+        .map(|entry| entry.path.as_str())
+        .collect::<Vec<_>>();
+    if !same_paths_ignoring_order(executable_entries, &ipa_paths) {
+        return Err("exported IPA executable inventory is not the exact three roles".into());
+    }
+    let mut ipa_reports = Vec::with_capacity(ipa_paths.len());
+    for path in ipa_paths {
+        let entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .ok_or_else(|| format!("exported IPA is missing fixed executable {path}"))?;
+        if entry.uncompressed_size == 0 || entry.uncompressed_size > MAX_EXECUTABLE_BYTES {
+            return Err(format!(
+                "exported IPA executable {path} has an invalid size"
+            ));
+        }
+        let mut temporary = tempfile::tempfile()
+            .map_err(|error| format!("could not create private IPA measurement file: {error}"))?;
+        let copied = copy_ipa_entry_bounded(
+            &mut ipa_file,
+            ipa_identity.size,
+            path,
+            MAX_EXECUTABLE_BYTES.min(MAX_IPA_ENTRY_COPY_BYTES),
+            &mut temporary,
+        )
+        .map_err(|error| format!("could not read fixed IPA executable {path}: {error}"))?;
+        if copied.inventory != inventory || copied.bytes_written != entry.uncompressed_size {
+            return Err(format!(
+                "exported IPA inventory changed while reading fixed executable {path}"
+            ));
+        }
+        temporary
+            .seek(SeekFrom::Start(0))
+            .map_err(|error| format!("could not rewind fixed IPA executable {path}: {error}"))?;
+        ipa_reports.push(
+            parse_fixed_sections(&mut temporary)
+                .map_err(|error| format!("fixed IPA executable {path} is invalid: {error}"))?,
+        );
+    }
+    let confirmed_inventory = inspect_ipa(&mut ipa_file, ipa_identity.size)
+        .map_err(|error| format!("could not revalidate exported IPA inventory: {error}"))?;
+    if confirmed_inventory != inventory {
+        return Err("exported IPA inventory changed during oracle generation".into());
+    }
+    verify_stable_file(&ipa_file, &ipa_identity, "exported IPA")?;
+
+    let mut roles = Vec::with_capacity(LabRole::ALL.len());
+    for (index, role) in LabRole::ALL.into_iter().enumerate() {
+        let target = request
+            .targets
+            .get(index)
+            .ok_or_else(|| "oracle target inventory is incomplete".to_owned())?;
+        let expected_input = target_identity_input(&inspected.identity_nonce, target)?;
+        let expected_binding =
+            target_identity_binding_sha256(&expected_input).map_err(|error| error.to_string())?;
+        verify_report_signing_identity(
+            &archive_reports[index],
+            target,
+            &inspected.identity_nonce,
+            &expected_binding,
+            "Archive",
+        )?;
+        verify_report_signing_identity(
+            &ipa_reports[index],
+            target,
+            &inspected.identity_nonce,
+            &expected_binding,
+            "IPA",
+        )?;
+        roles.push(close_oracle_role(
+            role,
+            expected_binding,
+            &archive_reports[index],
+            &ipa_reports[index],
+        )?);
+    }
+
+    let oracle = LabOracle {
+        schema: <LabOracle as ClosedArtifact>::SCHEMA.into(),
+        profile: LAB002_PROFILE.into(),
+        source_commit: request.source_commit.clone(),
+        fixture_source_root: "fixtures/DemoLab".into(),
+        marketing_version: request.marketing_version,
+        build_number: request.build_number,
+        configuration: request.configuration,
+        observer_revision: request.observer_revision,
+        generator_revision: request.source_commit,
+        build_binding_sha256: inspected.build_binding_sha256,
+        authorized_target_manifest_sha256: inspected.authorized_target_manifest_sha256,
+        authorization_public_key: inspected.authorization_public_key,
+        authorization_key_id: inspected.authorization_key_id,
+        target_identity_set_sha256: inspected.target_identity_set_sha256,
+        toolchain: inspected.toolchain,
+        ipa_size: ipa_identity.size,
+        ipa_sha256: ipa_sha256.clone(),
+        roles,
+    };
+    let oracle_bytes = oracle
+        .to_canonical_bytes()
+        .map_err(|error| format!("could not encode closed LAB-002 oracle: {error}"))?;
+    let artifact = publish_oracle(&run_directory, &oracle_bytes)?;
+    verify_private_output_root_path(&run_directory)?;
+    Ok(OracleOutput {
+        schema: ORACLE_RESULT_SCHEMA,
+        oracle_name: ORACLE_NAME,
+        oracle_device: artifact.device.to_string(),
+        oracle_inode: artifact.inode.to_string(),
+        oracle_mode: artifact.mode,
+        oracle_size: artifact.size,
+        oracle_sha256: artifact.sha256,
+        ipa_size: ipa_identity.size,
+        ipa_sha256,
+    })
+}
+
+fn same_paths_ignoring_order(mut observed: Vec<&str>, expected: &[&str]) -> bool {
+    let mut expected = expected.to_vec();
+    observed.sort_unstable();
+    expected.sort_unstable();
+    observed == expected
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StableFileIdentity {
+    device: u64,
+    inode: u64,
+    owner: u32,
+    mode: u32,
+    size: u64,
+    modified_seconds: i64,
+    modified_nanoseconds: i64,
+}
+
+fn open_directory_beneath(parent: &File, name: &str, label: &str) -> Result<File, String> {
+    if name.is_empty() || name.contains('/') || matches!(name, "." | "..") {
+        return Err(format!("{label} contains an unsafe fixed component"));
+    }
+    let descriptor = rustix::fs::openat(
+        parent,
+        name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|error| format!("could not open {label} component {name}: {error}"))?;
+    let directory = File::from(descriptor);
+    let metadata = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect {label} component {name}: {error}"))?;
+    if !metadata.is_dir()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o022 != 0
+    {
+        return Err(format!("{label} component {name} has unsafe metadata"));
+    }
+    Ok(directory)
+}
+
+fn open_regular_beneath(
+    root: &File,
+    components: &[&str],
+    maximum_size: u64,
+    label: &str,
+) -> Result<File, String> {
+    let (file_name, directories) = components
+        .split_last()
+        .ok_or_else(|| format!("{label} path is empty"))?;
+    let mut parent = root
+        .try_clone()
+        .map_err(|error| format!("could not retain {label} root: {error}"))?;
+    for component in directories {
+        parent = open_directory_beneath(&parent, component, label)?;
+    }
+    if file_name.is_empty() || file_name.contains('/') || matches!(*file_name, "." | "..") {
+        return Err(format!("{label} contains an unsafe fixed filename"));
+    }
+    let descriptor = rustix::fs::openat(
+        &parent,
+        *file_name,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map_err(|error| format!("could not open {label}: {error}"))?;
+    let file = File::from(descriptor);
+    stable_file_identity(&file, maximum_size, label)?;
+    Ok(file)
+}
+
+fn stable_file_identity(
+    file: &File,
+    maximum_size: u64,
+    label: &str,
+) -> Result<StableFileIdentity, String> {
+    let metadata = file
+        .metadata()
+        .map_err(|error| format!("could not inspect {label}: {error}"))?;
+    if !metadata.is_file()
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o022 != 0
+        || metadata.len() == 0
+        || metadata.len() > maximum_size
+    {
+        return Err(format!("{label} has unsafe metadata"));
+    }
+    Ok(StableFileIdentity {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        owner: metadata.uid(),
+        mode: metadata.mode() & 0o777,
+        size: metadata.len(),
+        modified_seconds: metadata.mtime(),
+        modified_nanoseconds: metadata.mtime_nsec(),
+    })
+}
+
+fn verify_stable_file(
+    file: &File,
+    expected: &StableFileIdentity,
+    label: &str,
+) -> Result<(), String> {
+    let observed = stable_file_identity(file, expected.size, label)?;
+    if &observed != expected {
+        return Err(format!("{label} changed while it was measured"));
+    }
+    Ok(())
+}
+
+fn hash_stable_file(
+    file: &mut File,
+    expected: &StableFileIdentity,
+    maximum_size: u64,
+    label: &str,
+) -> Result<String, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not rewind {label}: {error}"))?;
+    let mut digest = Sha256::new();
+    let mut total = 0_u64;
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| format!("could not hash {label}: {error}"))?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(read as u64)
+            .ok_or_else(|| format!("{label} size overflowed while hashing"))?;
+        if total > maximum_size {
+            return Err(format!("{label} exceeded its size bound while hashing"));
+        }
+        digest.update(&buffer[..read]);
+    }
+    if total != expected.size {
+        return Err(format!("{label} size changed while hashing"));
+    }
+    verify_stable_file(file, expected, label)?;
+    Ok(lower_hex(&digest.finalize()))
+}
+
+fn parse_stable_fixed_sections(
+    file: &mut File,
+    maximum_size: u64,
+    label: &str,
+) -> Result<FixedSectionReport, String> {
+    let identity = stable_file_identity(file, maximum_size, label)?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("could not rewind {label}: {error}"))?;
+    let report =
+        parse_fixed_sections(file).map_err(|error| format!("{label} is invalid: {error}"))?;
+    if report.file_size != identity.size {
+        return Err(format!("{label} parser size does not match its held file"));
+    }
+    verify_stable_file(file, &identity, label)?;
+    Ok(report)
+}
+
+fn observed_entitlement(value: &Option<String>) -> EntitlementValue {
+    value
+        .as_ref()
+        .map_or(EntitlementValue::RequiredAbsent, |value| {
+            EntitlementValue::Present(value.clone())
+        })
+}
+
+fn observed_app_groups(value: &Option<Vec<String>>) -> AppGroups {
+    value.as_ref().map_or(AppGroups::RequiredAbsent, |value| {
+        AppGroups::Present(value.clone())
+    })
+}
+
+fn observed_target_input(
+    identity_nonce: &str,
+    target: &AuthorizedTarget,
+    signing: &PreuploadSigningMetadata,
+) -> TargetIdentityInput {
+    TargetIdentityInput {
+        identity_nonce_hex: identity_nonce.into(),
+        role: target.role,
+        bundle_id: target.bundle_id.clone(),
+        code_directory_identifier: signing.code_directory_identifier.clone(),
+        code_directory_team_identifier: signing.code_directory_team_identifier.clone(),
+        application_identifier: observed_entitlement(&signing.application_identifier),
+        developer_team_identifier: observed_entitlement(&signing.developer_team_identifier),
+        app_groups: observed_app_groups(&signing.application_groups),
+    }
+}
+
+fn verify_report_signing_identity(
+    report: &FixedSectionReport,
+    target: &AuthorizedTarget,
+    identity_nonce: &str,
+    expected_binding: &str,
+    artifact: &str,
+) -> Result<(), String> {
+    for slice in &report.slices {
+        let signing = slice
+            .signing
+            .as_ref()
+            .ok_or_else(|| format!("{artifact} slice has no embedded code signature"))?;
+        if signing.is_ad_hoc
+            || !signing.has_cms
+            || signing.code_directory_identifier != target.code_directory_identifier
+            || signing.code_directory_team_identifier != target.code_directory_team_identifier
+        {
+            return Err(format!(
+                "{artifact} code-signing identity is outside the authorized target"
+            ));
+        }
+        let observed =
+            target_identity_binding_sha256(&observed_target_input(identity_nonce, target, signing))
+                .map_err(|error| format!("{artifact} target identity is invalid: {error}"))?;
+        if observed != expected_binding {
+            return Err(format!(
+                "{artifact} target identity binding does not match the authorized tuple"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn close_oracle_role(
+    role: LabRole,
+    target_identity_binding_sha256: String,
+    archive: &FixedSectionReport,
+    ipa: &FixedSectionReport,
+) -> Result<OracleRole, String> {
+    if archive.container != ipa.container
+        || archive.file_size != ipa.file_size
+        || archive.slices.len() != ipa.slices.len()
+        || archive.slices.is_empty()
+        || archive.slices.len() > 4
+    {
+        return Err(format!(
+            "Archive/IPA {} container or complete slice inventory differs",
+            role.fixture_relative_path()
+        ));
+    }
+    let mut slices = Vec::with_capacity(archive.slices.len());
+    for (archive_slice, ipa_slice) in archive.slices.iter().zip(&ipa.slices) {
+        let archive_encryption = archive_slice.encryption.as_ref().ok_or_else(|| {
+            format!(
+                "Archive {} slice has no encryption command",
+                role.fixture_relative_path()
+            )
+        })?;
+        let ipa_encryption = ipa_slice.encryption.as_ref().ok_or_else(|| {
+            format!(
+                "IPA {} slice has no encryption command",
+                role.fixture_relative_path()
+            )
+        })?;
+        let ipa_signing = ipa_slice.signing.as_ref().ok_or_else(|| {
+            format!(
+                "IPA {} slice has no code signature",
+                role.fixture_relative_path()
+            )
+        })?;
+        if archive_slice.ordinal != ipa_slice.ordinal
+            || archive_slice.cpu_type != ipa_slice.cpu_type
+            || archive_slice.cpu_subtype != ipa_slice.cpu_subtype
+            || archive_slice.macho_uuid != ipa_slice.macho_uuid
+            || archive_slice.slice_file_offset != ipa_slice.slice_file_offset
+            || archive_slice.slice_file_size != ipa_slice.slice_file_size
+            || archive_slice.section_slice_offset != ipa_slice.section_slice_offset
+            || archive_slice.section_file_offset != ipa_slice.section_file_offset
+            || archive_slice.section_vm_offset != ipa_slice.section_vm_offset
+            || archive_slice.section_length != ipa_slice.section_length
+            || archive_slice.section_sha256 != ipa_slice.section_sha256
+            || archive_slice.fixup_layout_sha256 != ipa_slice.fixup_layout_sha256
+            || archive_encryption != ipa_encryption
+            || archive_encryption.cryptid != 0
+            || ipa_encryption.cryptid != 0
+        {
+            return Err(format!(
+                "Archive/IPA {} slice identity, range, fixup, encryption, or plaintext differs",
+                role.fixture_relative_path()
+            ));
+        }
+        slices.push(OracleSlice {
+            ordinal: archive_slice.ordinal,
+            cpu_type: archive_slice.cpu_type,
+            cpu_subtype: archive_slice.cpu_subtype,
+            macho_uuid: archive_slice.macho_uuid.clone(),
+            code_signature_sha256: ipa_signing.superblob_sha256.clone(),
+            slice_file_offset: archive_slice.slice_file_offset,
+            slice_file_size: archive_slice.slice_file_size,
+            archive_cryptid: archive_encryption.cryptid,
+            ipa_cryptid: ipa_encryption.cryptid,
+            section_slice_offset: archive_slice.section_slice_offset,
+            section_file_offset: archive_slice.section_file_offset,
+            section_vm_offset: archive_slice.section_vm_offset,
+            section_length: archive_slice.section_length,
+            expected_plaintext_sha256: archive_slice.section_sha256.clone(),
+            ipa_section_sha256: ipa_slice.section_sha256.clone(),
+        });
+    }
+    Ok(OracleRole {
+        role,
+        fixture_relative_path: role.fixture_relative_path().into(),
+        target_identity_binding_sha256,
+        slices,
+    })
+}
+
+fn publish_oracle(
+    run_directory: &PrivateOutputRoot,
+    oracle_bytes: &[u8],
+) -> Result<PrivateArtifactIdentity, String> {
+    if oracle_bytes.is_empty() || oracle_bytes.len() > MAX_PRIVATE_ARTIFACT_BYTES {
+        return Err("closed LAB-002 oracle has an invalid encoded size".into());
+    }
+    verify_private_output_root_path(run_directory)?;
+    let mut random = [0_u8; 16];
+    OsRng.fill_bytes(&mut random);
+    let staging_name = format!(".lab-002-oracle-{}.tmp", lower_hex(&random));
+    write_private_file(&run_directory.directory, &staging_name, oracle_bytes)?;
+    let mut published = false;
+    let result = (|| {
+        rustix::fs::renameat_with(
+            &run_directory.directory,
+            staging_name.as_str(),
+            &run_directory.directory,
+            ORACLE_NAME,
+            rustix::fs::RenameFlags::NOREPLACE,
+        )
+        .map_err(|error| format!("could not publish LAB-002 oracle exclusively: {error}"))?;
+        published = true;
+        run_directory
+            .directory
+            .sync_all()
+            .map_err(|error| format!("could not fsync private run directory: {error}"))?;
+        verify_private_output_root_path(run_directory)?;
+        let artifact = read_private_artifact(
+            &run_directory.directory,
+            ORACLE_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )?;
+        if artifact.bytes != oracle_bytes {
+            return Err("published LAB-002 oracle bytes changed before binding".into());
+        }
+        Ok(PrivateArtifactIdentity {
+            name: ORACLE_NAME.into(),
+            device: artifact.device.to_string(),
+            inode: artifact.inode.to_string(),
+            mode: artifact.mode,
+            size: artifact.size,
+            sha256: sha256_hex(&artifact.bytes),
+        })
+    })();
+    if result.is_err() {
+        let cleanup_name = if published {
+            ORACLE_NAME
+        } else {
+            staging_name.as_str()
+        };
+        let cleanup = rustix::fs::unlinkat(
+            &run_directory.directory,
+            cleanup_name,
+            rustix::fs::AtFlags::empty(),
+        );
+        let sync = run_directory.directory.sync_all();
+        if cleanup.is_err() || sync.is_err() {
+            return Err(format!(
+                "LAB-002 oracle cleanup is indeterminate after publication failed: {}",
+                result.as_ref().unwrap_err()
+            ));
+        }
+    }
+    result
 }
 
 fn read_private_artifact(
@@ -1383,6 +2099,8 @@ fn lower_hex(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchardprobe_core::lab002::FixedSectionSlice;
+    use orchardprobe_core::macho::{EncryptionCommand, EncryptionInfo, MachOContainer};
     use tempfile::TempDir;
 
     fn target(role: LabRole, bundle_id: &str, team: &str, app_group: bool) -> AuthorizedTarget {
@@ -2112,6 +2830,138 @@ mod tests {
             assert!(prepare(&root, request).is_err());
         }
         assert!(fs::read_dir(&root).unwrap().next().is_none());
+    }
+
+    fn fixed_report(section_byte: u8, signature_byte: u8) -> FixedSectionReport {
+        FixedSectionReport {
+            container: MachOContainer::Thin,
+            file_size: 4096,
+            slices: vec![FixedSectionSlice {
+                ordinal: 0,
+                cpu_type: 0x0100_000c,
+                cpu_subtype: 0,
+                macho_uuid: "44".repeat(16),
+                slice_file_offset: 0,
+                slice_file_size: 4096,
+                section_slice_offset: 512,
+                section_file_offset: 512,
+                section_vm_offset: 512,
+                section_length: 256,
+                section_sha256: format!("{section_byte:02x}").repeat(32),
+                fixup_layout_sha256: "33".repeat(32),
+                encryption: Some(EncryptionInfo {
+                    command: EncryptionCommand::EncryptionInfo64,
+                    cryptoff: 0,
+                    cryptsize: 2048,
+                    cryptid: 0,
+                }),
+                signing: Some(PreuploadSigningMetadata {
+                    superblob_sha256: format!("{signature_byte:02x}").repeat(32),
+                    code_directory_identifier: "com.example.orchardprobe.demolab".into(),
+                    code_directory_team_identifier: "ABCDEFGHIJ".into(),
+                    application_identifier: Some(
+                        "ABCDEFGHIJ.com.example.orchardprobe.demolab".into(),
+                    ),
+                    developer_team_identifier: Some("ABCDEFGHIJ".into()),
+                    application_groups: Some(vec!["group.com.example.demolab".into()]),
+                    is_ad_hoc: false,
+                    has_cms: true,
+                }),
+            }],
+        }
+    }
+
+    #[test]
+    fn oracle_role_closure_requires_exact_archive_ipa_parity() {
+        let archive = fixed_report(0x44, 0x55);
+        let ipa = fixed_report(0x44, 0x66);
+        let role = close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &ipa).unwrap();
+        assert_eq!(role.slices[0].expected_plaintext_sha256, "44".repeat(32));
+        assert_eq!(role.slices[0].ipa_section_sha256, "44".repeat(32));
+        assert_eq!(role.slices[0].code_signature_sha256, "66".repeat(32));
+
+        let mut changed_uuid = ipa.clone();
+        changed_uuid.slices[0].macho_uuid = "88".repeat(16);
+        assert!(
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &changed_uuid,).is_err()
+        );
+        let mut changed_range = ipa.clone();
+        changed_range.slices[0].section_slice_offset += 1;
+        assert!(
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &changed_range,)
+                .is_err()
+        );
+        let mut changed_plaintext = ipa;
+        changed_plaintext.slices[0].section_sha256 = "99".repeat(32);
+        assert!(
+            close_oracle_role(
+                LabRole::MainApp,
+                "77".repeat(32),
+                &archive,
+                &changed_plaintext,
+            )
+            .is_err()
+        );
+
+        let mut changed_fixups = archive.clone();
+        changed_fixups.slices[0].fixup_layout_sha256 = "aa".repeat(32);
+        assert!(
+            close_oracle_role(
+                LabRole::MainApp,
+                "77".repeat(32),
+                &changed_fixups,
+                &fixed_report(0x44, 0x66),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn oracle_executable_inventory_is_order_independent_but_exact() {
+        let expected = ["main", "framework", "extension"];
+        assert!(same_paths_ignoring_order(
+            vec!["extension", "main", "framework"],
+            &expected,
+        ));
+        assert!(!same_paths_ignoring_order(
+            vec!["main", "framework"],
+            &expected,
+        ));
+        assert!(!same_paths_ignoring_order(
+            vec!["main", "framework", "unexpected"],
+            &expected,
+        ));
+    }
+
+    #[test]
+    fn oracle_publication_is_owner_only_atomic_and_non_overwriting() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let held = validate_private_output_root(&root_path).unwrap();
+        let artifact = publish_oracle(&held, br#"{"schema":"test"}"#).unwrap();
+        assert_eq!(artifact.name, ORACLE_NAME);
+        assert_eq!(artifact.mode, 0o400);
+        assert_eq!(
+            fs::read(root_path.join(ORACLE_NAME)).unwrap(),
+            br#"{"schema":"test"}"#
+        );
+        assert!(publish_oracle(&held, br#"{"schema":"replacement"}"#).is_err());
+        assert_eq!(
+            fs::read(root_path.join(ORACLE_NAME)).unwrap(),
+            br#"{"schema":"test"}"#
+        );
+        assert_eq!(
+            fs::read_dir(&root_path)
+                .unwrap()
+                .map(|entry| entry.unwrap().file_name())
+                .collect::<Vec<_>>(),
+            [std::ffi::OsString::from(ORACLE_NAME)]
+        );
     }
 
     #[test]

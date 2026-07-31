@@ -110,6 +110,11 @@ DEMO_LAB_LAB002_INSPECT_REQUEST_SCHEMA =
   "orchardprobe.lab002.inspect-prebuild-request.v1"
 DEMO_LAB_LAB002_INSPECT_RESULT_SCHEMA =
   "orchardprobe.lab002.inspect-prebuild-result.v1"
+DEMO_LAB_LAB002_ORACLE_REQUEST_SCHEMA =
+  "orchardprobe.lab002.oracle-request.v1"
+DEMO_LAB_LAB002_ORACLE_RESULT_SCHEMA =
+  "orchardprobe.lab002.oracle-result.v1"
+DEMO_LAB_LAB002_ORACLE_NAME = "lab-002-oracle-v1.json"
 DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA =
   "orchardprobe.lab002.published-directory.v1"
 DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
@@ -2483,6 +2488,183 @@ def inspect_lab002_private_inputs!(
   end
 end
 
+def create_lab002_private_oracle!(
+  prebuild_directory:,
+  prebuild_handle:,
+  prebuild_identity:,
+  run_directory:,
+  run_handle:,
+  run_identity:,
+  source_commit:,
+  marketing_version:,
+  build_number:,
+  app_identifier:,
+  share_identifier:,
+  app_group_identifier:,
+  team_identifier:,
+  xcode_toolchain:
+)
+  verify_held_lab002_directory!(
+    prebuild_directory,
+    prebuild_handle,
+    prebuild_identity.drop(1),
+    "LAB-002 prebuild",
+    required_mode: 0o700
+  )
+  verify_held_lab002_directory!(
+    run_directory,
+    run_handle,
+    run_identity.drop(1),
+    "DemoLab staging",
+    required_mode: 0o700
+  )
+  targets = lab002_authorized_targets(
+    app_identifier: app_identifier,
+    share_identifier: share_identifier,
+    app_group_identifier: app_group_identifier,
+    team_identifier: team_identifier
+  )
+  binary = nil
+  tool_workspace = nil
+  begin
+    binary, tool_workspace, tool_identity, gemfile_lock_sha256 =
+      build_lab002_private_tool(source_commit)
+    toolchain, xcodegen_selection = lab002_toolchain_record(
+      xcode_toolchain,
+      gemfile_lock_sha256: gemfile_lock_sha256
+    )
+    request = {
+      "schema" => DEMO_LAB_LAB002_ORACLE_REQUEST_SCHEMA,
+      "source_commit" => source_commit,
+      "marketing_version" => marketing_version,
+      "build_number" => build_number,
+      "configuration" => "Release",
+      "observer_revision" => "lab002-observer-v1",
+      "toolchain" => toolchain,
+      "targets" => targets,
+    }
+    held_prebuild = prebuild_handle.stat
+    held_run = run_handle.stat
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    result_json = nil
+    helper_stderr = ""
+    status = nil
+    Open3.popen3(
+      sanitized_dynamic_loader_environment,
+      binary,
+      "create-oracle",
+      "--prebuild-directory",
+      prebuild_directory,
+      "--prebuild-directory-device",
+      held_prebuild.dev.to_s,
+      "--prebuild-directory-inode",
+      held_prebuild.ino.to_s,
+      "--run-directory",
+      run_directory,
+      "--run-directory-device",
+      held_run.dev.to_s,
+      "--run-directory-inode",
+      held_run.ino.to_s,
+      4 => prebuild_handle,
+      5 => run_handle,
+      chdir: repository_root,
+      close_others: true
+    ) do |stdin, stdout, error_stream, wait_thread|
+      verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
+      stdin.write(JSON.generate(request))
+      stdin.close
+      result_json =
+        stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      helper_stderr =
+        error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      status = wait_thread.value
+    end
+    if result_json&.bytesize.to_i >
+       DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+       helper_stderr.to_s.bytesize >
+         DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+      UI.user_error!("LAB-002 oracle helper output exceeded its fixed limit.")
+    end
+    unless status.success?
+      UI.user_error!(
+        "LAB-002 private oracle generation failed: " \
+        "#{helper_stderr.to_s.strip}"
+      )
+    end
+    result = JSON.parse(result_json)
+    require_exact_hash_keys!(
+      result,
+      %w[
+        schema
+        oracle_name
+        oracle_device
+        oracle_inode
+        oracle_mode
+        oracle_size
+        oracle_sha256
+        ipa_size
+        ipa_sha256
+      ],
+      "LAB-002 oracle result"
+    )
+    unless result["schema"] == DEMO_LAB_LAB002_ORACLE_RESULT_SCHEMA &&
+           result["oracle_name"] == DEMO_LAB_LAB002_ORACLE_NAME &&
+           %w[oracle_device oracle_inode].all? { |name|
+             /\A(?:0|[1-9][0-9]*)\z/.match?(result[name].to_s)
+           } &&
+           result["oracle_mode"] == 0o400 &&
+           result["oracle_size"].is_a?(Integer) &&
+           result["oracle_size"].positive? &&
+           result["oracle_size"] <= 16 * 1024 &&
+           result["ipa_size"].is_a?(Integer) &&
+           result["ipa_size"].positive? &&
+           result["ipa_size"] <= DEMO_LAB_MAX_IPA_BYTES &&
+           %w[oracle_sha256 ipa_sha256].all? { |name|
+             /\A[0-9a-f]{64}\z/.match?(result[name].to_s)
+           }
+      UI.user_error!("LAB-002 oracle result is invalid.")
+    end
+    observed = lab002_published_artifact_identity!(
+      run_handle,
+      DEMO_LAB_LAB002_ORACLE_NAME,
+      allowed_names: [DEMO_LAB_LAB002_ORACLE_NAME]
+    )
+    unless observed == {
+      "name" => DEMO_LAB_LAB002_ORACLE_NAME,
+      "device" => Integer(result["oracle_device"], 10),
+      "inode" => Integer(result["oracle_inode"], 10),
+      "mode" => result["oracle_mode"],
+      "size" => result["oracle_size"],
+      "sha256" => result["oracle_sha256"],
+    }
+      UI.user_error!("LAB-002 published oracle identity changed.")
+    end
+    verify_held_lab002_directory!(
+      prebuild_directory,
+      prebuild_handle,
+      prebuild_identity.drop(1),
+      "LAB-002 prebuild",
+      required_mode: 0o700
+    )
+    verify_held_lab002_directory!(
+      run_directory,
+      run_handle,
+      run_identity.drop(1),
+      "DemoLab staging",
+      required_mode: 0o700
+    )
+    verify_selected_xcode_toolchain!(xcode_toolchain)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    verify_selected_xcodegen!(*xcodegen_selection)
+    result
+  rescue JSON::ParserError
+    UI.user_error!("LAB-002 private oracle helper returned invalid JSON.")
+  ensure
+    FileUtils.rm_rf(tool_workspace) if tool_workspace
+  end
+end
+
 def cleanup_lab002_published_prebuild!(
   output_handle,
   final_name,
@@ -2639,8 +2821,12 @@ def cleanup_lab002_bound_published_prebuild!(
   )
 end
 
-def lab002_published_artifact_identity!(directory, name)
-  unless DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.include?(name)
+def lab002_published_artifact_identity!(
+  directory,
+  name,
+  allowed_names: DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES
+)
+  unless allowed_names.include?(name)
     UI.user_error!("LAB-002 published artifact name is invalid.")
   end
   flags = File::RDONLY | File::NONBLOCK
@@ -8392,6 +8578,7 @@ platform :ios do
 
           ipa_path = nil
           evidence_path = nil
+          oracle_result = nil
           with_pinned_xcode_environment(xcode_toolchain) do
             verify_selected_xcode_toolchain!(xcode_toolchain)
             tmpdir_was_set = ENV.key?("TMPDIR")
@@ -8456,6 +8643,28 @@ platform :ios do
             gym_scratch_root = nil
             verify_selected_xcode_toolchain!(xcode_toolchain)
 
+            with_locked_private_directory(
+              prebuild_directory,
+              prebuild_identity,
+              "LAB-002 prebuild directory"
+            ) do |prebuild_handle|
+              oracle_result = create_lab002_private_oracle!(
+                prebuild_directory: prebuild_identity.first,
+                prebuild_handle: prebuild_handle,
+                prebuild_identity: prebuild_identity,
+                run_directory: staging_identity.first,
+                run_handle: staging_handle,
+                run_identity: staging_identity,
+                source_commit: source_commit,
+                marketing_version: marketing_version,
+                build_number: build_number,
+                app_identifier: app_identifier,
+                share_identifier: share_identifier,
+                app_group_identifier: app_group_identifier,
+                team_identifier: team_identifier,
+                xcode_toolchain: xcode_toolchain
+              )
+            end
             evidence_path = write_pre_upload_evidence(
               run_directory: staging_directory,
               archive_path: archive_path,
@@ -8498,7 +8707,12 @@ platform :ios do
             run_directory,
             File.basename(evidence_path)
           )
+          published_oracle = File.join(
+            run_directory,
+            oracle_result.fetch("oracle_name")
+          )
           UI.success("Created first-party archive candidate: #{published_ipa}")
+          UI.success("Created private LAB-002 oracle: #{published_oracle}")
           UI.success("Created pre-upload evidence: #{published_evidence}")
         end
       end
