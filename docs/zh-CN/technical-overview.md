@@ -345,7 +345,7 @@ Rust Host 负责政策、解析、资源记账、重建、验证、打包、脱�
 | 版本化 Manifest/Capability/Error Schema | 已实现 |
 | 首方 DemoLab Simulator Fixture | 已实现 |
 | 有界协议规范 | 设计已接受；未实现 |
-| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现，检查点 3 仅为 DemoLab `1.0 (3)` 候选/Oracle 激活，私有 3A 生成与 3B.1 安全消费已分别随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 和 [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 合并完成，3B.2 Archive/IPA Oracle 闭合已激活；尚无签名候选、上传、真机验证或 Go 结果 |
+| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现，检查点 3 仅为 DemoLab `1.0 (3)` 候选/Oracle 激活，私有 3A 生成与 3B.1 安全消费已分别随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 和 [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 合并完成，3B.2 Archive/IPA Oracle 闭合实现已完成并等待 CR/CI/合并；尚无签名候选、上传、真机验证或 Go 结果 |
 | 设备发现与 Transport | 未实现 |
 | 设备 Helper 与 Backend | 未实现 |
 | 确定性未签名分析 IPA 打包 | Unix 库内已从保留的私有工作树实现；尚无 CLI 或产物发布 |
