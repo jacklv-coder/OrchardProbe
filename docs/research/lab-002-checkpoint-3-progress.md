@@ -68,7 +68,11 @@ path/Blob OID inventory must exactly match
 is piped directly to the extractor without a pathname-based intermediate
 archive, and both process statuses are required to succeed. The
 build does not read the mutable checkout and rehashes the complete source
-snapshot afterward. The `gemfile_lock_sha256` recorded in the Build Binding is
+snapshot afterward. Fastlane records and retains the reviewed source root
+device/inode, forks the build child, and uses Darwin `fchdir(2)` to enter that
+held directory before executing sandboxed Cargo; the source pathname must map
+to the same identity before and after the build. The `gemfile_lock_sha256`
+recorded in the Build Binding is
 derived from that same authenticated snapshot and is revalidated with it; the
 lane never hashes the mutable worktree `Gemfile.lock`. The helper build never consumes the
 mutable extracted tree under `~/.cargo/registry/src`: it authenticates every

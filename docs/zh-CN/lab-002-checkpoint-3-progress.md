@@ -55,7 +55,10 @@ Archive 快照构建；解包后的 Path/Blob OID 清单还必须与 `git ls-tre
 造成的变换会被拒绝。Git Archive 的标准输出直接以无路径中间归档的 Pipe 交给
 Extractor，且两个进程状态都必须成功。快照位于独立私有 Workspace，不读取
 可变 Worktree，并在构建后
-重新 Hash 完整源码树。Build Binding 记录的 `gemfile_lock_sha256` 也只从同一
+重新 Hash 完整源码树。Fastlane 会记录并持续持有受评审 Source Root 的
+Device/Inode；Build 子进程在执行沙箱化 Cargo 前通过 Darwin `fchdir(2)` 进入
+该已持有目录，并要求构建前后 Source Path 始终映射到同一身份。Build Binding
+记录的 `gemfile_lock_sha256` 也只从同一
 认证快照派生并随快照复核，Lane 不会 Hash 可变 Worktree 中的 `Gemfile.lock`。
 Helper 构建绝不读取 `~/.cargo/registry/src` 中可变的已解包源码；
 它按快照内 `Cargo.lock` 记录的 SHA-256 认证 Cargo Cache 中每个 `.crate` 原始

@@ -125,6 +125,7 @@ DEMO_LAB_BINARY_SPECS = [
 module DemoLabDarwin
   extend Fiddle::Importer
   dlload Fiddle.dlopen(nil)
+  extern "int fchdir(int)"
   extern "int mkdirat(int, const char *, unsigned int)"
   extern "int openat(int, const char *, int, unsigned int)"
   extern "int renamex_np(const char *, const char *, unsigned int)"
@@ -1345,9 +1346,99 @@ def lab002_reviewed_source_snapshot!(workspace, source_commit)
       "The reviewed LAB-002 Gemfile.lock changed while snapshotting."
     )
   end
-  [source_root, source_sha256, gemfile_lock_sha256]
+  source_stat = File.lstat(source_root)
+  unless source_stat.directory? &&
+         !source_stat.symlink? &&
+         source_stat.uid == Process.uid &&
+         (source_stat.mode & 0o777) == 0o500
+    UI.user_error!("The reviewed LAB-002 source root identity is invalid.")
+  end
+  [
+    source_root,
+    source_sha256,
+    gemfile_lock_sha256,
+    [source_stat.dev, source_stat.ino],
+  ]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
   UI.user_error!("Unable to create the reviewed LAB-002 source snapshot safely.")
+end
+
+def verify_held_lab002_source_directory!(
+  source_root,
+  source_handle,
+  source_identity
+)
+  held = source_handle.stat
+  linked = File.lstat(source_root)
+  unless source_identity.is_a?(Array) &&
+         source_identity.length == 2 &&
+         held.directory? &&
+         held.uid == Process.uid &&
+         (held.mode & 0o777) == 0o500 &&
+         !linked.symlink? &&
+         [held.dev, held.ino] == source_identity &&
+         [linked.dev, linked.ino] == source_identity
+    UI.user_error!("The reviewed LAB-002 source directory changed.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+  UI.user_error!("Unable to bind the reviewed LAB-002 source directory.")
+end
+
+def capture3_in_held_directory(environment, directory, *command)
+  stdout_reader, stdout_writer = IO.pipe
+  stderr_reader, stderr_writer = IO.pipe
+  pid = nil
+  waited = false
+  stdout_thread = nil
+  stderr_thread = nil
+  pid = fork do
+    stdout_reader.close
+    stderr_reader.close
+    STDOUT.reopen(stdout_writer)
+    STDERR.reopen(stderr_writer)
+    stdout_writer.close
+    stderr_writer.close
+    if DemoLabDarwin.fchdir(directory.fileno).nonzero?
+      STDERR.write("Unable to enter the held LAB-002 source directory.\n")
+      exit! 126
+    end
+    Process.exec(
+      environment,
+      *command,
+      unsetenv_others: true,
+      close_others: true
+    )
+  rescue StandardError
+    STDERR.write("Unable to execute the held LAB-002 build command.\n")
+    exit! 126
+  end
+  stdout_writer.close
+  stderr_writer.close
+  stdout_thread = Thread.new { stdout_reader.read }
+  stderr_thread = Thread.new { stderr_reader.read }
+  _, status = Process.wait2(pid)
+  waited = true
+  [stdout_thread.value, stderr_thread.value, status]
+rescue Exception
+  if pid && !waited
+    Process.kill("TERM", pid) rescue nil
+    Process.wait(pid) rescue nil
+  end
+  raise
+ensure
+  [
+    stdout_reader,
+    stdout_writer,
+    stderr_reader,
+    stderr_writer,
+  ].compact.each do |stream|
+    stream.close unless stream.closed?
+  rescue IOError
+    nil
+  end
+  stdout_thread&.join
+  stderr_thread&.join
 end
 
 def lab002_private_build_sandbox!(
@@ -1533,13 +1624,22 @@ def build_lab002_private_tool(source_commit)
   workspace = nil
   vendor_workspace = nil
   source_workspace = nil
+  source_handle = nil
   workspace = external_temporary_directory("orchardprobe-lab002-tool-")
   vendor_workspace =
     external_temporary_directory("orchardprobe-lab002-vendor-")
   source_workspace =
     external_temporary_directory("orchardprobe-lab002-source-")
-  source_root, source_sha256, gemfile_lock_sha256 =
+  source_root, source_sha256, gemfile_lock_sha256, source_identity =
     lab002_reviewed_source_snapshot!(source_workspace, source_commit)
+  source_flags = File::RDONLY
+  source_flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
+  source_handle = File.open(source_root, source_flags)
+  verify_held_lab002_source_directory!(
+    source_root,
+    source_handle,
+    source_identity
+  )
   toolchain_root, cargo, rustc, toolchain_sha256 =
     selected_lab002_rust_toolchain(source_root)
   vendor_root, vendor_sha256 =
@@ -1585,8 +1685,9 @@ def build_lab002_private_tool(source_commit)
     "RUSTC" => rustc,
     "TMPDIR" => workspace,
   }
-  stdout, stderr, status = Open3.capture3(
+  stdout, stderr, status = capture3_in_held_directory(
     environment,
+    source_handle,
     sandbox_exec.fetch("path"),
     "-f",
     sandbox_profile,
@@ -1596,9 +1697,7 @@ def build_lab002_private_tool(source_commit)
     "--locked",
     "--release",
     "--package",
-    "orchardprobe-lab002-tools",
-    chdir: source_root,
-    unsetenv_others: true
+    "orchardprobe-lab002-tools"
   )
   unless status.success?
     detail = stderr.strip.empty? ? stdout.strip : stderr.strip
@@ -1609,12 +1708,22 @@ def build_lab002_private_tool(source_commit)
   unless lab002_rust_toolchain_tree_sha256(vendor_root) == vendor_sha256
     UI.user_error!("The verified Cargo dependency source changed during the build.")
   end
+  verify_held_lab002_source_directory!(
+    source_root,
+    source_handle,
+    source_identity
+  )
   unless lab002_rust_toolchain_tree_sha256(
     source_root,
     "LAB-002 reviewed source snapshot"
   ) == source_sha256
     UI.user_error!("The reviewed LAB-002 source snapshot changed during the build.")
   end
+  verify_held_lab002_source_directory!(
+    source_root,
+    source_handle,
+    source_identity
+  )
   unless lab002_rust_toolchain_tree_sha256(toolchain_root) ==
          toolchain_sha256
     UI.user_error!("The pinned Rust toolchain changed during the build.")
@@ -1639,6 +1748,7 @@ rescue StandardError
   FileUtils.rm_rf(workspace) if workspace
   raise
 ensure
+  source_handle&.close unless source_handle&.closed?
   lab002_remove_verified_vendor!(vendor_workspace) if vendor_workspace
   if source_workspace
     lab002_remove_readonly_workspace!(
@@ -5211,6 +5321,75 @@ platform :ios do
             Process.kill("TERM", wait_thread.pid)
             wait_thread.join
           end
+        end
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-held-source-check-",
+      external_temporary_base
+    ) do |held_workspace|
+      File.chmod(0o700, held_workspace)
+      held_source = File.join(held_workspace, "reviewed-source")
+      moved_source = File.join(held_workspace, "moved-source")
+      held_marker = File.join(held_source, "marker")
+      Dir.mkdir(held_source, 0o700)
+      File.write(held_marker, "reviewed\n")
+      File.chmod(0o400, held_marker)
+      File.chmod(0o500, held_source)
+      held_stat = File.lstat(held_source)
+      held_handle = File.open(
+        held_source,
+        File::RDONLY | File::NOFOLLOW
+      )
+      begin
+        held_identity = [held_stat.dev, held_stat.ino]
+        verify_held_lab002_source_directory!(
+          held_source,
+          held_handle,
+          held_identity
+        )
+        File.chmod(0o700, held_source)
+        File.rename(held_source, moved_source)
+        File.chmod(0o500, moved_source)
+        Dir.mkdir(held_source, 0o700)
+        File.write(File.join(held_source, "marker"), "replacement\n")
+        File.chmod(0o500, held_source)
+        substitution_rejected = false
+        begin
+          verify_held_lab002_source_directory!(
+            held_source,
+            held_handle,
+            held_identity
+          )
+        rescue FastlaneCore::Interface::FastlaneError
+          substitution_rejected = true
+        end
+        held_stdout, held_stderr, held_status =
+          capture3_in_held_directory(
+            {},
+            held_handle,
+            "/bin/cat",
+            "marker"
+          )
+        unless substitution_rejected &&
+               held_status.success? &&
+               held_stdout == "reviewed\n" &&
+               held_stderr.empty?
+          UI.user_error!(
+            "LAB-002 held source directory regression failed."
+          )
+        end
+      ensure
+        held_handle.close
+        [
+          File.join(moved_source, "marker"),
+          File.join(held_source, "marker"),
+        ].each do |path|
+          File.chmod(0o600, path) if File.exist?(path)
+        end
+        [moved_source, held_source].each do |path|
+          File.chmod(0o700, path) if File.directory?(path)
         end
       end
     end
