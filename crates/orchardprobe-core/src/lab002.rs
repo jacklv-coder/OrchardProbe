@@ -57,6 +57,17 @@ const LC_DYSYMTAB: u32 = 0x0b;
 const LC_DYLD_INFO: u32 = 0x22;
 const LC_DYLD_INFO_ONLY: u32 = 0x8000_0022;
 const LC_DYLD_CHAINED_FIXUPS: u32 = 0x8000_0034;
+const SECTION_TYPE_MASK: u32 = 0xff;
+const S_ZEROFILL: u32 = 0x01;
+const S_GB_ZEROFILL: u32 = 0x0c;
+const S_THREAD_LOCAL_ZEROFILL: u32 = 0x12;
+
+fn is_zero_fill_section(flags: u32) -> bool {
+    matches!(
+        flags & SECTION_TYPE_MASK,
+        S_ZEROFILL | S_GB_ZEROFILL | S_THREAD_LOCAL_ZEROFILL
+    )
+}
 
 /// The closed DemoLab executable-role order used by every LAB-002 binding.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3590,7 +3601,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                         })?;
                         vm_sections.push((current_section_index, address, vm_end));
                     }
-                    if length != 0 && flags & 0xff != 1 {
+                    if length != 0 && !is_zero_fill_section(flags) {
                         let end = offset.checked_add(length).ok_or_else(|| {
                             Lab002Error::InvalidMachO("section file range overflows".into())
                         })?;
@@ -5007,6 +5018,16 @@ mod tests {
         thin
     }
 
+    fn replace_second_section_with_zero_fill(mut thin: Vec<u8>, section_type: u32) -> Vec<u8> {
+        let second_section = 32 + 72 + 80;
+        thin[second_section..second_section + 16].copy_from_slice(&name16("__zerofill"));
+        thin[second_section + 32..second_section + 40]
+            .copy_from_slice(&0x1_0000_0400_u64.to_le_bytes());
+        thin[second_section + 48..second_section + 52].copy_from_slice(&u32::MAX.to_le_bytes());
+        thin[second_section + 64..second_section + 68].copy_from_slice(&section_type.to_le_bytes());
+        thin
+    }
+
     #[test]
     fn fixed_section_parser_normalizes_nonzero_fat_slice_offsets() {
         let thin = synthetic_fixed_macho(1, false, 0, true);
@@ -5047,6 +5068,18 @@ mod tests {
             Err(Lab002Error::InvalidMachO(message))
                 if message.contains("segment file extent is invalid")
         ));
+    }
+
+    #[test]
+    fn fixed_section_parser_treats_every_zero_fill_type_as_non_file_backed() {
+        for section_type in [S_ZEROFILL, S_GB_ZEROFILL, S_THREAD_LOCAL_ZEROFILL] {
+            let bytes = replace_second_section_with_zero_fill(
+                synthetic_fixed_macho(2, false, 0, true),
+                section_type,
+            );
+            parse_fixed_sections(&mut Cursor::new(bytes))
+                .expect("zero-fill sections must not contribute a file range");
+        }
     }
 
     #[test]
