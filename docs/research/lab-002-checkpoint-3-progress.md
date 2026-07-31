@@ -40,15 +40,15 @@ preceding row is complete.
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
 | 3B.2.4 | Device-free closure tests | `local tests and helper reproduction complete; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
-The 3B.2 helper was independently built twice from the read-only source
-snapshot at commit `75964c6345495cface2499362d842aced89e7c9b`; both products were
+The final 3B.2 helper was independently built twice from the read-only source
+snapshot at commit `211edb28887864572d5e3699f1bf10e8a9e32b8b`; both products were
 byte-identical, and a third build passed after the mandatory allowlist path was
 restored. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`8eff0f5130c2ecca59c1d07b76bb43f1f361e539f5168c23d3b696bb80e35fa1`,
-size `1832944`, SHA-256
-`b63b14c1993194f04038a34c1447ff6df6fe234c069ebb305c408dbb2839e988`,
-and CDHash `ef67c53d63b0110f35fdf0da3fa733e0b9a6098b`.
+`9fff2823e83732d1b0fbbaf1518103a2666046674b5d5886262307a54fad6c9b`,
+size `1891040`, SHA-256
+`1b688a77fc73bf80495a94c5cba1c59c87dd72936c345c8919cc4d0a2012d513`,
+and CDHash `8035934ac97d6225c2bf17451d6b379862b79124`.
 
 ## Fixed safety boundaries
 
