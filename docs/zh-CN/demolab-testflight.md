@@ -121,10 +121,12 @@ Beta App Review 或 App Store 提交。
 
 | 变量 | 用途 |
 |---|---|
-| `DEMO_LAB_APP_BUNDLE_ID` | 已注册的首方主 App ID。 |
-| `DEMO_LAB_SHARE_BUNDLE_ID` | 已注册且位于主 ID 下的 Share Extension App ID。 |
-| `DEMO_LAB_APP_GROUP_ID` | 已同时启用在主 App ID 与 Share Extension App ID 上的首方 App Group。Archive Lane 拒绝仓库内 `group.com.example.*` 默认值，并把精确 Group 注入两者的 Entitlement 与 Info.plist。 |
-| `DEMO_LAB_TEAM_ID` | Xcode 签名所用 10 字符 Apple Developer Team ID。 |
+| `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` | 预构建、Archive、上传与对账都要求精确值 `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`。 |
+| `DEMO_LAB_APP_BUNDLE_ID` | 预构建、Archive 与上传使用的已注册首方主 App ID。 |
+| `DEMO_LAB_SHARE_BUNDLE_ID` | 预构建、Archive 与上传使用的已注册 Share Extension App ID。 |
+| `DEMO_LAB_APP_GROUP_ID` | 预构建与 Archive 使用的首方 App Group，须同时启用在主 App ID 与 Share Extension App ID。Archive Lane 拒绝仓库内 `group.com.example.*` 默认值，并把精确 Group 注入两者的 Entitlement 与 Info.plist。 |
+| `DEMO_LAB_TEAM_ID` | 预构建与 Archive 使用的 10 字符 Apple Developer Team ID。 |
+| `DEMO_LAB_MARKETING_VERSION` | 预构建与 Archive 使用的可选点分版本；默认 `1.0`。 |
 | `DEMO_LAB_BUILD_NUMBER` | 预构建与 Archive 使用的正整数；检查点 3 当前只接受 `3`。 |
 | `DEMO_LAB_OUTPUT_DIR` | 仓库外已存在的绝对私有目录，必须由当前用户所有、不是 Symlink、Mode `0700`。Archive Lane 会在该根目录下自动推导并锁定精确 3A 目录。 |
 

@@ -167,12 +167,12 @@ checkout, or export them only in the local terminal:
 
 | Variable | Used by | Meaning |
 |---|---|---|
-| `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` | archive, upload, reconciliation | Must equal `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`; this supplements rejection of common CI-provider environments. |
-| `DEMO_LAB_APP_BUNDLE_ID` | archive, upload | Registered first-party main App ID. |
-| `DEMO_LAB_SHARE_BUNDLE_ID` | archive, upload | Registered first-party share-extension App ID below the main ID. |
-| `DEMO_LAB_APP_GROUP_ID` | archive | Registered first-party App Group enabled on both the main App ID and share-extension App ID. The archive lane rejects the checked-in `group.com.example.*` value and injects this exact group into both entitlements and Info.plists. |
-| `DEMO_LAB_TEAM_ID` | archive | Apple Developer team used by Xcode signing. |
-| `DEMO_LAB_MARKETING_VERSION` | archive | Optional dotted version; defaults to `1.0`. |
+| `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` | pre-build, archive, upload, reconciliation | Must equal `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`; this supplements rejection of common CI-provider environments. |
+| `DEMO_LAB_APP_BUNDLE_ID` | pre-build, archive, upload | Registered first-party main App ID. |
+| `DEMO_LAB_SHARE_BUNDLE_ID` | pre-build, archive, upload | Registered first-party share-extension App ID below the main ID. |
+| `DEMO_LAB_APP_GROUP_ID` | pre-build, archive | Registered first-party App Group enabled on both the main App ID and share-extension App ID. The archive lane rejects the checked-in `group.com.example.*` value and injects this exact group into both entitlements and Info.plists. |
+| `DEMO_LAB_TEAM_ID` | pre-build, archive | Apple Developer team used by Xcode signing. |
+| `DEMO_LAB_MARKETING_VERSION` | pre-build, archive | Optional dotted version; defaults to `1.0`. |
 | `DEMO_LAB_BUILD_NUMBER` | pre-build, archive | Positive build number. Checkpoint 3 currently accepts only `3`. |
 | `DEMO_LAB_OUTPUT_DIR` | pre-build, archive | Absolute dedicated directory outside the repository. It must already exist, be owned by the current user, not be a symlink, already have mode `0700`, and contain no single quote or control character; the lanes never create it or change its permissions. The archive lane derives and locks the exact 3A directory below this root. |
 | `DEMO_LAB_EVIDENCE_PATH` | upload, reconciliation | Absolute path to the generated pre-upload evidence JSON. It must remain owned by the current user with no group/other access. |
@@ -226,9 +226,10 @@ non-weak authorization public key, identity nonce, Build Binding, three target
 bindings, target-identity set, and pinned toolchain before injecting those
 values. The shell does not provide any of those private binding values.
 
-The archive lane then validates identifier formats and ownership inputs, records the clean
-commit, exports `fixtures/DemoLab` from that immutable Git commit rather than
-copying the mutable checkout, generates the project in a temporary directory,
+The archive lane then validates identifier formats and ownership inputs,
+records the clean commit, exports `fixtures/DemoLab` from that immutable Git
+commit rather than copying the mutable checkout, generates the project in a
+temporary directory,
 asks Xcode to archive/export with automatic signing, and writes first to a new
 random owner-only staging directory below `DEMO_LAB_OUTPUT_DIR`. The lane holds
 exclusive advisory locks and open directory descriptors for the output root and
