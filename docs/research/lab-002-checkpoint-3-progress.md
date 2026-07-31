@@ -17,7 +17,7 @@ preceding row is complete.
 
 | Order | Substep | Status | Completion gate |
 |---:|---|---|---|
-| 3A | Private pre-build input generator | `implemented; PR #62 review/merge pending` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the reviewed `origin/main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests pass; this row becomes complete only after [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) passes Codex CR/CI and merges |
+| 3A | Private pre-build input generator | `implemented; PR #62 review/merge pending` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests pass; this row becomes complete only after [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) passes Codex CR/CI and merges |
 | 3B | Archive/oracle/evidence closure | `blocked` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
 | 3C | Device-free tests, Codex CR, CI, and implementation merge | `blocked` | Use only temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures; cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection; merge the reviewed implementation before any signed candidate is built |
 | 3D | Exact signed DemoLab `1.0 (3)` candidate | `blocked` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
@@ -58,10 +58,17 @@ The published pre-build directory contains exactly:
 
 The directory is created under an already-existing canonical mode-`0700`
 output root outside the repository. The lane rejects a clean local commit that
-is not an ancestor of the reviewed `origin/main` ref and rechecks the same
-source immediately before generation. The ancestry check and subsequent Git
-operations explicitly disable replacement refs and exclude global and system
-Git configuration. The lane compiles the helper from a read-only Git archive
+is not an ancestor of the live GitHub `main` OID and rechecks the same source
+immediately before generation. It obtains that OID with `git ls-remote` from a
+hard-coded SSH repository URL while running outside the checkout, excluding
+local, global, and system Git configuration, disabling prompts and SSH agent
+use, and authenticating `ssh.github.com:443` against the GitHub Ed25519 host
+key pinned in the reviewed source. A mutable local remote-tracking ref is never
+used as review evidence. Through that same restricted transport, a quiet fetch
+materializes the advertised `main` history without writing `FETCH_HEAD` or a
+local ref; a second live query must return the same OID, and that exact commit
+object must then exist locally. The ancestry check and subsequent Git operations
+explicitly disable replacement refs. The lane compiles the helper from a read-only Git archive
 of that exact 40-hex commit in a separate private workspace, and the extracted
 path/Blob OID inventory must exactly match
 `git ls-tree`; external attribute transformations are rejected. Archive stdout
@@ -140,7 +147,12 @@ replacement fails the final check and invokes the already-armed,
 identity-scoped rollback. Rollback refuses to touch a
 substituted directory. If the armed identity disappears from both its staging
 and final names, rollback reports the private state as indeterminate instead
-of claiming cleanup; the lane will not silently retry that tuple.
+of claiming cleanup. Every fixed artifact unlink must succeed, directory
+removal must succeed, and the held directory descriptor is queried afterward
+to prove that its inode was not concurrently renamed and left reachable.
+Missing or renamed artifact entries, a post-open directory rename, or a
+remaining/replaced descriptor path therefore makes rollback indeterminate
+rather than successful; the lane will not silently retry that tuple.
 Files use exclusive creation and `fsync`, and the parent directory is fsynced
 after publication or cleanup. Reusing the same source/version/build tuple is
 rejected instead of overwriting its private inputs. This lane performs no

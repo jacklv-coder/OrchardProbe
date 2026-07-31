@@ -14,7 +14,7 @@
 
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入受评审 `origin/main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
+| 3A | 私有预构建输入生成器 | `已实现；PR #62 等待评审/合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试已通过；只有 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 通过 Codex CR/CI 并合并后，本行才完成 |
 | 3B | Archive/Oracle/证据闭合 | `blocked` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
@@ -48,9 +48,15 @@
   `0400`。
 
 目录只能创建在仓库外、已存在、Canonical、Mode `0700` 的输出根目录下。Lane
-会拒绝尚未成为受评审 `origin/main` 祖先的干净本地 Commit，并在生成前再次核对
-同一 Source。祖先检查及后续 Git 操作都会显式禁用 Git Replacement Ref，并排除
-全局与系统 Git Configuration。Helper 只从该精确 40-hex Commit 的只读 Git
+会拒绝尚未成为 GitHub 实时 `main` OID 祖先的干净本地 Commit，并在生成前再次核对
+同一 Source。该 OID 由 `git ls-remote` 从写死的 SSH 仓库 URL 获取；命令在 Checkout
+之外运行，排除本地、全局与系统 Git Configuration，禁用交互 Prompt 与 SSH Agent，
+并使用受评审源码内固定的 GitHub Ed25519 Host Key 认证
+`ssh.github.com:443`，绝不把可变的本地 Remote-tracking Ref 当作评审证据。
+同一受限通道还会执行 Quiet Fetch，只把所公布的 `main` 历史物化进本地 Object
+Database，不写 `FETCH_HEAD`、不更新任何本地 Ref；随后第二次实时查询必须返回相同
+OID，且该精确 Commit Object 必须已能在本地验证。祖先检查及后续 Git 操作都会显式
+禁用 Git Replacement Ref。Helper 只从该精确 40-hex Commit 的只读 Git
 Archive 快照构建；解包后的 Path/Blob OID 清单还必须与 `git ls-tree` 精确相等；外部 Attributes
 造成的变换会被拒绝。Git Archive 的标准输出直接以无路径中间归档的 Pipe 交给
 Extractor，且两个进程状态都必须成功。快照位于独立私有 Workspace，不读取
@@ -107,7 +113,11 @@ Descriptor-relative 方式逐个重开、重新 Hash 并复核身份，最后再
 任一文件被原位修改或替换都会让最终检查失败，并触发已经启用、按身份限定的
 Rollback。如果目录已被替换，Rollback 会拒绝接触
 替代目录。如果已启用 Rollback 的身份同时从 Staging 与最终名称消失，Rollback
-会把私有状态报告为不确定，不会声称已经清理，也不会静默重试该 Tuple。
+会把私有状态报告为不确定，不会声称已经清理。三个固定 Artifact 的每次 Unlink
+都必须成功，目录删除也必须成功；随后还会通过已持有 Directory Descriptor 查询
+路径，证明对应 Inode 没有被并发改名后继续可达。因此 Artifact 缺失或改名、目录
+在打开后改名、Descriptor Path 仍存在或被替换，都会得到“不确定”而不是成功；
+Lane 不会静默重试该 Tuple。
 文件排他创建并 `fsync`，发布或清理后再 `fsync` Parent。相同
 Source/Version/Build Tuple 再次使用会拒绝，不会覆盖私有输入。该 Lane 不执行
 签名、Archive/Export、上传、安装或设备操作。

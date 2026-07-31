@@ -96,6 +96,12 @@ DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
 DEMO_LAB_LAB002_CDHASH_BYTES = 20
 DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
+DEMO_LAB_REVIEWED_GITHUB_SSH_URL =
+  "ssh://git@ssh.github.com:443/jacklv-coder/OrchardProbe.git"
+DEMO_LAB_REVIEWED_GITHUB_MAIN_REF = "refs/heads/main"
+DEMO_LAB_GITHUB_SSH_ED25519_HOST_KEY =
+  "[ssh.github.com]:443 ssh-ed25519 " \
+  "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
 DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES = %w[
   lab-002-authorization-seed-v1.bin
   lab-002-authorized-targets-v1.json
@@ -149,6 +155,8 @@ module DemoLabDarwin
   RENAME_EXCL = 0x00000004
   RENAME_NOFOLLOW_ANY = 0x00000010
   AT_REMOVEDIR = 0x00000080
+  F_GETPATH = 50
+  MAXPATHLEN = 1024
 end
 
 class Lab002DigestingReader
@@ -2290,13 +2298,45 @@ def cleanup_lab002_published_prebuild!(
       "no files were removed."
     )
   end
+  cleanup_lab002_bound_published_prebuild!(
+    output_handle,
+    final_name,
+    publication_state,
+    directory,
+    active_name
+  )
+ensure
+  directory&.close unless directory&.closed?
+end
+
+def lab002_descriptor_path!(directory)
+  buffer = "\0".b * DemoLabDarwin::MAXPATHLEN
+  directory.fcntl(DemoLabDarwin::F_GETPATH, buffer)
+  path = buffer.split("\0".b, 2).first
+  unless path && !path.empty? && path.start_with?("/") &&
+         path.dup.force_encoding(Encoding::UTF_8).valid_encoding?
+    UI.user_error!("LAB-002 held publication path is invalid.")
+  end
+  path
+rescue SystemCallError
+  UI.user_error!("Unable to inspect the held LAB-002 publication path.")
+end
+
+def cleanup_lab002_bound_published_prebuild!(
+  output_handle,
+  final_name,
+  publication_state,
+  directory,
+  active_name
+)
+  expected_identity = publication_state.fetch("identity")
+  staging_name = publication_state.fetch("staging_name")
   errors = []
   DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
     result = DemoLabDarwin.unlinkat(directory.fileno, name, 0)
     next if result.zero?
 
-    error = SystemCallError.new("unlinkat", Fiddle.last_error)
-    errors << error unless error.is_a?(Errno::ENOENT)
+    errors << SystemCallError.new("unlinkat", Fiddle.last_error)
   end
   begin
     directory.fsync
@@ -2304,6 +2344,7 @@ def cleanup_lab002_published_prebuild!(
     errors << error
   end
 
+  removed = false
   begin
     [active_name, staging_name, final_name].uniq.each do |candidate|
       begin
@@ -2323,7 +2364,9 @@ def cleanup_lab002_published_prebuild!(
         )
         if result.nonzero?
           error = SystemCallError.new("unlinkat", Fiddle.last_error)
-          errors << error unless error.is_a?(Errno::ENOENT)
+          errors << error
+        else
+          removed = true
         end
         break
       rescue Errno::ENOENT
@@ -2331,19 +2374,38 @@ def cleanup_lab002_published_prebuild!(
       end
     end
   end
+  unless removed
+    errors << RuntimeError.new(
+      "the held publication identity vanished before directory removal"
+    )
+  end
   begin
     output_handle.fsync
   rescue SystemCallError => error
     errors << error
   end
-  return if errors.empty?
+
+  descriptor_path = lab002_descriptor_path!(directory)
+  begin
+    linked = File.lstat(descriptor_path)
+    if [linked.dev, linked.ino] == expected_identity
+      errors << RuntimeError.new(
+        "the held publication identity remains linked after rollback"
+      )
+    else
+      errors << RuntimeError.new(
+        "the held publication path was replaced during rollback"
+      )
+    end
+  rescue Errno::ENOENT, Errno::ENOTDIR
+    nil
+  end
+  return if removed && errors.empty?
 
   UI.user_error!(
     "LAB-002 post-publication rollback is indeterminate: " \
     "#{errors.map(&:message).join('; ')}"
   )
-ensure
-  directory&.close unless directory&.closed?
 end
 
 def lab002_published_artifact_identity!(directory, name)
@@ -2800,13 +2862,163 @@ def git_ancestor_without_replacements?(
   status.success?
 end
 
+def parse_reviewed_github_main_ref!(output)
+  lines = output.lines(chomp: true)
+  match = if lines.length == 1
+            /\A([0-9a-f]{40})\t#{Regexp.escape(
+              DEMO_LAB_REVIEWED_GITHUB_MAIN_REF
+            )}\z/.match(lines.first)
+          end
+  unless match
+    UI.user_error!("GitHub returned an ambiguous reviewed main reference.")
+  end
+  match[1]
+end
+
+def reviewed_github_main_commit
+  with_external_temporary_file(["github-host-", ".known-hosts"]) do |file|
+    expected_host_bytes =
+      "#{DEMO_LAB_GITHUB_SSH_ED25519_HOST_KEY}\n".b
+    file.binmode
+    file.write(expected_host_bytes)
+    file.flush
+    file.fsync
+    File.chmod(0o400, file.path)
+    host_identity = [
+      file.stat.dev,
+      file.stat.ino,
+      file.stat.size,
+      Digest::SHA256.hexdigest(expected_host_bytes),
+    ]
+    ssh = pinned_executable("/usr/bin/ssh", "System SSH")
+    ssh_command = Shellwords.join(
+      [
+        ssh.fetch("path"),
+        "-F",
+        "/dev/null",
+        "-p",
+        "443",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "IdentitiesOnly=yes",
+        "-o",
+        "IdentityAgent=none",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        "UserKnownHostsFile=#{file.path}",
+        "-o",
+        "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "HostKeyAlgorithms=ssh-ed25519",
+        "-o",
+        "UpdateHostKeys=no",
+      ]
+    )
+    environment = trusted_git_environment.merge(
+      "GIT_SSH_COMMAND" => ssh_command,
+      "GIT_TERMINAL_PROMPT" => "0"
+    )
+    network_git = [
+      "/usr/bin/git",
+      "--no-replace-objects",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "protocol.allow=never",
+      "-c",
+      "protocol.ssh.allow=always",
+      "-c",
+      "fetch.fsckObjects=true",
+      "-c",
+      "fetch.writeCommitGraph=false",
+      "-c",
+      "gc.auto=0",
+    ]
+    stdout, stderr, status = Open3.capture3(
+      environment,
+      *network_git,
+      "ls-remote",
+      "--exit-code",
+      DEMO_LAB_REVIEWED_GITHUB_SSH_URL,
+      DEMO_LAB_REVIEWED_GITHUB_MAIN_REF,
+      chdir: File.dirname(file.path),
+      unsetenv_others: true
+    )
+    unless status.success? && stderr.empty?
+      UI.user_error!(
+        "Unable to authenticate the reviewed GitHub main reference over SSH."
+      )
+    end
+    reviewed_main = parse_reviewed_github_main_ref!(stdout)
+
+    fetch_stdout, fetch_stderr, fetch_status = Open3.capture3(
+      environment,
+      *network_git,
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      "--no-recurse-submodules",
+      "--no-write-fetch-head",
+      DEMO_LAB_REVIEWED_GITHUB_SSH_URL,
+      DEMO_LAB_REVIEWED_GITHUB_MAIN_REF,
+      chdir: repository_root,
+      unsetenv_others: true
+    )
+    confirmed_stdout, confirmed_stderr, confirmed_status = Open3.capture3(
+      environment,
+      *network_git,
+      "ls-remote",
+      "--exit-code",
+      DEMO_LAB_REVIEWED_GITHUB_SSH_URL,
+      DEMO_LAB_REVIEWED_GITHUB_MAIN_REF,
+      chdir: File.dirname(file.path),
+      unsetenv_others: true
+    )
+    confirmed_main = if confirmed_status.success? && confirmed_stderr.empty?
+                       parse_reviewed_github_main_ref!(confirmed_stdout)
+                     end
+    object_stdout, object_stderr, object_status = Open3.capture3(
+      trusted_git_environment,
+      "/usr/bin/git",
+      "--no-replace-objects",
+      "cat-file",
+      "-e",
+      "#{reviewed_main}^{commit}",
+      chdir: repository_root,
+      unsetenv_others: true
+    )
+    file.rewind
+    observed_host_bytes = file.read
+    observed_host_stat = file.stat
+    unless fetch_status.success? &&
+           fetch_stdout.empty? &&
+           fetch_stderr.empty? &&
+           confirmed_main == reviewed_main &&
+           object_status.success? &&
+           object_stdout.empty? &&
+           object_stderr.empty? &&
+           observed_host_bytes == expected_host_bytes &&
+           [
+             observed_host_stat.dev,
+             observed_host_stat.ino,
+             observed_host_stat.size,
+             Digest::SHA256.hexdigest(observed_host_bytes),
+           ] == host_identity &&
+           pinned_executable("/usr/bin/ssh", "System SSH") == ssh
+      UI.user_error!(
+        "Unable to authenticate and materialize the reviewed GitHub main " \
+        "reference over SSH."
+      )
+    end
+    reviewed_main
+  end
+end
+
 def reviewed_main_source_commit
   source_commit = git_command_output("rev-parse", "HEAD")
-  reviewed_main = git_command_output(
-    "rev-parse",
-    "--verify",
-    "refs/remotes/origin/main"
-  )
+  reviewed_main = reviewed_github_main_commit
   unless git_ancestor_without_replacements?(
     repository_root,
     source_commit,
@@ -2814,7 +3026,7 @@ def reviewed_main_source_commit
   )
     UI.user_error!(
       "LAB-002 preparation requires HEAD to be present in the reviewed " \
-      "origin/main history."
+      "GitHub main history."
     )
   end
   source_commit
@@ -5136,6 +5348,29 @@ platform :ios do
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
+    parser_commit = git_command_output("rev-parse", "HEAD")
+    parsed_reviewed_main = parse_reviewed_github_main_ref!(
+      "#{parser_commit}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n"
+    )
+    unless parsed_reviewed_main == parser_commit
+      UI.user_error!("The authenticated GitHub main parser changed its OID.")
+    end
+    [
+      "#{parser_commit}\trefs/remotes/origin/main\n",
+      "#{parser_commit}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n" \
+        "#{"0" * 40}\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n",
+      "not-an-object\t#{DEMO_LAB_REVIEWED_GITHUB_MAIN_REF}\n",
+    ].each do |ambiguous_output|
+      ambiguous_ref_rejected = false
+      begin
+        parse_reviewed_github_main_ref!(ambiguous_output)
+      rescue FastlaneCore::Interface::FastlaneError
+        ambiguous_ref_rejected = true
+      end
+      unless ambiguous_ref_rejected
+        UI.user_error!("An ambiguous GitHub main reference was accepted.")
+      end
+    end
     trusted_toolchain_name, trusted_sources =
       DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS.first
     trusted_source_sha256, trusted_products = trusted_sources.first
@@ -5394,6 +5629,63 @@ platform :ios do
       unless missing_rejected && moved_private_intact
         UI.user_error!(
           "LAB-002 rollback accepted a vanished publication as cleaned."
+        )
+      end
+    end
+
+    Dir.mktmpdir(
+      "orchardprobe-lab002-rollback-post-open-rename-check-",
+      external_temporary_base
+    ) do |rollback_root|
+      File.chmod(0o700, rollback_root)
+      staging_name = ".lab002-prebuild-#{"9" * 32}"
+      staging = File.join(rollback_root, staging_name)
+      moved_staging = File.join(rollback_root, "moved-after-open")
+      Dir.mkdir(staging, 0o700)
+      DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.each do |name|
+        File.write(File.join(staging, name), "private")
+      end
+      staging_stat = File.stat(staging)
+      output_handle = File.open(
+        rollback_root,
+        File::RDONLY | File::NOFOLLOW
+      )
+      directory = lab002_open_directory_at(
+        output_handle,
+        staging_name,
+        required_mode: 0o700
+      )
+      renamed_seed = "renamed-private-seed"
+      File.rename(staging, moved_staging)
+      File.rename(
+        File.join(
+          moved_staging,
+          DEMO_LAB_LAB002_PRIVATE_ARTIFACT_NAMES.first
+        ),
+        File.join(moved_staging, renamed_seed)
+      )
+      post_open_rename_rejected = false
+      begin
+        cleanup_lab002_bound_published_prebuild!(
+          output_handle,
+          "lab002-prebuild-final",
+          {
+            "staging_name" => staging_name,
+            "identity" => [staging_stat.dev, staging_stat.ino],
+          },
+          directory,
+          staging_name
+        )
+      rescue FastlaneCore::Interface::FastlaneError => error
+        post_open_rename_rejected = error.message.include?("indeterminate")
+      ensure
+        directory.close
+        output_handle.close
+      end
+      unless post_open_rename_rejected &&
+             File.read(File.join(moved_staging, renamed_seed)) == "private"
+        UI.user_error!(
+          "LAB-002 rollback accepted a post-open vanished publication."
         )
       end
     end
