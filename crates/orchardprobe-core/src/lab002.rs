@@ -2135,6 +2135,7 @@ fn reject_overlapping_segment_vm_ranges(segments: &[FixupSegment]) -> Result<(),
 enum FixupOpcodeKind {
     Rebase,
     Bind,
+    LazyBind,
 }
 
 impl FixupOpcodeKind {
@@ -2142,6 +2143,7 @@ impl FixupOpcodeKind {
         match self {
             Self::Rebase => 0,
             Self::Bind => 1,
+            Self::LazyBind => 2,
         }
     }
 }
@@ -2300,11 +2302,23 @@ fn inspect_fixup_opcodes(
     while cursor < bytes.len() {
         let byte = bytes[cursor];
         cursor += 1;
+        if byte == 0 {
+            if bytes[cursor..].iter().all(|trailing| *trailing == 0) {
+                return Ok(());
+            }
+            if matches!(kind, FixupOpcodeKind::LazyBind) {
+                state = None;
+                continue;
+            }
+            return Err(Lab002Error::InvalidMachO(
+                "dyld fixup stream has a non-padding opcode after DONE".into(),
+            ));
+        }
         let opcode = byte & 0xf0;
         let immediate = byte & 0x0f;
         match kind {
             FixupOpcodeKind::Rebase => match opcode {
-                0x00 | 0x10 => {}
+                0x10 => {}
                 0x20 => {
                     let offset = read_uleb128(bytes, &mut cursor)?;
                     state = Some(set_fixup_segment(segments, immediate, offset)?);
@@ -2362,8 +2376,8 @@ fn inspect_fixup_opcodes(
                     return Err(Lab002Error::InvalidMachO("unknown rebase opcode".into()));
                 }
             },
-            FixupOpcodeKind::Bind => match opcode {
-                0x00 | 0x10 | 0x30 | 0x50 => {}
+            FixupOpcodeKind::Bind | FixupOpcodeKind::LazyBind => match opcode {
+                0x10 | 0x30 | 0x50 => {}
                 0x20 => {
                     read_uleb128(bytes, &mut cursor)?;
                 }
@@ -2433,7 +2447,9 @@ fn inspect_fixup_opcodes(
             },
         }
     }
-    Ok(())
+    Err(Lab002Error::InvalidMachO(
+        "dyld fixup stream has no terminal DONE opcode".into(),
+    ))
 }
 
 fn read_slice_payload<R: Read + Seek>(
@@ -2903,7 +2919,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                         (
                             read_u32_at(bytes, 32, slice.endianness),
                             read_u32_at(bytes, 36, slice.endianness),
-                            FixupOpcodeKind::Bind,
+                            FixupOpcodeKind::LazyBind,
                         ),
                     ],
                 ));
@@ -4393,6 +4409,32 @@ mod tests {
             inspect_chained_fixups(&unterminated, Endianness::Little, &[], 0),
             Err(Lab002Error::InvalidMachO(message))
                 if message.contains("unterminated")
+        ));
+    }
+
+    #[test]
+    fn classic_fixup_streams_require_one_terminal_done_opcode() {
+        for kind in [FixupOpcodeKind::Rebase, FixupOpcodeKind::Bind] {
+            inspect_fixup_opcodes(&[0x10, 0x00, 0x00, 0x00], kind, &[], 8).unwrap();
+
+            assert!(matches!(
+                inspect_fixup_opcodes(&[0x10], kind, &[], 8),
+                Err(Lab002Error::InvalidMachO(message))
+                    if message.contains("no terminal DONE")
+            ));
+            assert!(matches!(
+                inspect_fixup_opcodes(&[0x00, 0x10], kind, &[], 8),
+                Err(Lab002Error::InvalidMachO(message))
+                    if message.contains("after DONE")
+            ));
+        }
+
+        inspect_fixup_opcodes(&[0x10, 0x00, 0x10, 0x00], FixupOpcodeKind::LazyBind, &[], 8)
+            .unwrap();
+        assert!(matches!(
+            inspect_fixup_opcodes(&[0x10, 0x00, 0x10], FixupOpcodeKind::LazyBind, &[], 8),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("no terminal DONE")
         ));
     }
 

@@ -983,21 +983,12 @@ fn create_oracle(
         &ipa_sha256,
     )?;
     verify_stable_file(&ipa_file, &ipa_identity, "exported IPA")?;
-    for measurement in &mut archive_measurements {
-        measurement.verify_current_path(&archive_app)?;
-    }
-    let confirmed_archive_executables = archive_executable_inventory(&archive_app)?;
-    if confirmed_archive_executables != initial_archive_executables
-        || !same_paths_ignoring_order(
-            confirmed_archive_executables
-                .iter()
-                .map(String::as_str)
-                .collect(),
-            &archive_executable_paths,
-        )
-    {
-        return Err("Archive executable inventory changed during oracle generation".into());
-    }
+    verify_final_archive_snapshot(
+        &archive_app,
+        &initial_archive_executables,
+        &archive_executable_paths,
+        &mut archive_measurements,
+    )?;
 
     let mut roles = Vec::with_capacity(LabRole::ALL.len());
     for (index, role) in LabRole::ALL.into_iter().enumerate() {
@@ -1230,6 +1221,57 @@ fn archive_app_snapshot(
 
 fn archive_executable_inventory(app_directory: &File) -> Result<Vec<String>, String> {
     Ok(archive_app_snapshot(app_directory, &[])?.executables)
+}
+
+fn verify_final_archive_snapshot(
+    app_directory: &File,
+    initial_executables: &[String],
+    expected_executables: &[&str],
+    measurements: &mut [ArchiveFileMeasurement],
+) -> Result<(), String> {
+    verify_final_archive_snapshot_with(
+        app_directory,
+        initial_executables,
+        expected_executables,
+        measurements,
+        || {},
+        || {},
+    )
+}
+
+fn verify_final_archive_snapshot_with(
+    app_directory: &File,
+    initial_executables: &[String],
+    expected_executables: &[&str],
+    measurements: &mut [ArchiveFileMeasurement],
+    after_inventory: impl FnOnce(),
+    after_path_rechecks: impl FnOnce(),
+) -> Result<(), String> {
+    let before_paths = archive_executable_inventory(app_directory)?;
+    if before_paths != initial_executables
+        || !same_paths_ignoring_order(
+            before_paths.iter().map(String::as_str).collect(),
+            expected_executables,
+        )
+    {
+        return Err("Archive executable inventory changed during oracle generation".into());
+    }
+    after_inventory();
+    for measurement in measurements {
+        measurement.verify_current_path(app_directory)?;
+    }
+    after_path_rechecks();
+    let after_paths = archive_executable_inventory(app_directory)?;
+    if after_paths != before_paths
+        || after_paths != initial_executables
+        || !same_paths_ignoring_order(
+            after_paths.iter().map(String::as_str).collect(),
+            expected_executables,
+        )
+    {
+        return Err("Archive executable inventory changed during oracle generation".into());
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -1911,14 +1953,28 @@ fn publish_oracle(
     run_directory: &PrivateOutputRoot,
     oracle_bytes: &[u8],
 ) -> Result<PrivateArtifactIdentity, String> {
+    publish_oracle_with(run_directory, oracle_bytes, || Ok(()))
+}
+
+fn publish_oracle_with(
+    run_directory: &PrivateOutputRoot,
+    oracle_bytes: &[u8],
+    after_publish: impl FnOnce() -> Result<(), String>,
+) -> Result<PrivateArtifactIdentity, String> {
     if oracle_bytes.is_empty() || oracle_bytes.len() > MAX_PRIVATE_ARTIFACT_BYTES {
         return Err("closed LAB-002 oracle has an invalid encoded size".into());
     }
+    rustix::fs::flock(
+        &run_directory.directory,
+        rustix::fs::FlockOperation::NonBlockingLockExclusive,
+    )
+    .map_err(|error| format!("private oracle directory is not exclusively locked: {error}"))?;
     verify_private_output_root_path(run_directory)?;
     let mut random = [0_u8; 16];
     OsRng.fill_bytes(&mut random);
     let staging_name = format!(".lab-002-oracle-{}.tmp", lower_hex(&random));
-    write_private_file(&run_directory.directory, &staging_name, oracle_bytes)?;
+    let (_staging_file, published_identity) =
+        write_private_file(&run_directory.directory, &staging_name, oracle_bytes)?;
     let mut published = false;
     let result = (|| {
         rustix::fs::renameat_with(
@@ -1930,6 +1986,7 @@ fn publish_oracle(
         )
         .map_err(|error| format!("could not publish LAB-002 oracle exclusively: {error}"))?;
         published = true;
+        after_publish()?;
         run_directory
             .directory
             .sync_all()
@@ -1953,16 +2010,17 @@ fn publish_oracle(
         })
     })();
     if result.is_err() {
-        let cleanup_name = if published {
-            ORACLE_NAME
+        let cleanup = if published {
+            cleanup_published_oracle(&run_directory.directory, ORACLE_NAME, published_identity)
         } else {
-            staging_name.as_str()
+            rustix::fs::unlinkat(
+                &run_directory.directory,
+                staging_name.as_str(),
+                rustix::fs::AtFlags::empty(),
+            )
+            .map_err(io::Error::from)
+            .map_err(|error| format!("could not remove private oracle staging file: {error}"))
         };
-        let cleanup = rustix::fs::unlinkat(
-            &run_directory.directory,
-            cleanup_name,
-            rustix::fs::AtFlags::empty(),
-        );
         let sync = run_directory.directory.sync_all();
         if cleanup.is_err() || sync.is_err() {
             return Err(format!(
@@ -1972,6 +2030,85 @@ fn publish_oracle(
         }
     }
     result
+}
+
+fn cleanup_published_oracle(
+    directory: &File,
+    name: &str,
+    expected_identity: (u64, u64),
+) -> Result<(), String> {
+    let mut random = [0_u8; 16];
+    OsRng.fill_bytes(&mut random);
+    let cleanup_name = format!(".lab-002-oracle-cleanup-{}.tmp", lower_hex(&random));
+    let (cleanup_anchor, cleanup_identity) = write_private_file(directory, &cleanup_name, b"\0")?;
+    rustix::fs::renameat_with(
+        directory,
+        name,
+        directory,
+        cleanup_name.as_str(),
+        rustix::fs::RenameFlags::EXCHANGE,
+    )
+    .map_err(|error| {
+        format!("could not atomically capture published oracle for cleanup: {error}")
+    })?;
+    let captured = rustix::fs::openat(
+        directory,
+        cleanup_name.as_str(),
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::NONBLOCK
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| format!("could not open captured oracle for bound cleanup: {error}"))?;
+    let captured_metadata = captured
+        .metadata()
+        .map_err(|error| format!("could not inspect captured oracle for bound cleanup: {error}"))?;
+    if !captured_metadata.is_file()
+        || (captured_metadata.dev(), captured_metadata.ino()) != expected_identity
+    {
+        rustix::fs::renameat_with(
+            directory,
+            name,
+            directory,
+            cleanup_name.as_str(),
+            rustix::fs::RenameFlags::EXCHANGE,
+        )
+        .map_err(|error| {
+            format!("published oracle identity changed and atomic restoration failed: {error}")
+        })?;
+        remove_identity_bound_entry(
+            directory,
+            cleanup_name.as_str(),
+            &cleanup_anchor,
+            cleanup_identity,
+        )?;
+        return Err("published oracle changed identity before cleanup; refusing removal".into());
+    }
+    remove_identity_bound_entry(
+        directory,
+        cleanup_name.as_str(),
+        &captured,
+        expected_identity,
+    )?;
+    remove_identity_bound_entry(directory, name, &cleanup_anchor, cleanup_identity)
+}
+
+fn remove_identity_bound_entry(
+    directory: &File,
+    name: &str,
+    held: &File,
+    expected_identity: (u64, u64),
+) -> Result<(), String> {
+    let metadata = held
+        .metadata()
+        .map_err(|error| format!("could not inspect held cleanup entry: {error}"))?;
+    if !metadata.is_file() || (metadata.dev(), metadata.ino()) != expected_identity {
+        return Err("held cleanup entry changed identity; refusing removal".into());
+    }
+    rustix::fs::unlinkat(directory, name, rustix::fs::AtFlags::empty())
+        .map_err(|error| format!("could not remove serialized identity-bound entry: {error}"))
 }
 
 fn read_private_artifact(
@@ -2396,7 +2533,7 @@ fn publish_prebuild_directory_with_arm(
     let mut publication_may_be_live = false;
     let result = (|| {
         for (name, bytes) in files {
-            write_private_file(&staging, name, bytes)?;
+            drop(write_private_file(&staging, name, bytes)?);
         }
         staging
             .sync_all()
@@ -2687,7 +2824,11 @@ fn open_directory_entry(parent: &File, name: &str) -> io::Result<File> {
     .map_err(io::Error::from)
 }
 
-fn write_private_file(directory: &File, name: &str, bytes: &[u8]) -> Result<(), String> {
+fn write_private_file(
+    directory: &File,
+    name: &str,
+    bytes: &[u8],
+) -> Result<(File, (u64, u64)), String> {
     let descriptor = rustix::fs::openat(
         directory,
         name,
@@ -2713,7 +2854,8 @@ fn write_private_file(directory: &File, name: &str, bytes: &[u8]) -> Result<(), 
     {
         return Err("private artifact identity or permissions are invalid".into());
     }
-    Ok(())
+    let identity = (metadata.dev(), metadata.ino());
+    Ok((file, identity))
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -3748,6 +3890,82 @@ mod tests {
     }
 
     #[test]
+    fn final_archive_inventory_is_followed_by_path_identity_rechecks() {
+        let root = TempDir::new().unwrap();
+        let app = root.path().join("DemoLab.app");
+        fs::create_dir(&app).unwrap();
+        let executable = app.join("DemoLab");
+        fs::write(&executable, b"reviewed-main").unwrap();
+        fs::set_permissions(
+            &executable,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let app_directory = File::open(&app).unwrap();
+        let mut snapshot = archive_app_snapshot(&app_directory, &["DemoLab"]).unwrap();
+        let retained = snapshot.retained_files.remove("DemoLab").unwrap();
+        let (_bytes, measurement) = measure_archive_file(retained, 64, "DemoLab").unwrap();
+        let mut measurements = [measurement];
+
+        let error = verify_final_archive_snapshot_with(
+            &app_directory,
+            &snapshot.executables,
+            &["DemoLab"],
+            &mut measurements,
+            || {
+                fs::rename(&executable, app.join("old-DemoLab")).unwrap();
+                fs::write(&executable, b"replacement").unwrap();
+                fs::set_permissions(
+                    &executable,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o755),
+                )
+                .unwrap();
+            },
+            || {},
+        )
+        .unwrap_err();
+        assert!(error.contains("path no longer names"));
+    }
+
+    #[test]
+    fn final_archive_path_rechecks_are_followed_by_inventory_revalidation() {
+        let root = TempDir::new().unwrap();
+        let app = root.path().join("DemoLab.app");
+        fs::create_dir(&app).unwrap();
+        let executable = app.join("DemoLab");
+        fs::write(&executable, b"reviewed-main").unwrap();
+        fs::set_permissions(
+            &executable,
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        let app_directory = File::open(&app).unwrap();
+        let mut snapshot = archive_app_snapshot(&app_directory, &["DemoLab"]).unwrap();
+        let retained = snapshot.retained_files.remove("DemoLab").unwrap();
+        let (_bytes, measurement) = measure_archive_file(retained, 64, "DemoLab").unwrap();
+        let mut measurements = [measurement];
+        let unexpected = app.join("unexpected-tool");
+
+        let error = verify_final_archive_snapshot_with(
+            &app_directory,
+            &snapshot.executables,
+            &["DemoLab"],
+            &mut measurements,
+            || {},
+            || {
+                fs::write(&unexpected, b"unexpected").unwrap();
+                fs::set_permissions(
+                    &unexpected,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o755),
+                )
+                .unwrap();
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("inventory changed"));
+    }
+
+    #[test]
     fn stable_file_digest_detects_same_identity_content_drift() {
         let root = TempDir::new().unwrap();
         let path = root.path().join("DemoLab-3.ipa");
@@ -3813,6 +4031,32 @@ mod tests {
                 .collect::<Vec<_>>(),
             [std::ffi::OsString::from(ORACLE_NAME)]
         );
+    }
+
+    #[test]
+    fn oracle_failure_cleanup_refuses_replaced_published_name() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let held = validate_private_output_root(&root_path).unwrap();
+        let moved = root_path.join("published-oracle-moved-aside");
+        let replacement = br#"{"schema":"unrelated"}"#;
+
+        let error = publish_oracle_with(&held, br#"{"schema":"test"}"#, || {
+            fs::rename(root_path.join(ORACLE_NAME), &moved).map_err(|error| error.to_string())?;
+            fs::write(root_path.join(ORACLE_NAME), replacement)
+                .map_err(|error| error.to_string())?;
+            Err("injected post-publication failure".into())
+        })
+        .unwrap_err();
+
+        assert!(error.contains("cleanup is indeterminate"));
+        assert_eq!(fs::read(root_path.join(ORACLE_NAME)).unwrap(), replacement);
+        assert_eq!(fs::read(moved).unwrap(), br#"{"schema":"test"}"#);
     }
 
     #[test]
