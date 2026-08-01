@@ -25,7 +25,6 @@ use orchardprobe_core::lab002::{
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::{
     CHECKPOINT_BUILD_NUMBER, CHECKPOINT_MARKETING_VERSION, MANIFEST_NAME, MAX_IPA_BYTES,
@@ -106,6 +105,136 @@ struct UploadResult {
     external_distribution: bool,
     status: String,
     note: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreuploadEvidence {
+    schema_version: u8,
+    profile: String,
+    purpose: String,
+    decision: String,
+    created_at: String,
+    source: EvidenceSource,
+    toolchain: EvidenceToolchain,
+    build: EvidenceBuild,
+    artifacts: EvidenceArtifacts,
+    lab002: EvidenceLab002,
+    lineage: EvidenceLineage,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceSource {
+    commit: String,
+    tree_clean: bool,
+    fixture: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceToolchain {
+    fastlane_version: String,
+    xcodegen_version: String,
+    xcode: Vec<String>,
+    iphoneos_sdk_version: String,
+    iphoneos_sdk_build: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceBuild {
+    configuration: String,
+    marketing_version: String,
+    build_number: String,
+    distribution: String,
+    bundle_identifiers: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceArtifacts {
+    ipa: EvidenceIpa,
+    archive_binaries: Vec<EvidenceBinary>,
+    package: EvidencePackage,
+    ipa_binaries: Vec<EvidenceBinary>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceIpa {
+    filename: String,
+    size: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceBinary {
+    role: String,
+    relative_path: String,
+    size: u64,
+    sha256: String,
+    #[serde(default)]
+    architectures: Option<Vec<String>>,
+    #[serde(default)]
+    slices: Option<Vec<EvidenceSlice>>,
+    initial_protection_status: String,
+    expected_plaintext_status: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceSlice {
+    architecture: String,
+    uuid: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidencePackage {
+    application: String,
+    identity_validated: bool,
+    export_compliance_validated: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceLab002 {
+    build_binding_sha256: String,
+    target_identity_set_sha256: String,
+    authorized_target_manifest: EvidenceArtifactIdentity,
+    oracle: EvidenceArtifactIdentity,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceArtifactIdentity {
+    name: String,
+    device: String,
+    inode: String,
+    mode: u32,
+    size: u64,
+    sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct EvidenceLineage {
+    uploaded_ipa_bound: bool,
+    installed_artifact_bound: bool,
+    note: String,
+}
+
+struct FrozenEvidenceInputs<'a> {
+    record: &'a super::PrebuildRecord,
+    manifest_size: u64,
+    manifest_sha256: &'a str,
+    oracle: &'a LabOracle,
+    oracle_size: u64,
+    oracle_sha256: &'a str,
+    ipa_size: u64,
+    ipa_sha256: &'a str,
 }
 
 struct SourceBundle {
@@ -281,18 +410,202 @@ fn open_owner_directory(parent: &File, name: &str) -> Result<File, String> {
     Ok(directory)
 }
 
-fn value_string<'a>(value: &'a Value, pointer: &str) -> Result<&'a str, String> {
-    value
-        .pointer(pointer)
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("pre-upload evidence field {pointer} is missing"))
+fn is_decimal_identity(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| byte.is_ascii_digit())
+        && (value == "0" || !value.starts_with('0'))
 }
 
-fn value_u64(value: &Value, pointer: &str) -> Result<u64, String> {
-    value
-        .pointer(pointer)
-        .and_then(Value::as_u64)
-        .ok_or_else(|| format!("pre-upload evidence field {pointer} is missing"))
+fn is_simple_version(value: &str, maximum_components: usize) -> bool {
+    let components = value.split('.').collect::<Vec<_>>();
+    !components.is_empty()
+        && components.len() <= maximum_components
+        && components.iter().all(|component| {
+            !component.is_empty() && component.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
+fn is_uuid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte),
+        })
+}
+
+fn is_architecture(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn is_unique(values: &[String]) -> bool {
+    values
+        .iter()
+        .enumerate()
+        .all(|(index, value)| !values[..index].contains(value))
+}
+
+const EVIDENCE_BINARY_SPECS: [(&str, &str); 3] = [
+    ("main_executable", "DemoLab.app/DemoLab"),
+    (
+        "dynamic_framework",
+        "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+    ),
+    (
+        "app_extension",
+        "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+    ),
+];
+
+fn validate_evidence_binary(
+    binary: &EvidenceBinary,
+    expected: (&str, &str),
+    archive: bool,
+) -> Result<(), String> {
+    if binary.role != expected.0
+        || binary.relative_path != expected.1
+        || binary.size == 0
+        || binary.size > super::MAX_EXECUTABLE_BYTES
+        || !is_lower_hex(&binary.sha256, 64)
+        || binary.initial_protection_status != "not_observed"
+        || binary.expected_plaintext_status != "candidate_pre_upload_archive_only"
+    {
+        return Err("pre-upload binary evidence is incomplete".into());
+    }
+    if archive {
+        let architectures = binary
+            .architectures
+            .as_ref()
+            .ok_or("Archive architecture evidence is missing")?;
+        let slices = binary
+            .slices
+            .as_ref()
+            .ok_or("Archive slice evidence is missing")?;
+        if architectures.is_empty()
+            || architectures.len() > 8
+            || architectures.len() != slices.len()
+            || !is_unique(architectures)
+            || !architectures.iter().all(|value| is_architecture(value))
+            || slices.iter().enumerate().any(|(index, slice)| {
+                slice.architecture != architectures[index]
+                    || !is_architecture(&slice.architecture)
+                    || !is_uuid(&slice.uuid)
+            })
+        {
+            return Err("Archive architecture evidence is incomplete".into());
+        }
+    } else if binary.architectures.is_some() || binary.slices.is_some() {
+        return Err("IPA binary evidence contains unexpected Archive fields".into());
+    }
+    Ok(())
+}
+
+fn validate_evidence_artifact(
+    artifact: &EvidenceArtifactIdentity,
+    expected_name: &str,
+    expected_size: u64,
+    expected_sha256: &str,
+) -> Result<(), String> {
+    if artifact.name != expected_name
+        || !is_decimal_identity(&artifact.device)
+        || !is_decimal_identity(&artifact.inode)
+        || artifact.mode != 0o400
+        || artifact.size != expected_size
+        || artifact.sha256 != expected_sha256
+    {
+        return Err(format!("pre-upload {expected_name} identity is invalid"));
+    }
+    Ok(())
+}
+
+fn validate_complete_evidence(
+    evidence: &PreuploadEvidence,
+    inputs: &FrozenEvidenceInputs<'_>,
+) -> Result<(), String> {
+    let record = inputs.record;
+    let expected_xcode = [
+        format!("Xcode {}", record.toolchain.xcode_version),
+        format!("Build version {}", record.toolchain.xcode_build),
+    ];
+    if evidence.schema_version != 1
+        || evidence.profile != "orchardprobe.demolab.testflight-preupload.v1"
+        || evidence.purpose != "LAB-001 controlled first-party TestFlight preparation"
+        || evidence.decision != "pending_controlled_device_observation"
+        || !is_bounded_utc_timestamp(&evidence.created_at)
+        || evidence.source.commit != record.source_commit
+        || !evidence.source.tree_clean
+        || evidence.source.fixture != record.fixture_source_root
+        || evidence.toolchain.fastlane_version != record.toolchain.fastlane_version
+        || evidence.toolchain.xcodegen_version != record.toolchain.xcodegen_version
+        || evidence.toolchain.xcode.len() != expected_xcode.len()
+        || evidence
+            .toolchain
+            .xcode
+            .iter()
+            .map(|line| line.trim())
+            .ne(expected_xcode.iter().map(String::as_str))
+        || !is_simple_version(&evidence.toolchain.xcodegen_version, 3)
+        || evidence.toolchain.iphoneos_sdk_version != record.toolchain.iphoneos_sdk_version
+        || evidence.toolchain.iphoneos_sdk_build != record.toolchain.iphoneos_sdk_build
+        || evidence.build.configuration != "Release"
+        || evidence.build.marketing_version != CHECKPOINT_MARKETING_VERSION
+        || evidence.build.build_number != CHECKPOINT_BUILD_NUMBER
+        || evidence.build.distribution != "app-store"
+        || evidence.build.bundle_identifiers
+            != "operator-provided first-party identifiers; redacted"
+        || evidence.artifacts.ipa.filename != "DemoLab-3.ipa"
+        || evidence.artifacts.ipa.size != inputs.ipa_size
+        || evidence.artifacts.ipa.sha256 != inputs.ipa_sha256
+        || evidence.artifacts.package.application != "DemoLab.app"
+        || !evidence.artifacts.package.identity_validated
+        || !evidence.artifacts.package.export_compliance_validated
+        || evidence.artifacts.archive_binaries.len() != EVIDENCE_BINARY_SPECS.len()
+        || evidence.artifacts.ipa_binaries.len() != EVIDENCE_BINARY_SPECS.len()
+        || evidence.lab002.build_binding_sha256 != record.build_binding_sha256
+        || evidence.lab002.target_identity_set_sha256 != record.target_identity_set_sha256
+        || evidence.lineage.uploaded_ipa_bound
+        || evidence.lineage.installed_artifact_bound
+        || evidence.lineage.note
+            != "Pre-upload bytes are candidates, not proof of installed plaintext."
+    {
+        return Err("pre-upload evidence is not the complete closed checkpoint record".into());
+    }
+    for (index, expected) in EVIDENCE_BINARY_SPECS.iter().copied().enumerate() {
+        validate_evidence_binary(&evidence.artifacts.archive_binaries[index], expected, true)?;
+        validate_evidence_binary(&evidence.artifacts.ipa_binaries[index], expected, false)?;
+        let mut evidence_uuids = evidence.artifacts.archive_binaries[index]
+            .slices
+            .as_ref()
+            .ok_or("Archive slice evidence is missing")?
+            .iter()
+            .map(|slice| slice.uuid.replace('-', ""))
+            .collect::<Vec<_>>();
+        let mut oracle_uuids = inputs.oracle.roles[index]
+            .slices
+            .iter()
+            .map(|slice| slice.macho_uuid.clone())
+            .collect::<Vec<_>>();
+        evidence_uuids.sort_unstable();
+        oracle_uuids.sort_unstable();
+        if evidence_uuids != oracle_uuids {
+            return Err("Archive UUID evidence does not match the frozen oracle".into());
+        }
+    }
+    validate_evidence_artifact(
+        &evidence.lab002.authorized_target_manifest,
+        MANIFEST_NAME,
+        inputs.manifest_size,
+        inputs.manifest_sha256,
+    )?;
+    validate_evidence_artifact(
+        &evidence.lab002.oracle,
+        ORACLE_NAME,
+        inputs.oracle_size,
+        inputs.oracle_sha256,
+    )
 }
 
 struct DerivedPrebuildBindings {
@@ -430,6 +743,70 @@ fn candidate_inventory(directory: &File) -> Result<(), String> {
     Ok(())
 }
 
+fn verify_frozen_archive_files(
+    archive_app: &File,
+    evidence: &PreuploadEvidence,
+    expected_executables: &[&str],
+) -> Result<(), String> {
+    for (binary, relative_path) in evidence
+        .artifacts
+        .archive_binaries
+        .iter()
+        .zip(expected_executables.iter())
+    {
+        let components = relative_path.split('/').collect::<Vec<_>>();
+        let label = format!("frozen Archive binary {relative_path}");
+        let mut file = super::open_regular_beneath(
+            archive_app,
+            &components,
+            super::MAX_EXECUTABLE_BYTES,
+            &label,
+        )?;
+        let identity = super::stable_file_identity(&file, super::MAX_EXECUTABLE_BYTES, &label)?;
+        let digest =
+            super::hash_stable_file(&mut file, &identity, super::MAX_EXECUTABLE_BYTES, &label)?;
+        if identity.size != binary.size || digest != binary.sha256 {
+            return Err(format!("{label} does not match the pre-upload evidence"));
+        }
+        super::reopen_verified_regular_source(
+            archive_app,
+            &components,
+            &identity,
+            &digest,
+            &label,
+        )?;
+    }
+    Ok(())
+}
+
+fn verify_frozen_archive(
+    candidate: &PrivateOutputRoot,
+    evidence: &PreuploadEvidence,
+) -> Result<(), String> {
+    let archive_app = super::open_archive_app_beneath(&candidate.directory)?;
+    let archive_identity = super::stable_directory_identity(&archive_app, "frozen Archive app")?;
+    let expected_executables = EVIDENCE_BINARY_SPECS
+        .iter()
+        .map(|(_, path)| {
+            path.strip_prefix("DemoLab.app/")
+                .ok_or_else(|| "Archive evidence path is outside the fixed app".to_owned())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let inventory = super::archive_executable_inventory(&archive_app)?;
+    if !super::same_paths_ignoring_order(
+        inventory.iter().map(String::as_str).collect(),
+        &expected_executables,
+    ) {
+        return Err("frozen Archive executable inventory is not the exact three roles".into());
+    }
+    verify_frozen_archive_files(&archive_app, evidence, &expected_executables)?;
+    let final_archive = super::reopen_expected_archive_app(&candidate.directory, archive_identity)?;
+    if super::archive_executable_inventory(&final_archive)? != inventory {
+        return Err("frozen Archive executable inventory changed during validation".into());
+    }
+    verify_frozen_archive_files(&final_archive, evidence, &expected_executables)
+}
+
 fn load_source_bundle(
     prebuild: &PrivateOutputRoot,
     candidate: &PrivateOutputRoot,
@@ -461,13 +838,10 @@ fn load_source_bundle(
     )?;
     let oracle_value = LabOracle::from_canonical_bytes(&oracle.bytes)
         .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
-    let evidence_value: Value = serde_json::from_slice(&evidence.bytes)
+    let evidence_value: PreuploadEvidence = serde_json::from_slice(&evidence.bytes)
         .map_err(|error| format!("pre-upload evidence is invalid: {error}"))?;
     let upload_value: UploadResult = serde_json::from_slice(&upload.bytes)
         .map_err(|error| format!("upload audit record is invalid: {error}"))?;
-    let evidence_oracle_sha = value_string(&evidence_value, "/lab002/oracle/sha256")?;
-    let evidence_manifest_sha =
-        value_string(&evidence_value, "/lab002/authorized_target_manifest/sha256")?;
     let oracle_targets_match = record.targets.len() == oracle_value.roles.len()
         && record
             .targets
@@ -478,42 +852,24 @@ fn load_source_bundle(
                     && prepared.target_identity_binding_sha256
                         == oracle_role.target_identity_binding_sha256
             });
-    if evidence_value.get("schema_version").and_then(Value::as_u64) != Some(1)
-        || value_string(&evidence_value, "/profile")?
-            != "orchardprobe.demolab.testflight-preupload.v1"
-        || value_string(&evidence_value, "/purpose")?
-            != "LAB-001 controlled first-party TestFlight preparation"
-        || value_string(&evidence_value, "/decision")? != "pending_controlled_device_observation"
-        || evidence_value
-            .pointer("/source/tree_clean")
-            .and_then(Value::as_bool)
-            != Some(true)
-        || value_string(&evidence_value, "/source/commit")? != record.source_commit
-        || value_string(&evidence_value, "/source/fixture")? != record.fixture_source_root
-        || value_string(&evidence_value, "/build/marketing_version")?
-            != CHECKPOINT_MARKETING_VERSION
-        || value_string(&evidence_value, "/build/build_number")? != CHECKPOINT_BUILD_NUMBER
-        || value_string(&evidence_value, "/build/configuration")? != "Release"
-        || value_string(&evidence_value, "/build/distribution")? != "app-store"
-        || value_string(&evidence_value, "/toolchain/fastlane_version")?
-            != record.toolchain.fastlane_version
-        || value_string(&evidence_value, "/toolchain/xcodegen_version")?
-            != record.toolchain.xcodegen_version
-        || value_string(&evidence_value, "/toolchain/xcode")? != record.toolchain.xcode_version
-        || value_string(&evidence_value, "/toolchain/iphoneos_sdk_version")?
-            != record.toolchain.iphoneos_sdk_version
-        || value_string(&evidence_value, "/toolchain/iphoneos_sdk_build")?
-            != record.toolchain.iphoneos_sdk_build
-        || value_string(&evidence_value, "/lab002/build_binding_sha256")?
-            != record.build_binding_sha256
-        || value_string(&evidence_value, "/lab002/target_identity_set_sha256")?
-            != record.target_identity_set_sha256
-        || evidence_manifest_sha != sha256_hex(&manifest)
-        || evidence_oracle_sha != sha256_hex(&oracle.bytes)
-        || value_string(&evidence_value, "/artifacts/ipa/filename")? != "DemoLab-3.ipa"
-        || value_string(&evidence_value, "/artifacts/ipa/sha256")? != sha256_hex(&ipa.bytes)
-        || value_u64(&evidence_value, "/artifacts/ipa/size")? != ipa.size
-        || oracle_value.profile != record.profile
+    let manifest_sha256 = sha256_hex(&manifest);
+    let oracle_sha256 = sha256_hex(&oracle.bytes);
+    let ipa_sha256 = sha256_hex(&ipa.bytes);
+    validate_complete_evidence(
+        &evidence_value,
+        &FrozenEvidenceInputs {
+            record: &record,
+            manifest_size: manifest.len() as u64,
+            manifest_sha256: &manifest_sha256,
+            oracle: &oracle_value,
+            oracle_size: oracle.size,
+            oracle_sha256: &oracle_sha256,
+            ipa_size: ipa.size,
+            ipa_sha256: &ipa_sha256,
+        },
+    )?;
+    verify_frozen_archive(candidate, &evidence_value)?;
+    if oracle_value.profile != record.profile
         || oracle_value.source_commit != record.source_commit
         || oracle_value.fixture_source_root != record.fixture_source_root
         || oracle_value.marketing_version != record.marketing_version
@@ -522,7 +878,7 @@ fn load_source_bundle(
         || oracle_value.observer_revision != record.observer_revision
         || oracle_value.generator_revision != record.generator_revision
         || oracle_value.build_binding_sha256 != record.build_binding_sha256
-        || oracle_value.authorized_target_manifest_sha256 != sha256_hex(&manifest)
+        || oracle_value.authorized_target_manifest_sha256 != manifest_sha256
         || oracle_value.authorization_public_key != record.authorization_public_key
         || oracle_value.authorization_key_id != record.authorization_key_id
         || oracle_value.authorization_public_key
@@ -531,7 +887,7 @@ fn load_source_bundle(
         || !oracle_targets_match
         || oracle_value.toolchain != record.toolchain
         || oracle_value.ipa_size != ipa.size
-        || oracle_value.ipa_sha256 != sha256_hex(&ipa.bytes)
+        || oracle_value.ipa_sha256 != ipa_sha256
         || upload_value.schema_version != 1
         || upload_value.source_commit != record.source_commit
         || upload_value.ipa_sha256 != oracle_value.ipa_sha256
@@ -1184,18 +1540,100 @@ pub(super) fn execute(
 
 #[cfg(test)]
 mod tests {
+    use std::fs::{self, File};
+
     use ed25519_dalek::SigningKey;
     use orchardprobe_core::lab002::artifacts::{
         AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, Presence, RequiredAppGroups,
         RequiredEntitlement, Toolchain,
     };
     use orchardprobe_core::lab002::{LAB002_PROFILE, LabRole};
+    use serde_json::{Value, json};
+    use tempfile::tempdir;
 
     use super::{
-        SourceBundle, derive_prebuild_bindings, has_exact_derived_prebuild_bindings,
-        next_run_ordinal, open_run_ordinal, require_retained_source_match,
-        split_fingerprint_and_receipt,
+        PreuploadEvidence, SourceBundle, derive_prebuild_bindings,
+        has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        require_retained_source_match, split_fingerprint_and_receipt, verify_frozen_archive,
     };
+
+    fn complete_evidence_json() -> Value {
+        let archive_binary = |role: &str, relative_path: &str| {
+            json!({
+                "role": role,
+                "relative_path": relative_path,
+                "size": 1,
+                "sha256": "11".repeat(32),
+                "architectures": ["arm64"],
+                "slices": [{
+                    "architecture": "arm64",
+                    "uuid": "11111111-1111-1111-1111-111111111111"
+                }],
+                "initial_protection_status": "not_observed",
+                "expected_plaintext_status": "candidate_pre_upload_archive_only"
+            })
+        };
+        let ipa_binary = |role: &str, relative_path: &str| {
+            json!({
+                "role": role,
+                "relative_path": relative_path,
+                "size": 1,
+                "sha256": "22".repeat(32),
+                "initial_protection_status": "not_observed",
+                "expected_plaintext_status": "candidate_pre_upload_archive_only"
+            })
+        };
+        let specs = [
+            ("main_executable", "DemoLab.app/DemoLab"),
+            (
+                "dynamic_framework",
+                "DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+            ),
+            (
+                "app_extension",
+                "DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+            ),
+        ];
+        json!({
+            "schema_version": 1,
+            "profile": "orchardprobe.demolab.testflight-preupload.v1",
+            "purpose": "LAB-001 controlled first-party TestFlight preparation",
+            "decision": "pending_controlled_device_observation",
+            "created_at": "2026-07-31T12:00:00Z",
+            "source": {"commit": "11".repeat(20), "tree_clean": true, "fixture": "fixtures/DemoLab"},
+            "toolchain": {
+                "fastlane_version": "2.228.0",
+                "xcodegen_version": "2.46.0",
+                "xcode": ["Xcode 26.0\n", "Build version 17A100\n"],
+                "iphoneos_sdk_version": "26.0",
+                "iphoneos_sdk_build": "23A100"
+            },
+            "build": {
+                "configuration": "Release",
+                "marketing_version": "1.0",
+                "build_number": "3",
+                "distribution": "app-store",
+                "bundle_identifiers": "operator-provided first-party identifiers; redacted"
+            },
+            "artifacts": {
+                "ipa": {"filename": "DemoLab-3.ipa", "size": 1, "sha256": "33".repeat(32)},
+                "archive_binaries": specs.iter().map(|(role, path)| archive_binary(role, path)).collect::<Vec<_>>(),
+                "package": {"application": "DemoLab.app", "identity_validated": true, "export_compliance_validated": true},
+                "ipa_binaries": specs.iter().map(|(role, path)| ipa_binary(role, path)).collect::<Vec<_>>()
+            },
+            "lab002": {
+                "build_binding_sha256": "44".repeat(32),
+                "target_identity_set_sha256": "55".repeat(32),
+                "authorized_target_manifest": {"name": "lab-002-authorized-targets-v1.json", "device": "1", "inode": "2", "mode": 256, "size": 1, "sha256": "66".repeat(32)},
+                "oracle": {"name": "lab-002-oracle-v1.json", "device": "1", "inode": "3", "mode": 256, "size": 1, "sha256": "77".repeat(32)}
+            },
+            "lineage": {
+                "uploaded_ipa_bound": false,
+                "installed_artifact_bound": false,
+                "note": "Pre-upload bytes are candidates, not proof of installed plaintext."
+            }
+        })
+    }
 
     fn target(role: LabRole, suffix: &str, app_group: bool) -> AuthorizedTarget {
         let team = "ABCDEFGHIJ";
@@ -1316,6 +1754,51 @@ mod tests {
         assert!(
             require_retained_source_match(&source, b"manifest", b"oracle", b"replacement").is_err()
         );
+    }
+
+    #[test]
+    fn preupload_evidence_requires_every_closed_field_and_rejects_unknown_fields() {
+        let complete = complete_evidence_json();
+        assert!(serde_json::from_value::<PreuploadEvidence>(complete.clone()).is_ok());
+
+        let mut missing_export = complete.clone();
+        missing_export["artifacts"]["package"]
+            .as_object_mut()
+            .unwrap()
+            .remove("export_compliance_validated");
+        assert!(serde_json::from_value::<PreuploadEvidence>(missing_export).is_err());
+
+        let mut missing_archive_digest = complete.clone();
+        missing_archive_digest["artifacts"]["archive_binaries"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("sha256");
+        assert!(serde_json::from_value::<PreuploadEvidence>(missing_archive_digest).is_err());
+
+        let mut missing_lineage = complete.clone();
+        missing_lineage.as_object_mut().unwrap().remove("lineage");
+        assert!(serde_json::from_value::<PreuploadEvidence>(missing_lineage).is_err());
+
+        let mut unknown = complete;
+        unknown["source"]["replacement"] = json!(true);
+        assert!(serde_json::from_value::<PreuploadEvidence>(unknown).is_err());
+    }
+
+    #[test]
+    fn frozen_archive_cannot_be_an_empty_owned_directory() {
+        let temporary = tempdir().unwrap();
+        let candidate_path = temporary.path().join("candidate");
+        fs::create_dir(&candidate_path).unwrap();
+        fs::create_dir_all(
+            candidate_path.join("DemoLab.xcarchive/Products/Applications/DemoLab.app"),
+        )
+        .unwrap();
+        let candidate = super::super::PrivateOutputRoot {
+            canonical_path: candidate_path.clone(),
+            directory: File::open(candidate_path).unwrap(),
+        };
+        let evidence: PreuploadEvidence = serde_json::from_value(complete_evidence_json()).unwrap();
+        assert!(verify_frozen_archive(&candidate, &evidence).is_err());
     }
 
     #[test]

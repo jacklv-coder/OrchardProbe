@@ -37,7 +37,7 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 | 顺序 | 步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 4A | 激活并关闭提前上传/对账治理偏差 | `激活 PR 进入 main 时完成` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
-| 4B | 闭合 Host 操作流程 | `实现 PR 进入 main 时完成` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次 Run 操作都依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前必须通过无设备测试、Codex CR、CI、PR 与合并 |
+| 4B | 闭合 Host 操作流程 | `实现 PR 进入 main 时完成` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前必须通过无设备测试、Codex CR、CI、PR 与合并 |
 | 4C | 精确安装与 Enrollment | `blocked on 4B` | 记录全新安装确认并签署一次性信封；在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
 | 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
 | 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
@@ -71,6 +71,15 @@ Review 或 App Store 提交。
 矛盾、以安装文件大小约束每个观察 Slice，并由 Fastlane 通过排他工作流根锁串行化完整调用。
 这四个 P2 必须具备回归覆盖，并重新通过完整本地门禁、全新无问题 CR、CI 与合并，之后才可
 开始 4C。
+
+随后完整 Diff CR 又发现两个 P2 来源缺口：Operator 会接受不完整的上传前 Evidence
+对象，并把任意自有目录当作冻结 Archive。修复后的源码以禁止未知字段的方式反序列化完整
+闭合 Evidence 树，验证 Package/出口合规、Lineage、Toolchain、Manifest、Oracle、IPA
+以及全部六份二进制记录；再通过目录描述符枚举并重新 Hash 精确三个 Archive 可执行文件。
+Archive 架构/UUID Evidence 也会规范化后与每个冻结 Oracle Slice 对齐。新增回归会拒绝
+缺失的嵌套字段、未知字段和空的自有 Archive。一次临时且不提交的只读 Probe 已确认保留的
+真实候选通过这套更严格的 Source-bundle 验证；该 Probe 没有上传、安装、Enrollment 或
+触碰设备。
 
 Rust 验证器修复提交后，两次独立完整 Fastlane 门禁以 Source Snapshot
 `252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9`、固定工具链和
