@@ -28,7 +28,7 @@
 | 3D.2 | 导出后固定 XcodeGen 复核 | `完成；PR #67 已合并` | 进入固定 Xcode 环境前捕获 Allowlist 内 XcodeGen 的绝对 Path/Version/文件身份；生成 Oracle 时直接复核同一文件；恢复调用方 PATH 后，再以 PATH 选择复核一次才允许发布 |
 | 3D.3 | 关闭的 Xcode 导出策略与已证明的发布前 Rollback | `完成；PR #68 已合并` | 设置 `uploadSymbols=false`，使受控 IPA 保持单一 `Payload/*.app` Tree，同时单独保留 Archive dSYM。只有已验证 Helper 通过持有的目录描述符证明精确 Archive/IPA Pair 存在且没有 Oracle 状态，并发出显式 Cleanup-safe 标记时才解除保留；崩溃、Signal、无标记失败、证明失败与不确定发布均继续保留 |
 | 3D.4 | 可复现私有 Helper 产品复核 | `完成；PR #69 已合并` | PR #68 修改了 Helper，因此旧产品 Allowlist 正确阻止了 3A 准备。使用合并源 `091be371...`、固定 Rust 1.85.0 工具链、已验证离线依赖与受审沙箱独立构建两次，所得 Size、完整 SHA-256 与 CodeDirectory CDHash 完全一致；PR #69 只允许该精确 Tuple，并以 `7c058004c3b002f0a20e4f29b777d18bf5e9fd08` 合并 |
-| 3D.5 | 闭合 App Store 重签名 Extent | `实现中` | 全新 `7c058004...` Run 证明当前 Xcode 保持相同 Thin Container、架构、CPU Subtype、UUID、固定区间及签名起点，只为主 App 与 Share Extension 把末尾 Code Signature/`__LINKEDIT` Extent 增长 64 字节。仅接受单 Slice Thin Binary，要求 Archive/IPA 签名尾起点相同且各自精确结束于 EOF；保留全部既有身份/区间/Fixup/Encryption/签名检查，并记录最终 IPA Slice Size |
+| 3D.5 | 闭合 App Store 重签名 Extent | `实现中；可复现 Helper 已复核` | 全新 `7c058004...` Run 证明当前 Xcode 保持相同 Thin Container、架构、CPU Subtype、UUID、固定区间及签名起点，只为主 App 与 Share Extension 把末尾 Code Signature/`__LINKEDIT` Extent 增长 64 字节。仅接受单 Slice Thin Binary，要求 Archive/IPA 签名尾起点相同且各自精确结束于 EOF；保留全部既有身份/区间/Fixup/Encryption/签名检查，并记录最终 IPA Slice Size。精确修复 Commit 的两次独立沙箱构建产生相同私有 Helper Size、完整 SHA-256 与 CodeDirectory CDHash 后，才允许其 Tuple 进入 Allowlist |
 | 3D.6 | 全新精确候选 | `被 3D.5 合并阻塞` | 从干净的已合并签名尾修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用任何失败运行的 Tuple，不得上传、安装或观察设备 |
 
 三次签名运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
