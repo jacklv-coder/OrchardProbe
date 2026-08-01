@@ -4,6 +4,8 @@
 
 Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
+Activation PR: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
+
 Status when the activation PR is on `main`: **checkpoint 4 active; 4A complete**
 
 This ledger controls the exact installation-enrollment and two-run execution

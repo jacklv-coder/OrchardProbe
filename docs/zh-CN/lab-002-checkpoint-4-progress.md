@@ -4,6 +4,8 @@
 
 跟踪 Issue：[#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
+激活 PR：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
+
 激活 PR 进入 `main` 后的状态：**检查点 4 active；4A 完成**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
