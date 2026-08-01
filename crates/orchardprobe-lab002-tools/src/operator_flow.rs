@@ -56,6 +56,8 @@ const RUN_INTENT_NAME: &str = "collection-intent.json";
 const RUN_EXPORT_NAME: &str = "signed-session-export.json";
 const RUN_BINDING_NAME: &str = "collection-binding.json";
 const MAX_OPERATOR_INPUT_BYTES: usize = 512 * 1024;
+const UPLOAD_INDETERMINATE_NOTE: &str = "Reconcile this build in App Store Connect before retrying; the upload may succeed even if Apple altool later exits with an error.";
+const UPLOAD_ACCEPTED_NOTE: &str = "Apple altool returned explicit success without product-errors for the evidence-bound upload; confirm TestFlight readiness in App Store Connect. This does not establish installed lineage, protection, or plaintext.";
 
 #[derive(Debug, Serialize)]
 pub(super) struct OperatorOutput {
@@ -101,10 +103,23 @@ struct UploadResult {
     source_commit: String,
     ipa_sha256: String,
     attempt_started_at: String,
+    uploaded_at: Option<String>,
     destination: String,
     external_distribution: bool,
     status: String,
     note: String,
+}
+
+fn valid_upload_result(upload: &UploadResult) -> bool {
+    match (upload.status.as_str(), upload.uploaded_at.as_deref()) {
+        ("indeterminate", None) => upload.note == UPLOAD_INDETERMINATE_NOTE,
+        ("accepted", Some(uploaded_at)) => {
+            is_bounded_utc_timestamp(uploaded_at)
+                && uploaded_at >= upload.attempt_started_at.as_str()
+                && upload.note == UPLOAD_ACCEPTED_NOTE
+        }
+        _ => false,
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -894,9 +909,7 @@ fn load_source_bundle(
         || !is_bounded_utc_timestamp(&upload_value.attempt_started_at)
         || upload_value.destination != "TestFlight internal preparation"
         || upload_value.external_distribution
-        || upload_value.status != "indeterminate"
-        || upload_value.note
-            != "Reconcile this build in App Store Connect before retrying; the upload may succeed even if Apple altool later exits with an error."
+        || !valid_upload_result(&upload_value)
     {
         return Err("frozen candidate, oracle, evidence, upload audit, and prebuild are not one exact tuple".into());
     }
@@ -1271,11 +1284,6 @@ fn start_run(
         run_two_result,
     );
     let ordinal = next_run_ordinal(phase_state)?;
-    let prior = if ordinal == 2 {
-        Some(sha256_hex(&run_files(&root, 1)?.binding))
-    } else {
-        None
-    };
     let phases = if ordinal == 1 {
         vec![ENROLLMENT_RESULT_DIRECTORY.to_owned()]
     } else {
@@ -1286,6 +1294,25 @@ fn start_run(
         ]
     };
     exact_experiment_inventory(&root, &phases)?;
+    let prior = if ordinal == 2 {
+        let run_one = run_files(&root, 1)?;
+        verify_intent_source(&root, &run_one.intent)?;
+        verify_run_chain(
+            &enrollment,
+            RunArtifactBytes {
+                frozen_oracle: &source.oracle,
+                run_acknowledgement: &run_one.acknowledgement,
+                authorization_envelope: &run_one.envelope,
+                collection_intent: &run_one.intent,
+                signed_session_export: &run_one.export,
+                collection_binding: &run_one.binding,
+            },
+        )
+        .map_err(|error| format!("run 1 chain is invalid before run 2: {error}"))?;
+        Some(sha256_hex(&run_one.binding))
+    } else {
+        None
+    };
     let control = create_run_control(
         &source.signing_key,
         &enrollment,
@@ -1552,9 +1579,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        PreuploadEvidence, SourceBundle, derive_prebuild_bindings,
+        PreuploadEvidence, SourceBundle, UploadResult, derive_prebuild_bindings,
         has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
-        require_retained_source_match, split_fingerprint_and_receipt, verify_frozen_archive,
+        require_retained_source_match, split_fingerprint_and_receipt, valid_upload_result,
+        verify_frozen_archive,
     };
 
     fn complete_evidence_json() -> Value {
@@ -1782,6 +1810,42 @@ mod tests {
         let mut unknown = complete;
         unknown["source"]["replacement"] = json!(true);
         assert!(serde_json::from_value::<PreuploadEvidence>(unknown).is_err());
+    }
+
+    #[test]
+    fn upload_audit_accepts_only_closed_indeterminate_or_terminal_success_records() {
+        let base = json!({
+            "schema_version": 1,
+            "source_commit": "11".repeat(20),
+            "ipa_sha256": "22".repeat(32),
+            "attempt_started_at": "2026-07-31T12:00:00Z",
+            "destination": "TestFlight internal preparation",
+            "external_distribution": false,
+            "status": "indeterminate",
+            "note": super::UPLOAD_INDETERMINATE_NOTE
+        });
+        let indeterminate: UploadResult = serde_json::from_value(base.clone()).unwrap();
+        assert!(valid_upload_result(&indeterminate));
+
+        let mut accepted = base.clone();
+        accepted["status"] = json!("accepted");
+        accepted["uploaded_at"] = json!("2026-07-31T12:01:00Z");
+        accepted["note"] = json!(super::UPLOAD_ACCEPTED_NOTE);
+        let accepted: UploadResult = serde_json::from_value(accepted).unwrap();
+        assert!(valid_upload_result(&accepted));
+
+        let mut success_without_time = base.clone();
+        success_without_time["status"] = json!("accepted");
+        success_without_time["note"] = json!(super::UPLOAD_ACCEPTED_NOTE);
+        let success_without_time: UploadResult =
+            serde_json::from_value(success_without_time).unwrap();
+        assert!(!valid_upload_result(&success_without_time));
+
+        let mut indeterminate_with_time = base;
+        indeterminate_with_time["uploaded_at"] = json!("2026-07-31T12:01:00Z");
+        let indeterminate_with_time: UploadResult =
+            serde_json::from_value(indeterminate_with_time).unwrap();
+        assert!(!valid_upload_result(&indeterminate_with_time));
     }
 
     #[test]

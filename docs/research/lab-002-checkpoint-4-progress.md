@@ -107,6 +107,19 @@ unknown fields, and an empty owned Archive. A temporary, uncommitted read-only
 probe confirmed that the retained real candidate passes this stricter source-
 bundle validation; it did not upload, install, enroll, or touch the device.
 
+The next full Codex CR found one P1 and two P2 closure gaps. The frozen-source
+loader modeled only the indeterminate upload-audit shape even though the
+reviewed upload lane can atomically replace it with a terminal accepted shape;
+the two-run verifier did not retain and compare each run's frozen-Oracle
+digest; and start-run derived run 2's prior binding before fully verifying the
+retained run-1 chain. The remediation models and strictly validates both
+closed upload outcomes, including the terminal timestamp, retains and compares
+the Oracle digest in `VerifiedRun`, and completes run-1 source and chain
+verification before publishing any run-2 control. Regressions cover the two
+upload shapes and rejected timestamp/state combinations plus cross-Oracle
+two-run rejection. The full local gate and a fresh clean CR remain required
+before the implementation PR may be opened or merged.
+
 After committing that remediation, two independent complete Fastlane gates
 each produced three identical Helper builds from source snapshot
 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`.

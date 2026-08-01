@@ -478,6 +478,7 @@ pub struct RunArtifactBytes<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct VerifiedRun {
+    pub(crate) oracle_sha256: String,
     pub(crate) run_acknowledgement_sha256: String,
     pub(crate) authorization_envelope_sha256: String,
     pub(crate) collection_intent_sha256: String,
@@ -915,6 +916,7 @@ pub fn verify_run_chain(
     let normalized_evidence_sha256 =
         normalized_evidence_sha256(&session, [&main_app, &framework, &share_extension])?;
     Ok(VerifiedRun {
+        oracle_sha256,
         run_acknowledgement_sha256: acknowledgement_sha256,
         authorization_envelope_sha256: envelope_sha256.clone(),
         collection_intent_sha256: intent_sha256,
@@ -1003,6 +1005,7 @@ pub fn verify_two_run_chain(
             != enrollment.device_installation_binding_sha256
         || run_one.environment != enrollment.environment
         || run_two.environment != enrollment.environment
+        || run_one.oracle_sha256 != run_two.oracle_sha256
         || run_one.normalized_evidence_sha256 != run_two.normalized_evidence_sha256
     {
         return Err(Lab002Error::InvalidEvidence(
@@ -1995,6 +1998,13 @@ mod tests {
     fn two_run_chain_rejects_normalized_observation_drift() {
         let (enrollment, run_one, mut run_two) = verified_two_run_fixture();
         run_two.normalized_evidence_sha256 = digest(0xef);
+        assert!(verify_two_run_chain(&enrollment, &run_one, &run_two).is_err());
+    }
+
+    #[test]
+    fn two_run_chain_rejects_different_frozen_oracles() {
+        let (enrollment, run_one, mut run_two) = verified_two_run_fixture();
+        run_two.oracle_sha256 = digest(0xee);
         assert!(verify_two_run_chain(&enrollment, &run_one, &run_two).is_err());
     }
 

@@ -81,6 +81,14 @@ Archive 架构/UUID Evidence 也会规范化后与每个冻结 Oracle Slice 对�
 真实候选通过这套更严格的 Source-bundle 验证；该 Probe 没有上传、安装、Enrollment 或
 触碰设备。
 
+下一轮完整 Codex CR 又发现一个 P1 和两个 P2 闭合缺口：冻结来源加载器只建模了
+`indeterminate` 上传审计形态，但已评审上传 Lane 可以原子替换为终态 `accepted` 形态；
+两轮验证器没有在每轮结果中保留并比较冻结 Oracle 摘要；开始第 2 轮时也只计算了第 1 轮
+Binding 的摘要，没有先完整验证保留的第 1 轮链。修复后会严格验证两种闭合上传结果（包括
+终态时间戳），在 `VerifiedRun` 中保留并比较 Oracle 摘要，并在发布任何第 2 轮 Control
+之前完成第 1 轮来源和完整链验证。回归覆盖两种上传形态、非法时间戳/状态组合，以及跨
+Oracle 两轮拒绝。实现 PR 打开或合并前仍必须通过完整本地门禁与全新的无问题 CR。
+
 提交该修复后，两次独立完整 Fastlane 门禁各自产生三份完全一致的 Helper Build；Source
 Snapshot 为 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`。
 全部六份产物的 Size 均为 `3,179,072`，SHA-256 为
