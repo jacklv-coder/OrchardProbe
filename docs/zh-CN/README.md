@@ -22,7 +22,9 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
 - [LAB-002 固定区间 Oracle 设计状态](lab-002-oracle-design.md)：当前首方
   自观测方案的证据链、完整清单、固定区间、两轮流程和 Go/No-Go 门禁。
 - [LAB-002 检查点 3 进度](lab-002-checkpoint-3-progress.md)：精确 DemoLab
-  `1.0 (3)` 候选/Oracle 授权、顺序实现门禁，以及上传或设备操作前的当前边界。
+  `1.0 (3)` 候选/Oracle 授权、顺序实现门禁与脱敏本地候选记录。
+- [LAB-002 检查点 4 进度](lab-002-checkpoint-4-progress.md)：已对账的内部上传、
+  Host 工具门禁，以及设备观察前的 Enrollment 与两轮顺序计划。
 - [范围与威胁模型（英文）](../architecture/RFC-0001-scope-and-threat-model.md)
 - [有界 Host/Helper 协议（英文）](../architecture/RFC-0002-bounded-host-helper-protocol.md)
 - [Rust Host 架构决策（英文）](../architecture/ADR-0001-rust-host.md)

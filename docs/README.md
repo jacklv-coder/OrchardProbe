@@ -28,7 +28,10 @@ implementation behind it. Start with the document that matches what you need:
   two-run procedure, and fail-closed Go/No-Go gate.
 - [LAB-002 checkpoint 3 progress](research/lab-002-checkpoint-3-progress.md) —
   the exact DemoLab `1.0 (3)` candidate/oracle authorization, ordered
-  implementation gates, and current boundary before any upload or device work.
+  implementation gates, and sanitized local candidate record.
+- [LAB-002 checkpoint 4 progress](research/lab-002-checkpoint-4-progress.md) —
+  the reconciled internal upload, Host-tooling gate, and ordered enrollment and
+  two-run execution plan before any device observation.
 - [Bounded host/helper protocol](architecture/RFC-0002-bounded-host-helper-protocol.md)
   — the accepted device-free protocol design gate.
 - [Rust host architecture decision](architecture/ADR-0001-rust-host.md) — why

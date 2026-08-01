@@ -233,12 +233,15 @@ The project currently has no approved backend. LAB-001 completed with a bounded
 No-Go for the stock internal-TestFlight tuple because exact installed lineage,
 initial protection, and plaintext ranges were not independently observable
 within its approved boundary. LAB-002 completed its device-free design and
-implementation checkpoints through PR #59. Checkpoint 3 has produced exactly
-one verified local DemoLab `1.0 (3)` signed candidate and frozen pre-upload
-oracle from the clean merged PR #71 source; its sanitized completion record is
-the final [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) merge
-gate. Upload, installation, and device observation remain
-unauthorized. It evaluates
+implementation checkpoints through PR #59. Checkpoint 3 produced exactly one
+verified local DemoLab `1.0 (3)` signed candidate and frozen pre-upload oracle
+from the clean merged PR #71 source, and its sanitized completion record merged
+through [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72).
+Checkpoint 4 is active: exactly one internal-TestFlight upload was reconciled as
+accepted and processed without external testing or review submission. The
+[checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md) requires the
+closed Host operator artifact workflow to merge before installation enrollment;
+installation and device observation have not occurred. LAB-002 evaluates
 a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
 the recorded build. Before device observation, a reviewed design/build manifest
@@ -261,10 +264,10 @@ version/build. Raw stable device identifiers never leave the device. Inbox
 operations are serialized and consume only an atomically quarantined,
 descriptor-matched record. The host/helper never accesses the shared
 container. The merged device-free implementation is limited to the bounded
-Issue #55 design and synthetic/Simulator verification. It does not establish
-the protected oracle or authorize a signed build, TestFlight upload, or device
-observation. LAB-002 remains device-unverified, and DEVICE-001 remains blocked
-until LAB-002 completes with a Go result.
+Issue #55 design and synthetic/Simulator verification. The accepted upload does
+not establish the protected oracle, a device observation, or decryption.
+LAB-002 remains device-unverified, and DEVICE-001 remains blocked until LAB-002
+completes with a Go result.
 
 ### 6. Bounded host/helper session
 
@@ -412,7 +415,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private 3A generation plus the complete 3B Archive/IPA/oracle/evidence/upload-gate closure merged in order through [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63), [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65); 3C device-free verification and implementation merge are complete through [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66). PR #71 merged the final re-signing identity correction, and exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair now exists; the sanitized record is tracked in the [checkpoint-3 progress ledger](research/lab-002-checkpoint-3-progress.md). No upload, installation, device verification, plaintext result, or Go result exists |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private 3A generation plus the complete 3B Archive/IPA/oracle/evidence/upload-gate closure merged in order through [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63), [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65); 3C device-free verification and implementation merge are complete through [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66). PR #71 merged the final re-signing identity correction, and exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair exists; the sanitized local candidate record is tracked in the [checkpoint-3 ledger](research/lab-002-checkpoint-3-progress.md). Its one internal-TestFlight upload has been reconciled as accepted and processed, while the [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md) blocks installation on the missing Host operator artifact workflow. No installation, device verification, plaintext result, or Go result exists |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
