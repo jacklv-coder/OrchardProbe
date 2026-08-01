@@ -15,7 +15,7 @@
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
-| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已完成，3B.2 等待最终 P1 修复 CR/CI` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
+| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1、3B.2 已完成，3B.3 已激活` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
@@ -25,8 +25,26 @@
 | 顺序 | 切片 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3B.1 | 安全消费 3A 工件 | `完成；PR #63 已合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量。纯设备无关回归、Codex CR、GitHub Codex Review 与 CI 已通过；[PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 已合并为 `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
-| 3B.2 | Archive/IPA Oracle 闭合 | `P1 特殊槽及 P2 Zero-fill/逐 Entry IPA 重哈希修复已在本地验证；等待最终 CR/CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
-| 3B.3 | Evidence 与 Upload Gate | `等待 3B.2 合并` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
+| 3B.2 | Archive/IPA Oracle 闭合 | `完成；PR #64 已合并` | Helper 与 Fastlane 在发布前后持有并重验最终 Archive App、IPA、六个 Archive Source、Oracle 与 Evidence；签名特殊槽、Zero-fill、逐 Entry IPA 变化、替换及不确定发布回归通过 Codex CR 和全部必需 CI。[PR #64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 以 `5bf31bf305e30abb0121a0bcb76e5fcdf48eb3bc` 合并 |
+| 3B.3 | Evidence 与 Upload Gate | `实现与本地验证完成；最终 CR/CI/合并进行中` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
+
+### 3B.3 顺序执行门禁
+
+| 顺序 | 门禁 | 状态 | 完成标准 |
+|---:|---|---|---|
+| 3B.3.1 | 闭合 Evidence 绑定 | `完成` | 在 Prebuild 目录仍被锁定时，把精确 Owner-only Manifest/Oracle 文件身份、外部 Oracle SHA-256、Build Binding、Target Identity Set 及 IPA Size/SHA-256 持久化进上传前记录 |
+| 3B.3.2 | 上传时私有 Tuple 验证 | `完成` | 只从 Evidence 的 Source/Version/Build 推导固定同级 Prebuild/Run 目录，把持有的目录 Descriptor 交给受审 Helper，并在上传前重新解析规范 Manifest、Prebuild 与 Oracle |
+| 3B.3.3 | Fail-closed 回归 | `本地完成` | 覆盖缺失 LAB-002 Binding、Manifest/Oracle 身份或摘要变化、Build Binding/Target Set/IPA Tuple 不一致、非规范私有工件、不安全权限、目录替换、Run 条目增删，以及严格绑定的协调重试审计记录，且不产生网络操作 |
+| 3B.3.4 | 文档、Codex CR、CI 与合并 | `进行中` | 更新中英文用户/技术文档，通过 Workspace/Fastlane 与 Helper 可复现验证，解决全部 P1/P2 审查问题，合并 PR 后再激活 3C |
+
+3B.3 Helper 已从实现 Commit
+`da758e963e8516cbb38f04e7c7786a041b6a4d9d` 的只读源码快照独立构建两次，
+产物字节完全一致。登记 Tuple 为 Rust `1.85.0-aarch64-apple-darwin`，
+Source Snapshot SHA-256
+`4e59c359dcfa514ebfe1d22fcfa403f24b75fb2fb072aa46b12b339e2ea94116`，
+Size `2019584`，SHA-256
+`d150dd40834f0578024e7949d4a736eae3dbc9078264850714af49e70a3ccb55`，
+CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`。
 
 ### 3B.2 顺序执行门禁
 

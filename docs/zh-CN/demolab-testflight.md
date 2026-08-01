@@ -44,7 +44,9 @@ App/Framework/Extension 清点。受控 TestFlight 实验要进一步确认：Ap
   权限、路径和 Inode 校验的同一个有界、拒绝符号链接的文件描述符解析，避免校验后
   再按路径打开另一份文件；上传前还会要求完整的创建时间、源码、工具链、Release/
   App Store 构建、Archive 与 IPA 三个二进制的测量和状态，以及尚未建立的上传/安装
-  Lineage，缺失或篡改任一部分都会拒绝。上传前必须保留证据旁的
+  Lineage。LAB-002 `1.0 (3)` 还必须包含精确 Manifest/Oracle 文件身份、外部 Oracle
+  SHA-256、Build Binding、Target Identity Set 及相同 IPA Tuple；缺失或篡改任一部分
+  都会在凭据或网络动作前拒绝。上传前必须保留证据旁的
   `DemoLab.xcarchive`；Lane 会重新测量其中三个二进制，并逐项比对大小、哈希、
   Architecture 和 UUID。Lane 还会复核包内
   `ITSAppUsesNonExemptEncryption=false`；该 Lane 不修改 TestFlight Beta 元数据，
@@ -149,6 +151,18 @@ bundle _4.0.16_ exec fastlane ios demolab_archive
 Directory Descriptor 读取，并重新推导/校验 Manifest、非弱 Authorization 公钥、
 Identity Nonce、Build Binding、三个 Target Binding、Target-identity Set 与固定
 Toolchain 后才注入构建。Shell 不再提供这些私有 Binding 值。
+
+Archive 会在 Prebuild 目录仍被锁定时，把 Manifest 与冻结 Oracle 的 Owner-only
+文件身份、外部 Oracle SHA-256、Build Binding、Target Identity Set 以及 IPA
+Size/SHA-256 一并写入 Evidence。用户不需要手工复制或重命名任何单个文件；应完整保留
+Lane 自动发布的同级 Prebuild 目录和 Run 目录。上传 Lane 会从 Evidence 的
+Source/Version/Build 只推导这一对固定目录，把持有的 Directory Descriptor 交给受审
+Helper，重新解析规范 Manifest、Prebuild 与 Oracle，重新推导授权 Key、Build Binding、
+三个 Target Binding 和 Target Identity Set，并闭合三 Role Oracle/IPA Tuple。只读 IPA
+快照就绪后、写入 Upload Attempt 或产生 Apple 网络动作前还会再次执行同一门禁。
+合法重试可以保留最多 32 份已协调的上传审计记录；Helper 只接受固定的小写文件名，
+并逐份重验 Owner-only Mode、Schema、Source Commit、IPA SHA-256、时间戳、目的地和
+`reconciled_absent` 决策。除此以外的任何额外 Run 条目仍会拒绝。
 
 LAB-002 v1 的 `source_commit` 固定为 40 位小写 Hex。SHA-256 Git 仓库中的
 `demolab_check` 仍会执行全部通用 Fixture 检查，但会跳过无法表示 64 位 Commit 的

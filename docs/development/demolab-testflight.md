@@ -268,10 +268,12 @@ directory is rejected and malformed evidence prevents publication without
 deleting indeterminate private state. The lane refuses a missing output
 root instead of creating it beneath a caller-controlled parent.
 
-The existing upload lane explicitly rejects the LAB-002 checkpoint candidate
-`1.0 (3)` while 3B.3 is incomplete. It cannot be uploaded merely because the
-Archive, IPA, and oracle were generated together; 3B.3 must first persist the
-manifest/oracle identities in evidence and enforce them at upload time.
+The LAB-002 checkpoint candidate `1.0 (3)` is uploadable only when its evidence
+contains the closed 3B.3 binding. Archive records the exact owner-only manifest
+and oracle identities, external oracle SHA-256, Build Binding, Target Identity
+Set, and IPA size/SHA-256 while the prebuild directory remains locked. A legacy
+or hand-edited `1.0 (3)` evidence record without that complete binding is
+rejected before any credential or network action.
 
 The run directory contains local sensitive research artifacts:
 
@@ -291,7 +293,9 @@ It must remain outside Git. The evidence record binds:
 - each archive main/framework/extension Mach-O role, relative path, size,
   SHA-256, architecture, and UUID;
 - the packaged app/framework/extension identities plus the exact size and
-  SHA-256 of all three executable entries inside the exported IPA.
+  SHA-256 of all three executable entries inside the exported IPA;
+- for LAB-002 `1.0 (3)`, the fixed manifest/oracle file identities, external
+  oracle SHA-256, Build Binding, Target Identity Set, and the same IPA tuple.
 
 Every binary is explicitly marked `initial_protection_status: not_observed`
 and `expected_plaintext_status: candidate_pre_upload_archive_only`.
@@ -321,6 +325,19 @@ the lane remeasures its three binaries and requires their sizes, hashes,
 architectures, and UUIDs to match the evidence. Every archive path component is
 checked with `lstat`; a symlinked app, framework, plug-in, or directory is
 rejected, and every resolved binary must remain below the same archive root.
+For LAB-002, do not copy or rename individual files. The lane derives the one
+fixed sibling prebuild directory and run directory from the evidence
+source/version/build, locks both, and invokes the reviewed private helper with
+their held descriptors. The helper reparses canonical Manifest, Prebuild, and
+Oracle bytes, rederives the authorization key, Build Binding, per-target
+bindings and Target Identity Set, closes the three-role oracle inventory and
+IPA tuple, and rejects changed permissions, identities, digests, or extra/run
+missing entries. A retry may retain up to 32 reconciled upload audit records;
+the helper accepts only the fixed lowercase name form and revalidates each
+owner-only record's schema, source commit, IPA SHA-256, timestamps, destination,
+and `reconciled_absent` decision. Every other additional entry is rejected. The
+same gate is repeated after the read-only IPA snapshot is ready and before an
+upload-attempt record or Apple network action is created.
 After the API key descriptor and locked named IPA snapshot are ready, the lane
 repeats the complete archive-binary measurement immediately before it
 revalidates the selected Xcode and launches `altool`; a mismatch aborts before
