@@ -131,6 +131,15 @@ The temporary measurement branch was removed completely before this exact
 tuple was added to the reviewed allowlist. A normal non-measurement gate then
 rebuilt and admitted it and passed the unsigned Simulator fixture.
 
+The following Codex CR found one P2 compatibility regression: the new current-
+Helper validation ran before the existing SHA-256 Git-repository skip, while
+the LAB-002 v1 artifact contract deliberately accepts only a 40-hex source
+commit. The gate now builds and validates the current Helper only for the same
+40-hex checkpoint path; a 64-hex repository continues through the general
+DemoLab checks while skipping all LAB-002-v1-only round trips. This Fastlane-
+only correction does not change the measured Rust source snapshot or Helper
+product tuple. A fresh complete gate and clean CR are still required.
+
 After committing that remediation, two independent complete Fastlane gates
 each produced three identical Helper builds from source snapshot
 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`.

@@ -8122,17 +8122,19 @@ platform :ios do
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
     end
-    current_helper_workspace = nil
-    begin
-      current_helper, current_helper_workspace, current_helper_identity, =
-        build_lab002_private_tool(git_command_output("rev-parse", "HEAD"))
-      verify_lab002_private_tool!(
-        current_helper,
-        current_helper_workspace,
-        current_helper_identity
-      )
-    ensure
-      FileUtils.rm_rf(current_helper_workspace) if current_helper_workspace
+    if parser_commit.length == 40
+      current_helper_workspace = nil
+      begin
+        current_helper, current_helper_workspace, current_helper_identity, =
+          build_lab002_private_tool(parser_commit)
+        verify_lab002_private_tool!(
+          current_helper,
+          current_helper_workspace,
+          current_helper_identity
+        )
+      ensure
+        FileUtils.rm_rf(current_helper_workspace) if current_helper_workspace
+      end
     end
     oracle_source_fixture = {
       "ipa_size" => 4096,

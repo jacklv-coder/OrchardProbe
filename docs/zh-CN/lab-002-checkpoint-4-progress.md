@@ -97,6 +97,12 @@ CodeDirectory CDHash 为 `59bafcc5867af9864bbf1b10d17d8ea375b2607a`。临时测�
 完整删除，才把这一个精确 Tuple 加入已评审 Allowlist；正常非测量门禁再次重新构建并接受
 该 Tuple，且无签名 Simulator Fixture 通过。
 
+随后 Codex CR 发现一个 P2 兼容性回归：新的当前 Helper 验证位于既有 SHA-256 Git 仓库
+跳过逻辑之前，但 LAB-002 v1 工件契约有意只接受 40 位 Source Commit。现在只有进入同一个
+40 位检查点路径时才构建并验证当前 Helper；64 位仓库仍执行通用 DemoLab 检查，同时跳过
+所有 LAB-002-v1 专属 Round Trip。该修复只改 Fastlane，不改变已测量的 Rust Source
+Snapshot 或 Helper 产物 Tuple；仍需重新通过完整门禁与全新无问题 CR。
+
 提交该修复后，两次独立完整 Fastlane 门禁各自产生三份完全一致的 Helper Build；Source
 Snapshot 为 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`。
 全部六份产物的 Size 均为 `3,179,072`，SHA-256 为
