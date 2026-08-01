@@ -28,7 +28,7 @@ preceding row is complete.
 | Order | Slice | Status | Completion gate |
 |---:|---|---|---|
 | 3B.1 | Secure 3A consumption | `complete; PR #63 merged` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper descriptor-relatively reads exactly the three mode-`0400` owner files, rederives the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and returns only a bounded private IPC envelope. Fastlane injects the closed values without caller-supplied nonce, public-key, or Build-Binding variables. Device-free regressions, Codex CR, GitHub Codex review, and CI passed; [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) merged as `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
-| 3B.2 | Archive/IPA oracle closure | `P2 zero-fill and per-entry IPA rehash fixes validated locally; final CR/CI/merge pending` | Measure the three allowlisted Archive and IPA executables, close slice/UUID/range/fixup identity, compare `__TEXT,__oprobe`, and atomically publish one canonical owner-only oracle |
+| 3B.2 | Archive/IPA oracle closure | `P1 special-slot and P2 zero-fill/per-entry rehash fixes validated locally; final CR/CI/merge pending` | Measure the three allowlisted Archive and IPA executables, close slice/UUID/range/fixup identity, compare `__TEXT,__oprobe`, and atomically publish one canonical owner-only oracle |
 | 3B.3 | Evidence and upload gate | `blocked until 3B.2 merges` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
 
 ### 3B.2 ordered execution gates
@@ -38,17 +38,18 @@ preceding row is complete.
 | 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
 | 3B.2.2 | Archive/IPA parity | `complete` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree; no role or slice may be skipped |
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
-| 3B.2.4 | Device-free closure tests | `local tests and helper reproduction complete; both P2 regressions passed; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
+| 3B.2.4 | Device-free closure tests | `local tests and helper reproduction complete; P1 and both P2 regressions passed; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, signed-special-slot, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
 
 The final P1/P2-fixed 3B.2 helper was independently built twice from the
 read-only source snapshot at commit
-`985bf4bfced637bb9b714ab5234f143689ef8ed2`; both products were
+`7db46b22e409ec635b015091f1eff0b3e6f8287a`; both products were
 byte-identical. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
 snapshot SHA-256
-`eec04c9944ae097f18f406f4e7154b37179b17f394dda2c834b679c27afedb5e`,
-size `1884368`, SHA-256
-`d34536a3d9f115654adfcc093100edfdce744d7b644b9470d8252d6de28c3e9b`,
-and CDHash `6b11abec1e8fa47d23f9c9e460e0d5b698d1319d`. This helper returns
+`ac687ac04a25cad4d57dc7de6f503081e4ee038cf55f7eb1a1924cf44bdeffbf`,
+size `1884528`, SHA-256
+`d4f2b1c089371d91eda6363e9df9c9efcd0ed284305b948db4dca20a7883d971`,
+and CDHash `cadae3e5ba93f22c82aa811d7fb35c15dae16696`. This helper verifies every
+present signed CodeDirectory special slot before accepting signing metadata and returns
 the device/inode of the still-held final Archive App root, allowing Fastlane to
 bind final evidence and publication validation to the exact helper-measured
 directory rather than a replaceable pathname.
