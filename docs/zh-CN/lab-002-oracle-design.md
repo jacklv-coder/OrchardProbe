@@ -86,9 +86,14 @@ Slice 唯一固定区间：
 `valid/invalid/not_checked/not_applicable`。报告还写固定 Validator ID/Revision
 和存在时的签名 Superblob SHA-256。只有显式、已评审 Validator 对各 Role 稳定
 Descriptor/签名结构实际校验后才能写 `valid`；成功启动、Entitlement、Digest、
-UUID 或 `cryptid` 不能推断验证成功。没有可用的公开平台 API 或有界且独立测试的
-实现时必须写 `not_checked` 并得到 No-Go；Absent、Ad Hoc、Unknown、Invalid、
-矛盾或 Unchecked 都不能通过。
+UUID 或 `cryptid` 不能推断验证成功。独立验证的报告必须写固定 Validator ID
+`security-framework`，并以冻结 Observer Revision 作为 Validator Revision。没有可用的
+公开平台 API 或有界且独立测试的实现时，当前 Observer 必须精确写
+`not_checked` / `demolab-bounded-codesign-parser` / `1`、Outcome `inconclusive`，且唯一
+Reason 为 `signature_invalid_or_unchecked`。Host 可以关闭这个如实 Tuple 作为可复现的
+方法级 No-Go 证据，但仍要求全部身份、加密、磁盘与映射明文比较一致；它绝不会把该 Tuple
+提升成 `valid` 或 Go。任何不一致 Validator Tuple 都会被拒绝；Absent、Ad Hoc、Unknown、
+Invalid 或 Unchecked 签名仍是方法级 No-Go。
 
 预期明文 Hash 从干净 Commit 直接构建的 Archive 固定 Section 生成；随后独立
 Hash 导出 IPA 的同一 Slice/区间，并要求身份、坐标、长度和 Hash 全部一致。

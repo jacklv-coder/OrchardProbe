@@ -299,10 +299,10 @@ pub fn close_enrollment(
     ))
 }
 
-pub struct RunControlRequest {
+pub struct RunControlRequest<'a> {
     pub preupload_evidence_sha256: String,
     pub run_ordinal: u8,
-    pub prior_collection_binding_sha256: Option<String>,
+    pub prior_run: Option<&'a VerifiedRun>,
     pub assertions: AuthorizationAssertions,
     pub acknowledged_at: i64,
 }
@@ -311,20 +311,29 @@ pub fn create_run_control(
     signing_key: &SigningKey,
     enrollment: &VerifiedEnrollment,
     oracle_canonical: &[u8],
-    request: RunControlRequest,
+    request: RunControlRequest<'_>,
     rng: &mut (impl RngCore + CryptoRng),
 ) -> Result<RunControl, Lab002Error> {
     let run_ordinal = request.run_ordinal;
     let acknowledged_at = request.acknowledged_at;
     let (oracle, oracle_sha256) = verified_artifact_sha256::<LabOracle>(oracle_canonical)?;
     verify_oracle_target_bindings(enrollment, &oracle)?;
+    let prior_collection_binding_sha256 = match (run_ordinal, request.prior_run) {
+        (1, None) => None,
+        (2, Some(prior_run)) => {
+            Some(prior_run.successor_binding(enrollment, &oracle_sha256, acknowledged_at)?)
+        }
+        _ => {
+            return Err(Lab002Error::InvalidEvidence(
+                "run control predecessor is invalid",
+            ));
+        }
+    };
     if authorization_public_key(signing_key) != enrollment.authorization_public_key
         || oracle.authorization_public_key != enrollment.authorization_public_key
         || oracle.authorized_target_manifest_sha256 != enrollment.authorized_target_manifest_sha256
         || oracle.build_binding_sha256 != enrollment.build_binding_sha256
         || !matches!(run_ordinal, 1 | 2)
-        || (run_ordinal == 1 && request.prior_collection_binding_sha256.is_some())
-        || (run_ordinal == 2 && request.prior_collection_binding_sha256.is_none())
         || acknowledged_at <= enrollment.completed_at
     {
         return Err(Lab002Error::InvalidEvidence(
@@ -389,7 +398,7 @@ pub fn create_run_control(
         collection_id: core.collection_id,
         run_ordinal,
         expected_run_counter: counter,
-        prior_collection_binding_sha256: request.prior_collection_binding_sha256,
+        prior_collection_binding_sha256,
         not_before: acknowledged_at,
         not_after: not_after(acknowledged_at)?,
         source_commit: oracle.source_commit,
@@ -829,7 +838,7 @@ mod tests {
             RunControlRequest {
                 preupload_evidence_sha256: digest(0x47),
                 run_ordinal: 1,
-                prior_collection_binding_sha256: None,
+                prior_run: None,
                 assertions: assertions(),
                 acknowledged_at: 2_000,
             },
@@ -879,7 +888,7 @@ mod tests {
                 RunControlRequest {
                     preupload_evidence_sha256: digest(0x47),
                     run_ordinal: 1,
-                    prior_collection_binding_sha256: None,
+                    prior_run: None,
                     assertions: assertions(),
                     acknowledged_at: 2_000,
                 },
@@ -904,7 +913,7 @@ mod tests {
                 RunControlRequest {
                     preupload_evidence_sha256: digest(0x47),
                     run_ordinal: 1,
-                    prior_collection_binding_sha256: None,
+                    prior_run: None,
                     assertions: assertions(),
                     acknowledged_at: 2_000,
                 },

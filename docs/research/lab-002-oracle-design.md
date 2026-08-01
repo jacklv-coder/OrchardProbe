@@ -428,12 +428,18 @@ The closed signature values reuse the export-manifest vocabulary: presence is
 role. Validation must come from an explicit, reviewed validator operating on
 that role's stable descriptor and signature structure; successful launch,
 entitlements, a digest, UUID, or `cryptid` cannot be inferred as validation.
-The report records the fixed validator ID `security-framework` and the exact
-frozen observer revision as its validator revision; the Host rejects every
-other ID or revision. If no public platform API or bounded independently tested
-implementation can perform the validation, the observer records `not_checked`
-and LAB-002 is No-Go. An absent, ad-hoc,
-unknown, invalid, inconsistent, or unchecked signature is never accepted.
+An independently validated report records the fixed validator ID
+`security-framework` and the exact frozen observer revision as its validator
+revision. If no public platform API or bounded independently tested
+implementation can perform the validation, the checked-in observer instead
+records the exact parser tuple `not_checked` /
+`demolab-bounded-codesign-parser` / `1`, outcome `inconclusive`, and sole reason
+`signature_invalid_or_unchecked`. The Host may close that exact truthful tuple
+as reproducible No-Go evidence while still requiring every identity,
+encryption, disk, and mapped-plaintext comparison to match. It never promotes
+the tuple to valid or Go. Every inconsistent validator tuple is rejected; an
+absent, ad-hoc, unknown, invalid, or unchecked signature remains method-level
+No-Go.
 
 Initial protection is Pass only when:
 

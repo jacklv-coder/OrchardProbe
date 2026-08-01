@@ -264,3 +264,35 @@ and admitted it and passed the unsigned Simulator fixture; formatting, locked
 Clippy with warnings denied, all 276 Workspace tests, Ruby syntax, the diff
 check, and the explicit no-measurement-hook check also pass. A fresh clean
 Codex CR remains required before the 4B PR.
+
+That fresh complete-diff CR found two P1 execution blockers. The Host required
+an independently `valid` `security-framework` signature tuple even though the
+checked-in iOS observer deliberately and truthfully emits the bounded parser's
+`not_checked` tuple, so no real device export could close. It also allowed run
+2 control authoring immediately after run 1, even though the final verifier
+requires the signed 15-minute windows to be strictly non-overlapping. The
+remediation accepts only the observer's exact
+`not_checked`/`demolab-bounded-codesign-parser`/`1`, `inconclusive`, sole
+`signature_invalid_or_unchecked` tuple as reproducible method-level No-Go
+evidence while preserving every Oracle and protection comparison. Run 2 now
+must receive the already verified run-1 object; Core derives the prior binding
+itself and refuses authoring until Host time is strictly later than run 1's
+signed `not_after`. Regressions cover false signature promotion, substituted
+reasons/validators, the exact time boundary, and Oracle continuity. These Rust
+changes require new reproducibility measurements, a replacement allowlist
+tuple, the complete local gate, and another clean CR before the 4B PR.
+
+The follow-up uncommitted CR found two P1 outcome-boundary defects in that
+remediation. A run-2 control authored only after run 1's deadline/completion
+could still overlap the device's accepted `created_at` when the full 120-second
+clock skew was exercised; and the truthful unchecked tuple still surfaced from
+the final lane as a generic verified success. Run-2 authoring now requires Host
+time to be strictly later than both the signed run-1 `not_after` and retained
+run-1 completion plus 120 seconds. The verified run and verified two-run chain
+also carry a closed `go` or `no_go_signature_unchecked` disposition, which the
+Helper returns for the second close and final verification and Fastlane renders
+as an explicit method-level No-Go. The end-to-end fixtures now default to the
+checked-in observer's exact unchecked tuple, while a separate regression keeps
+the independently validated Go tuple closed. These additional Rust changes
+again require fresh reproducibility measurements, the complete local gate, and
+a clean CR before the 4B PR.

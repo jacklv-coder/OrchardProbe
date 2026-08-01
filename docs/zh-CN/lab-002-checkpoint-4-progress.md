@@ -188,3 +188,23 @@ CodeDirectory CDHash `03450ddbd3e5096f7c948abdf2c8bc73245b2e8e`。临时测量 H
 无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 276 项
 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均通过。4B PR 前只剩
 全新无问题 Codex CR。
+
+该全新完整 Diff CR 发现两个 P1 执行阻断。Host 要求独立 `valid` 的
+`security-framework` 签名 Tuple，但当前 iOS Observer 有意并如实输出有界 Parser 的
+`not_checked` Tuple，导致任何真实设备 Export 都无法关闭；同时 Run 1 完成后可以立即创作
+Run 2 Control，但最终验证器要求两个已签名 15 分钟窗口严格不重叠。修复后，Host 只接受
+精确的 `not_checked`/`demolab-bounded-codesign-parser`/`1`、`inconclusive`、唯一
+`signature_invalid_or_unchecked` Tuple 作为可复现的方法级 No-Go 证据，同时保留全部
+Oracle 与保护态比较。Run 2 必须引用已经验证的 Run-1 对象，由 Core 自行派生前序 Binding，
+且只有 Host 时间严格晚于 Run 1 已签名 `not_after` 才允许创作。新增回归覆盖伪造签名升级、
+替换 Reason/Validator、精确时间边界和 Oracle 连续性。由于这些修改会改变 Rust Helper，
+4B PR 前仍需新的可复现测量、替换 Allowlist Tuple、完整本地门禁和另一轮无问题 CR。
+
+后续未提交 CR 又发现两个 P1 结果边界缺陷。Run 2 只晚于 Run 1 Deadline/完成时间仍可能
+在设备用满允许的 120 秒时钟偏差时，让 `created_at` 与 Run 1 重叠；同时如实的 Unchecked
+Tuple 仍会被最终 Lane 显示成普通验证成功。现在 Run 2 创作要求 Host 时间同时严格晚于
+Run 1 已签名 `not_after`，以及保留的 Run 1 完成时间加 120 秒。已验证 Run 与双轮 Chain
+还会携带封闭的 `go` 或 `no_go_signature_unchecked` Disposition；Helper 在第二轮关闭和
+最终验证时返回该字段，Fastlane 会把后者明确显示为方法级 No-Go。端到端 Fixture 默认改为
+当前 Observer 的精确 Unchecked Tuple，并由独立回归继续封闭 Valid 的 Go Tuple。由于这些
+Rust 修改，4B PR 前仍需新的可复现测量、完整本地门禁和无问题 CR。

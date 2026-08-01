@@ -73,6 +73,8 @@ pub(super) struct OperatorOutput {
     import_relative_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     device_selection_fingerprint_sha256: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evidence_disposition: Option<&'static str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1417,6 +1419,7 @@ fn start_enrollment(
         run_ordinal: None,
         import_relative_path: Some(INSTALL_ENVELOPE_NAME.into()),
         device_selection_fingerprint_sha256: None,
+        evidence_disposition: None,
     })
 }
 
@@ -1474,6 +1477,7 @@ fn close_enrollment_phase(
         run_ordinal: None,
         import_relative_path: None,
         device_selection_fingerprint_sha256: Some(fingerprint),
+        evidence_disposition: None,
     })
 }
 
@@ -1524,22 +1528,23 @@ fn start_run(
         ]
     };
     exact_experiment_inventory(&root, &phases)?;
-    let prior = if ordinal == 2 {
+    let prior_run = if ordinal == 2 {
         let run_one = run_files(&root, 1)?;
         verify_intent_source(&root, &run_one.intent)?;
-        verify_run_chain(
-            &enrollment,
-            RunArtifactBytes {
-                frozen_oracle: &source.oracle,
-                run_acknowledgement: &run_one.acknowledgement,
-                authorization_envelope: &run_one.envelope,
-                collection_intent: &run_one.intent,
-                signed_session_export: &run_one.export,
-                collection_binding: &run_one.binding,
-            },
+        Some(
+            verify_run_chain(
+                &enrollment,
+                RunArtifactBytes {
+                    frozen_oracle: &source.oracle,
+                    run_acknowledgement: &run_one.acknowledgement,
+                    authorization_envelope: &run_one.envelope,
+                    collection_intent: &run_one.intent,
+                    signed_session_export: &run_one.export,
+                    collection_binding: &run_one.binding,
+                },
+            )
+            .map_err(|error| format!("run 1 chain is invalid before run 2: {error}"))?,
         )
-        .map_err(|error| format!("run 1 chain is invalid before run 2: {error}"))?;
-        Some(sha256_hex(&run_one.binding))
     } else {
         None
     };
@@ -1550,7 +1555,7 @@ fn start_run(
         RunControlRequest {
             preupload_evidence_sha256: sha256_hex(&source.evidence),
             run_ordinal: ordinal,
-            prior_collection_binding_sha256: prior,
+            prior_run: prior_run.as_ref(),
             assertions: assertions(
                 request.confirmed,
                 request.owns_or_explicitly_authorized_target,
@@ -1582,6 +1587,7 @@ fn start_run(
         run_ordinal: Some(ordinal),
         import_relative_path: Some(format!("{phase}/{RUN_ENVELOPE_NAME}")),
         device_selection_fingerprint_sha256: None,
+        evidence_disposition: None,
     })
 }
 
@@ -1667,7 +1673,7 @@ fn close_run_phase(
         ],
         &mut arm_publication,
     )?;
-    if ordinal == 2 {
+    let evidence_disposition = if ordinal == 2 {
         let run_one = run_files(&root, 1)?;
         let verified_one = verify_run_chain(
             &enrollment,
@@ -1681,9 +1687,15 @@ fn close_run_phase(
             },
         )
         .map_err(|error| format!("run 1 chain changed before final verification: {error}"))?;
-        verify_two_run_chain(&enrollment, &verified_one, &verified_run)
-            .map_err(|error| format!("final two-run chain is invalid: {error}"))?;
-    }
+        Some(
+            verify_two_run_chain(&enrollment, &verified_one, &verified_run)
+                .map_err(|error| format!("final two-run chain is invalid: {error}"))?
+                .evidence_disposition()
+                .as_str(),
+        )
+    } else {
+        None
+    };
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: if ordinal == 2 {
@@ -1696,6 +1708,7 @@ fn close_run_phase(
         run_ordinal: Some(ordinal),
         import_relative_path: None,
         device_selection_fingerprint_sha256: None,
+        evidence_disposition,
     })
 }
 
@@ -1756,8 +1769,10 @@ fn verify_complete(
         },
     )
     .map_err(|error| format!("run 2 chain is invalid: {error}"))?;
-    verify_two_run_chain(&enrollment, &verified_one, &verified_two)
-        .map_err(|error| format!("two-run chain is invalid: {error}"))?;
+    let evidence_disposition = verify_two_run_chain(&enrollment, &verified_one, &verified_two)
+        .map_err(|error| format!("two-run chain is invalid: {error}"))?
+        .evidence_disposition()
+        .as_str();
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: "two_run_chain_verified",
@@ -1766,6 +1781,7 @@ fn verify_complete(
         run_ordinal: None,
         import_relative_path: None,
         device_selection_fingerprint_sha256: None,
+        evidence_disposition: Some(evidence_disposition),
     })
 }
 

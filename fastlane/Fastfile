@@ -7388,10 +7388,14 @@ def run_lab002_operator_helper!(
       run_ordinal
       import_relative_path
       device_selection_fingerprint_sha256
+      evidence_disposition
     ]
     unless result.is_a?(Hash) &&
            (result.keys - allowed).empty? &&
            result["schema"] == "orchardprobe.lab002.operator-result.v1" &&
+           [nil, "go", "no_go_signature_unchecked"].include?(
+             result["evidence_disposition"]
+           ) &&
            /\A[0-9a-f]{64}\z/.match?(result["experiment_id"].to_s)
       UI.user_error!("LAB-002 operator returned an invalid closed result.")
     end
@@ -7663,7 +7667,14 @@ platform :ios do
         input: export,
         publishes: true
       )
-      UI.success("Verified the signed export and closed the current run.")
+      if result["evidence_disposition"] == "no_go_signature_unchecked"
+        UI.important(
+          "Closed the two-run chain with a method-level No-Go: " \
+          "the checked-in observer reported signature validation as unchecked."
+        )
+      else
+        UI.success("Verified the signed export and closed the current run.")
+      end
       result
     ensure
       handles.each { |item| item.close unless item.closed? }
@@ -7720,7 +7731,16 @@ platform :ios do
         input: "",
         publishes: false
       )
-      UI.success("Verified the complete retained enrollment and two-run chain.")
+      if result["evidence_disposition"] == "no_go_signature_unchecked"
+        UI.important(
+          "Verified chain integrity, but the final evidence disposition is " \
+          "No-Go because signature validation remained unchecked."
+        )
+      else
+        UI.success(
+          "Verified the complete retained enrollment and two-run chain with a Go disposition."
+        )
+      end
       result
     ensure
       handles.each { |item| item.close unless item.closed? }

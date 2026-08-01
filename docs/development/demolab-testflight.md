@@ -273,8 +273,12 @@ only the fixed installation envelope is imported afterward.
 `close_enrollment` accepts one bounded signed Receipt and the complete 64
 lowercase-hex fingerprint after the operator compares the Mac and iPhone
 displays. `start_run` automatically selects only the next legal ordinal,
-creates a non-overlapping 15-minute window, retains the full Intent on the Mac,
-and exposes only the signed Challenge for import. `close_run` accepts one
+retains the full Intent on the Mac, and exposes only the signed Challenge for
+import. For run 2 it first re-verifies the complete run-1 chain and refuses to
+publish until the current Host time is strictly later than both run 1's signed
+15-minute `not_after` and its retained Host completion time plus the full
+120-second device clock-skew allowance; rerun the same lane after both
+boundaries instead of editing a timestamp or waiting inside the Helper. `close_run` accepts one
 bounded signed Export and derives the Binding before re-running the complete
 verifier. Before authoring, accepting, or finally verifying any run, the helper
 reopens the original prebuild and frozen candidate and requires the retained
@@ -282,7 +286,13 @@ manifest, Oracle, and pre-upload evidence to remain byte-identical. Every
 signed role report must then match the Oracle's exact role/slice identity,
 initial encryption coverage, and expected mapped plaintext digest. The second
 close additionally requires byte-identical normalized observations across the
-ordered two-run chain.
+ordered two-run chain. The checked-in iOS observer truthfully reports its
+bounded signature parse as `not_checked`; Host closure accepts only that exact
+`inconclusive`/`signature_invalid_or_unchecked` tuple as reproducible No-Go
+evidence and never treats it as valid signature evidence or a Go result.
+Both the second close and final verifier expose the closed disposition as
+`go` or `no_go_signature_unchecked`; Fastlane prints the latter as a
+method-level No-Go rather than a generic success.
 
 Every publishing lane uses a random owner-only staging directory, fixed
 filenames, exclusive rename, directory fsync, and exact phase inventory. It
