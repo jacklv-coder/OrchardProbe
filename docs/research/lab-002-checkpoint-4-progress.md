@@ -208,3 +208,18 @@ was added to the reviewed allowlist. The normal non-measurement gate rebuilt
 and admitted it and passed the unsigned Simulator fixture; formatting, locked
 Clippy with warnings denied, all 273 Workspace tests, Ruby syntax, and the diff
 check also pass. A fresh clean Codex CR remains required before the 4B PR.
+
+The fresh complete-diff CR then found three P2 boundary gaps. An output root
+could alias the frozen prebuild or candidate directory, source artifacts were
+not read back after all semantic and Archive validation, and Receipt/Export
+paths were opened in blocking mode before their file type was known. The
+remediation rejects duplicate directory device/inode identities before Helper
+launch, revalidates the exact prebuild and candidate inventories plus every
+artifact byte/identity and all three Archive executables immediately before
+returning the retained source bundle, and routes Receipt/Export through the
+existing owner-only outside-repository nonblocking snapshot boundary. Negative
+regressions reject aliased bindings, replaced bytes or identities, and FIFO or
+other special external inputs. Because the source revalidation changes the
+Rust Helper, two new independent reproducibility measurements, a new sole
+allowlist tuple, the normal gate, all local gates, and a fresh clean CR remain
+required before the 4B PR can open.

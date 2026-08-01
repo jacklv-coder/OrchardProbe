@@ -151,3 +151,12 @@ CodeDirectory CDHash `c8206133f0885ab4e3b2d46179d71478f1e2912c`。临时测量 H
 把该精确 Tuple 加入已评审 Allowlist 前完整移除。正常非测量门禁已重新构建并接受它，且
 无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 273 项
 Workspace 测试、Ruby 语法和 Diff 检查也均通过。4B PR 前只剩全新无问题 Codex CR。
+
+该全新完整 Diff CR 随后又发现三个 P2 边界缺口：输出根可以与冻结 Prebuild 或 Candidate
+目录别名；全部语义和 Archive 验证完成后没有再次读取来源工件；Receipt/Export Path 在确认
+文件类型前会以阻塞模式打开。修复后会在启动 Helper 前拒绝重复的目录 Device/Inode 身份，
+并在返回保留 Source Bundle 前再次验证 Prebuild/Candidate 精确清单、每个工件的全部字节与
+身份，以及三个 Archive 可执行文件；Receipt/Export 则统一走现有的仓库外、仅 Owner 可访问
+且非阻塞的快照边界。负向回归会拒绝别名 Binding、替换后的字节/身份、FIFO 与其他特殊外部
+输入。由于来源重验证会改变 Rust Helper，4B PR 打开前仍需两次新的独立可复现测量、只保留
+新 Tuple 的 Allowlist、正常门禁、全部本地门禁和全新无问题 CR。

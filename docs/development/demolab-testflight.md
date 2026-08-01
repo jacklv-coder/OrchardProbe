@@ -317,8 +317,10 @@ The operator lanes use these additional private environment values:
   `DEMO_LAB_LAB002_CONFIRM_FINGERPRINT_MATCH=true` for enrollment closure;
 - `DEMO_LAB_LAB002_EXPORT_PATH` for the current run's signed Export.
 
-Receipt/Export files may come from AirDrop or Files, but must be regular,
-bounded, non-symlink files. Do not paste private values, experiment IDs,
+Receipt/Export files may come from AirDrop or Files, but must be absolute-path,
+owner-only, bounded, non-symlink regular files outside the repository. Their
+nonblocking snapshots reject FIFOs and other special files. Do not paste
+private values, experiment IDs,
 fingerprints, paths, Receipt/Export contents, or Host results into GitHub or
 logs. A failed/expired/post-start phase is retained and evaluated under the
 reviewed No-Go rules; it is not deleted and recreated to obtain a pass.

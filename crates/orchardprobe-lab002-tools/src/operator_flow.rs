@@ -264,6 +264,14 @@ struct SourceBundle {
     build_binding_sha256: String,
 }
 
+struct PrebuildSource {
+    signing_key: SigningKey,
+    seed: super::ReadPrivateArtifact,
+    manifest: super::ReadPrivateArtifact,
+    record_artifact: super::ReadPrivateArtifact,
+    record: super::PrebuildRecord,
+}
+
 struct EnrollmentFiles {
     manifest: Vec<u8>,
     acknowledgement: Vec<u8>,
@@ -687,16 +695,7 @@ fn has_exact_derived_prebuild_bindings(
         && record.targets == derived.targets
 }
 
-fn private_seed_and_record(
-    prebuild: &PrivateOutputRoot,
-) -> Result<
-    (
-        SigningKey,
-        super::ReadPrivateArtifact,
-        super::PrebuildRecord,
-    ),
-    String,
-> {
+fn private_seed_and_record(prebuild: &PrivateOutputRoot) -> Result<PrebuildSource, String> {
     verify_private_artifact_inventory(&prebuild.directory)?;
     let seed = read_private_artifact(&prebuild.directory, PRIVATE_SEED_NAME, 32)?;
     let manifest = read_private_artifact(
@@ -744,7 +743,13 @@ fn private_seed_and_record(
     {
         return Err("private prebuild tuple is inconsistent".into());
     }
-    Ok((signing_key, manifest, record_value))
+    Ok(PrebuildSource {
+        signing_key,
+        seed,
+        manifest,
+        record_artifact: record,
+        record: record_value,
+    })
 }
 
 fn candidate_inventory(directory: &File) -> Result<(), String> {
@@ -833,11 +838,114 @@ fn verify_frozen_archive(
     verify_frozen_archive_files(&final_archive, evidence, &expected_executables)
 }
 
+fn require_unchanged_source_artifact(
+    observed: super::ReadPrivateArtifact,
+    expected: &super::ReadPrivateArtifact,
+    label: &str,
+) -> Result<(), String> {
+    if &observed != expected {
+        return Err(format!("{label} changed after its initial validation"));
+    }
+    Ok(())
+}
+
+struct FrozenSourceArtifacts<'a> {
+    seed: &'a super::ReadPrivateArtifact,
+    manifest: &'a super::ReadPrivateArtifact,
+    record: &'a super::ReadPrivateArtifact,
+    oracle: &'a super::ReadPrivateArtifact,
+    evidence: &'a super::ReadPrivateArtifact,
+    ipa: &'a super::ReadPrivateArtifact,
+    upload: &'a super::ReadPrivateArtifact,
+}
+
+fn revalidate_frozen_source_tuple(
+    prebuild: &PrivateOutputRoot,
+    candidate: &PrivateOutputRoot,
+    artifacts: &FrozenSourceArtifacts<'_>,
+    evidence: &PreuploadEvidence,
+) -> Result<(), String> {
+    verify_private_artifact_inventory(&prebuild.directory)?;
+    require_unchanged_source_artifact(
+        read_private_artifact(&prebuild.directory, PRIVATE_SEED_NAME, 32)?,
+        artifacts.seed,
+        "authorization seed",
+    )?;
+    require_unchanged_source_artifact(
+        read_private_artifact(
+            &prebuild.directory,
+            MANIFEST_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )?,
+        artifacts.manifest,
+        "authorized-target manifest",
+    )?;
+    require_unchanged_source_artifact(
+        read_private_artifact(
+            &prebuild.directory,
+            PREBUILD_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )?,
+        artifacts.record,
+        "prebuild record",
+    )?;
+    verify_private_artifact_inventory(&prebuild.directory)?;
+
+    candidate_inventory(&candidate.directory)?;
+    require_unchanged_source_artifact(
+        read_private_artifact(
+            &candidate.directory,
+            ORACLE_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )?,
+        artifacts.oracle,
+        "frozen oracle",
+    )?;
+    require_unchanged_source_artifact(
+        read_private_file_with_mode(
+            &candidate.directory,
+            EVIDENCE_NAME,
+            MAX_UPLOAD_RESULT_BYTES,
+            0o600,
+        )?,
+        artifacts.evidence,
+        "pre-upload evidence",
+    )?;
+    require_unchanged_source_artifact(
+        read_private_file_with_mode(
+            &candidate.directory,
+            "DemoLab-3.ipa",
+            MAX_IPA_BYTES as usize,
+            0o644,
+        )?,
+        artifacts.ipa,
+        "frozen IPA",
+    )?;
+    require_unchanged_source_artifact(
+        read_private_file_with_mode(
+            &candidate.directory,
+            UPLOAD_RESULT_NAME,
+            MAX_UPLOAD_RESULT_BYTES,
+            0o600,
+        )?,
+        artifacts.upload,
+        "upload audit record",
+    )?;
+    verify_frozen_archive(candidate, evidence)?;
+    candidate_inventory(&candidate.directory)
+}
+
 fn load_source_bundle(
     prebuild: &PrivateOutputRoot,
     candidate: &PrivateOutputRoot,
 ) -> Result<SourceBundle, String> {
-    let (signing_key, manifest, record) = private_seed_and_record(prebuild)?;
+    let PrebuildSource {
+        signing_key,
+        seed,
+        manifest,
+        record_artifact,
+        record,
+    } = private_seed_and_record(prebuild)?;
     candidate_inventory(&candidate.directory)?;
     let oracle = read_private_artifact(
         &candidate.directory,
@@ -931,6 +1039,20 @@ fn load_source_bundle(
     if !is_lower_hex(&record.build_binding_sha256, 64) {
         return Err("frozen build binding is invalid".into());
     }
+    revalidate_frozen_source_tuple(
+        prebuild,
+        candidate,
+        &FrozenSourceArtifacts {
+            seed: &seed,
+            manifest: &manifest,
+            record: &record_artifact,
+            oracle: &oracle,
+            evidence: &evidence,
+            ipa: &ipa,
+            upload: &upload,
+        },
+        &evidence_value,
+    )?;
     Ok(SourceBundle {
         signing_key,
         manifest: manifest.bytes,
@@ -1604,8 +1726,9 @@ mod tests {
         EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME,
         RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle, UploadResult, derive_prebuild_bindings,
         exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
-        require_retained_source_match, split_fingerprint_and_receipt, valid_upload_result,
-        validate_evidence_artifact, verify_frozen_archive,
+        require_retained_source_match, require_unchanged_source_artifact,
+        split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
+        verify_frozen_archive,
     };
 
     fn complete_evidence_json() -> Value {
@@ -1819,6 +1942,29 @@ mod tests {
         assert!(
             require_retained_source_match(&source, b"manifest", b"oracle", b"replacement").is_err()
         );
+    }
+
+    #[test]
+    fn frozen_source_revalidation_rejects_byte_and_identity_replacement() {
+        let expected = super::super::ReadPrivateArtifact {
+            bytes: b"original".to_vec(),
+            device: 17,
+            inode: 29,
+            owner: 501,
+            mode: 0o400,
+            size: 8,
+            modified_seconds: 1,
+            modified_nanoseconds: 2,
+        };
+        assert!(require_unchanged_source_artifact(expected.clone(), &expected, "source").is_ok());
+
+        let mut changed_bytes = expected.clone();
+        changed_bytes.bytes = b"replaced".to_vec();
+        assert!(require_unchanged_source_artifact(changed_bytes, &expected, "source").is_err());
+
+        let mut changed_identity = expected.clone();
+        changed_identity.inode += 1;
+        assert!(require_unchanged_source_artifact(changed_identity, &expected, "source").is_err());
     }
 
     #[test]

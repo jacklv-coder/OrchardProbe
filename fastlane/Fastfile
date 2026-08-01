@@ -7260,6 +7260,21 @@ def lock_lab002_operator_root!(bindings)
   primary.fetch(:handle)
 end
 
+def verify_distinct_lab002_operator_bindings!(bindings)
+  identities = bindings.map do |binding|
+    identity = binding.fetch(:identity)
+    unless identity.is_a?(Array) && identity.length >= 2
+      UI.user_error!("A LAB-002 operator directory identity is invalid.")
+    end
+    [identity[0], identity[1]]
+  end
+  unless identities.uniq.length == identities.length
+    UI.user_error!(
+      "LAB-002 operator input and output directories must be distinct."
+    )
+  end
+end
+
 def run_lab002_operator_helper!(
   operation:,
   bindings:,
@@ -7273,6 +7288,7 @@ def run_lab002_operator_helper!(
   acknowledgement_reader = nil
   acknowledgement_writer = nil
   begin
+    verify_distinct_lab002_operator_bindings!(bindings)
     operator_root_lock = lock_lab002_operator_root!(bindings)
     binary, tool_workspace, tool_identity, =
       build_lab002_private_tool(source_commit)
@@ -7478,14 +7494,8 @@ platform :ios do
         "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
         "LAB-002 experiment"
       )
-      receipt_path = required_environment(
-        "DEMO_LAB_LAB002_RECEIPT_PATH"
-      )
-      unless Pathname.new(receipt_path).absolute?
-        UI.user_error!("DEMO_LAB_LAB002_RECEIPT_PATH must be absolute.")
-      end
-      receipt = read_regular_file_snapshot(
-        receipt_path,
+      receipt = private_external_file_snapshot(
+        "DEMO_LAB_LAB002_RECEIPT_PATH",
         16 * 1024,
         "LAB-002 signed enrollment receipt"
       )
@@ -7601,12 +7611,8 @@ platform :ios do
           "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
         )
       handles.concat([handle, prebuild_handle, candidate_handle])
-      export_path = required_environment("DEMO_LAB_LAB002_EXPORT_PATH")
-      unless Pathname.new(export_path).absolute?
-        UI.user_error!("DEMO_LAB_LAB002_EXPORT_PATH must be absolute.")
-      end
-      export = read_regular_file_snapshot(
-        export_path,
+      export = private_external_file_snapshot(
+        "DEMO_LAB_LAB002_EXPORT_PATH",
         512 * 1024,
         "LAB-002 signed session export"
       )
@@ -7727,6 +7733,46 @@ platform :ios do
       first_lock = nil
       second_lock = nil
       begin
+        unique_identity = first_identity.dup
+        unique_identity[1] = first_identity[1] ^ 1
+        unique_binding = {
+          option: "--prebuild-directory",
+          path: "#{operator_root}-unique",
+          handle: first_handle,
+          identity: unique_identity,
+          descriptor: 5,
+          label: "LAB-002 distinct binding regression",
+        }
+        verify_distinct_lab002_operator_bindings!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: first_handle,
+            identity: first_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+          unique_binding,
+        ])
+        duplicate_binding_rejected = false
+        begin
+          verify_distinct_lab002_operator_bindings!([
+            {
+              option: "--output-root",
+              path: operator_root,
+              handle: first_handle,
+              identity: first_identity,
+              descriptor: 4,
+              label: "LAB-002 operator lock regression",
+            },
+            unique_binding.merge(identity: first_identity),
+          ])
+        rescue FastlaneCore::Interface::FastlaneError
+          duplicate_binding_rejected = true
+        end
+        unless duplicate_binding_rejected
+          UI.user_error!("Aliased LAB-002 operator directories were not rejected.")
+        end
         first_lock = lock_lab002_operator_root!([
           {
             option: "--output-root",

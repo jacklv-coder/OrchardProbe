@@ -274,7 +274,9 @@ Clean、Reviewed Source。本流程需要仓库外私有目录变量、所选自
 Hardware/iOS Tuple、每次操作
 前全新的五项 `DEMO_LAB_LAB002_CONFIRM_* = true` RFC-0001 确认，以及关闭 Enrollment
 时的 Receipt Path、完整 Fingerprint 和显式匹配确认，或关闭 Run 时的 Export Path。
-具体变量名与约束见英文 Runbook。不得把私有值、实验 ID、Fingerprint、路径、
+Receipt/Export 必须位于仓库外绝对路径、仅 Owner 可访问、有界且为非符号链接的普通文件；
+非阻塞快照会拒绝 FIFO 与其他特殊文件。具体变量名与约束见英文 Runbook。不得把私有值、
+实验 ID、Fingerprint、路径、
 Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或已开始后中断的阶段必须
 按 No-Go 保留，不能删除后重建成 Pass。
 
