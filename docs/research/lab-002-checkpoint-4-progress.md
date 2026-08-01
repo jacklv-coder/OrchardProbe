@@ -334,6 +334,7 @@ The temporary absent-tuple measurement hook was removed completely before the
 exact sole product tuple was added to the reviewed source-snapshot allowlist.
 Both measurement gates also passed the unsigned Simulator fixture. The normal
 non-measurement gate then rebuilt and admitted the allowlisted Helper and passed
-the unsigned Simulator fixture. All local gates, the explicit
-no-measurement-hook check, and a fresh clean Codex CR remain required before
-the 4B PR.
+the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
+all 278 Workspace tests, Ruby syntax, the diff check, and the explicit
+no-measurement-hook check also pass. A fresh clean Codex CR remains required
+before the 4B PR.
