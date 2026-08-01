@@ -2538,25 +2538,37 @@ fn parse_preupload_code_signature<R: Read + Seek>(
         team_identifier
     };
 
-    let entitlements = if let Some(entitlements) = slots.get(&5) {
-        if special_slot_count < 5 {
+    for (&slot, signed_blob) in &slots {
+        if !(1..0x1000).contains(&slot) {
+            continue;
+        }
+        let slot_index = usize::try_from(slot).map_err(|_| {
+            Lab002Error::InvalidMachO("code-signing special-slot index overflows".into())
+        })?;
+        if slot_index > special_slot_count {
             return Err(Lab002Error::InvalidMachO(
-                "code-signing entitlements are not covered by the CodeDirectory".into(),
+                "code-signing special slot is not covered by the CodeDirectory".into(),
             ));
         }
-        let entitlement_hash_start = hash_offset.checked_sub(5 * 32).ok_or_else(|| {
-            Lab002Error::InvalidMachO("CodeDirectory entitlement hash underflows".into())
+        let signed_hash_bytes = slot_index.checked_mul(hash_size).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory special-slot offset overflows".into())
         })?;
-        let entitlement_hash_end = entitlement_hash_start.checked_add(32).ok_or_else(|| {
-            Lab002Error::InvalidMachO("CodeDirectory entitlement hash overflows".into())
+        let signed_hash_start = hash_offset.checked_sub(signed_hash_bytes).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory special-slot hash underflows".into())
         })?;
-        if code_directory.get(entitlement_hash_start..entitlement_hash_end)
-            != Some(Sha256::digest(*entitlements).as_slice())
+        let signed_hash_end = signed_hash_start.checked_add(hash_size).ok_or_else(|| {
+            Lab002Error::InvalidMachO("CodeDirectory special-slot hash overflows".into())
+        })?;
+        if code_directory.get(signed_hash_start..signed_hash_end)
+            != Some(Sha256::digest(*signed_blob).as_slice())
         {
             return Err(Lab002Error::InvalidMachO(
-                "code-signing entitlements do not match the signed special slot".into(),
+                "code-signing blob does not match its signed special slot".into(),
             ));
         }
+    }
+
+    let entitlements = if let Some(entitlements) = slots.get(&5) {
         if read_be_u32(entitlements, 0, "code-signing entitlements")? != 0xfade_7171 {
             return Err(Lab002Error::InvalidMachO(
                 "code-signing entitlements slot has an invalid magic".into(),
@@ -4632,22 +4644,34 @@ mod tests {
         let entitlement_hash_start = hash_offset - 5 * 32;
         code_directory[entitlement_hash_start..entitlement_hash_start + 32]
             .copy_from_slice(&Sha256::digest(&entitlements));
+        let mut requirements = Vec::new();
+        append_be_u32(&mut requirements, 0xfade_0c01);
+        append_be_u32(&mut requirements, 12);
+        append_be_u32(&mut requirements, 0);
+        let requirements_hash_start = hash_offset - 2 * 32;
+        code_directory[requirements_hash_start..requirements_hash_start + 32]
+            .copy_from_slice(&Sha256::digest(&requirements));
         let mut cms = Vec::new();
         append_be_u32(&mut cms, 0xfade_0b01);
         append_be_u32(&mut cms, 12);
         append_be_u32(&mut cms, 0);
 
-        let index_count = if include_cms { 3 } else { 2 };
+        let index_count = if include_cms { 4 } else { 3 };
         let index_end = 12 + index_count * 8;
         let code_directory_offset = index_end;
-        let entitlements_offset = code_directory_offset + code_directory.len();
+        let requirements_offset = code_directory_offset + code_directory.len();
+        let entitlements_offset = requirements_offset + requirements.len();
         let cms_offset = entitlements_offset + entitlements.len();
         let length = cms_offset + if include_cms { cms.len() } else { 0 };
         let mut superblob = Vec::with_capacity(length);
         append_be_u32(&mut superblob, 0xfade_0cc0);
         append_be_u32(&mut superblob, length as u32);
         append_be_u32(&mut superblob, index_count as u32);
-        let mut entries = vec![(0_u32, code_directory_offset), (5_u32, entitlements_offset)];
+        let mut entries = vec![
+            (0_u32, code_directory_offset),
+            (2_u32, requirements_offset),
+            (5_u32, entitlements_offset),
+        ];
         if include_cms {
             entries.push((0x1_0000_u32, cms_offset));
         }
@@ -4656,6 +4680,7 @@ mod tests {
             append_be_u32(&mut superblob, offset as u32);
         }
         superblob.extend_from_slice(&code_directory);
+        superblob.extend_from_slice(&requirements);
         superblob.extend_from_slice(&entitlements);
         if include_cms {
             superblob.extend_from_slice(&cms);
@@ -5507,9 +5532,37 @@ mod tests {
                 if message.contains("signed special slot")
         ));
 
+        let mut changed_requirements = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let signature_offset = 0x800_usize;
+        let slot_count = u32::from_be_bytes(
+            changed_requirements[signature_offset + 8..signature_offset + 12]
+                .try_into()
+                .unwrap(),
+        ) as usize;
+        let requirements_offset = (0..slot_count)
+            .find_map(|index| {
+                let entry = signature_offset + 12 + index * 8;
+                let slot =
+                    u32::from_be_bytes(changed_requirements[entry..entry + 4].try_into().unwrap());
+                (slot == 2).then(|| {
+                    u32::from_be_bytes(
+                        changed_requirements[entry + 4..entry + 8]
+                            .try_into()
+                            .unwrap(),
+                    ) as usize
+                })
+            })
+            .unwrap();
+        changed_requirements[signature_offset + requirements_offset + 8] ^= 1;
+        assert!(matches!(
+            parse_fixed_sections(&mut Cursor::new(changed_requirements)),
+            Err(Lab002Error::InvalidMachO(message))
+                if message.contains("signed special slot")
+        ));
+
         let mut scatter = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
         let signature_offset = 0x800;
-        let code_directory_offset = signature_offset + 12 + 3 * 8;
+        let code_directory_offset = signature_offset + 12 + 4 * 8;
         scatter[code_directory_offset + 44..code_directory_offset + 48]
             .copy_from_slice(&1_u32.to_be_bytes());
         assert!(matches!(
