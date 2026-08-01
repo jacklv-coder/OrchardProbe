@@ -219,3 +219,5 @@ Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随�
 并接受 Allowlist Helper，且无签名 Simulator Fixture 通过；
 Format、锁定依赖且拒绝警告的 Clippy、全部 278 项 Workspace 测试、Ruby 语法、Diff 检查和
 明确的无测量 Hook 检查也均通过。4B PR 前只剩一轮全新无问题 Codex CR。
+
+该次最终完整 Diff CR 又发现一个 P2 源生命期缺口：完整 Operator 验证器在检查两轮保留结果前已加载并验证冻结 Prebuild/Candidate 元组，但链验证后未再次打开它们。并发替换源文件因此可能让结果继续基于过期的内存 Oracle 字节。修复在两轮链闭合后、返回处置结果前，重复完整的冻结源与保留源匹配。这一 Rust Helper 变更要求两次新的独立可复现性测量、替换唯一 Allowlist 元组、正常门禁、全部本地门禁和一次新的干净 CR，才能打开 4B PR。

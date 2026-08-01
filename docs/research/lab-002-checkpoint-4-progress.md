@@ -312,3 +312,13 @@ the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
 all 278 Workspace tests, Ruby syntax, diff check, and the explicit
 no-measurement-hook check also pass. A fresh clean Codex CR remains required
 before the 4B PR.
+
+That final complete-diff CR found one P2 source-lifetime gap: the complete
+operator verifier loaded and validated the frozen prebuild/candidate tuple
+before checking both retained runs, but did not reopen it after chain
+verification. A concurrent source replacement could therefore leave a result
+derived from stale in-memory Oracle bytes. The remediation repeats the full
+frozen-source and retained-source match after the two-run chain closes and
+before returning its disposition. This Rust Helper change requires two new
+independent reproducibility measurements, a replacement sole allowlist tuple,
+the normal gate, all local gates, and a fresh clean CR before the 4B PR.

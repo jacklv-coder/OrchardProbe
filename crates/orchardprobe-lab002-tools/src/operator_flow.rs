@@ -1773,6 +1773,13 @@ fn verify_complete(
         .map_err(|error| format!("two-run chain is invalid: {error}"))?
         .evidence_disposition()
         .as_str();
+    let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    require_retained_source_match(
+        &final_source,
+        &source.manifest,
+        &source.oracle,
+        &source.evidence,
+    )?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: "two_run_chain_verified",
@@ -2085,7 +2092,7 @@ mod tests {
     }
 
     #[test]
-    fn retained_source_match_includes_preupload_evidence_bytes() {
+    fn retained_and_final_source_matches_include_preupload_evidence_bytes() {
         let source = SourceBundle {
             signing_key: SigningKey::from_bytes(&[7; 32]),
             manifest: b"manifest".to_vec(),
@@ -2098,6 +2105,22 @@ mod tests {
         );
         assert!(
             require_retained_source_match(&source, b"manifest", b"oracle", b"replacement").is_err()
+        );
+        let replacement_source = SourceBundle {
+            signing_key: SigningKey::from_bytes(&[7; 32]),
+            manifest: b"manifest".to_vec(),
+            oracle: b"oracle".to_vec(),
+            evidence: b"replacement".to_vec(),
+            build_binding_sha256: "11".repeat(32),
+        };
+        assert!(
+            require_retained_source_match(
+                &replacement_source,
+                &source.manifest,
+                &source.oracle,
+                &source.evidence,
+            )
+            .is_err()
         );
     }
 
