@@ -19,6 +19,10 @@ use orchardprobe_core::lab002::operator::{
     AuthorizationAssertions, RunControlRequest, close_enrollment, close_run,
     create_installation_control, create_run_control,
 };
+use orchardprobe_core::lab002::{
+    BuildBindingInput, build_binding_sha256, target_identity_binding_sha256,
+    target_identity_set_sha256,
+};
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -291,6 +295,66 @@ fn value_u64(value: &Value, pointer: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("pre-upload evidence field {pointer} is missing"))
 }
 
+struct DerivedPrebuildBindings {
+    build_binding_sha256: String,
+    target_identity_set_sha256: String,
+    targets: Vec<super::PreparedTarget>,
+}
+
+fn derive_prebuild_bindings(
+    manifest: &AuthorizedTargetManifest,
+    manifest_sha256: &str,
+    record: &super::PrebuildRecord,
+) -> Result<DerivedPrebuildBindings, String> {
+    let build_input = BuildBindingInput {
+        source_commit: record.source_commit.clone(),
+        marketing_version: record.marketing_version.clone(),
+        build_number: record.build_number.clone(),
+        configuration: record.configuration.clone(),
+        observer_revision: record.observer_revision.clone(),
+        authorized_target_manifest_sha256: manifest_sha256.to_owned(),
+        xcode_version: record.toolchain.xcode_version.clone(),
+        xcode_build: record.toolchain.xcode_build.clone(),
+        iphoneos_sdk_version: record.toolchain.iphoneos_sdk_version.clone(),
+        iphoneos_sdk_build: record.toolchain.iphoneos_sdk_build.clone(),
+        xcodegen_version: record.toolchain.xcodegen_version.clone(),
+        xcodegen_architecture: record.toolchain.xcodegen_architecture.clone(),
+        xcodegen_executable_sha256: record.toolchain.xcodegen_executable_sha256.clone(),
+        fastlane_version: record.toolchain.fastlane_version.clone(),
+        gemfile_lock_sha256: record.toolchain.gemfile_lock_sha256.clone(),
+    };
+    let expected_build_binding =
+        build_binding_sha256(&build_input).map_err(|error| error.to_string())?;
+    let mut target_digests = Vec::with_capacity(manifest.targets.len());
+    let mut expected_targets = Vec::with_capacity(manifest.targets.len());
+    for target in &manifest.targets {
+        let identity_input = super::target_identity_input(&manifest.identity_nonce, target)?;
+        let digest =
+            target_identity_binding_sha256(&identity_input).map_err(|error| error.to_string())?;
+        target_digests.push((target.role, digest.clone()));
+        expected_targets.push(super::PreparedTarget {
+            role: target.role,
+            target_identity_binding_sha256: digest,
+        });
+    }
+    let expected_identity_set =
+        target_identity_set_sha256(&target_digests).map_err(|error| error.to_string())?;
+    Ok(DerivedPrebuildBindings {
+        build_binding_sha256: expected_build_binding,
+        target_identity_set_sha256: expected_identity_set,
+        targets: expected_targets,
+    })
+}
+
+fn has_exact_derived_prebuild_bindings(
+    record: &super::PrebuildRecord,
+    derived: &DerivedPrebuildBindings,
+) -> bool {
+    record.build_binding_sha256 == derived.build_binding_sha256
+        && record.target_identity_set_sha256 == derived.target_identity_set_sha256
+        && record.targets == derived.targets
+}
+
 fn private_seed_and_record(
     prebuild: &PrivateOutputRoot,
 ) -> Result<(SigningKey, Vec<u8>, super::PrebuildRecord), String> {
@@ -319,6 +383,8 @@ fn private_seed_and_record(
         .map_err(|error| format!("authorized-target manifest is invalid: {error}"))?;
     let record_value: super::PrebuildRecord = serde_json::from_slice(&record.bytes)
         .map_err(|error| format!("prebuild record is invalid: {error}"))?;
+    let manifest_sha256 = sha256_hex(&manifest.bytes);
+    let derived = derive_prebuild_bindings(&manifest_value, &manifest_sha256, &record_value)?;
     if canonical_json(&record_value).map_err(|error| error.to_string())? != record.bytes
         || record_value.schema != PREBUILD_SCHEMA
         || record_value.profile != LAB002_PROFILE
@@ -330,11 +396,10 @@ fn private_seed_and_record(
         || record_value.observer_revision != "lab002-observer-v1"
         || record_value.generator_revision != record_value.source_commit
         || record_value.identity_nonce != manifest_value.identity_nonce
-        || record_value.authorized_target_manifest_sha256 != sha256_hex(&manifest.bytes)
+        || record_value.authorized_target_manifest_sha256 != manifest_sha256
         || record_value.authorization_public_key != manifest_value.authorization_public_key
         || record_value.authorization_key_id != manifest_value.authorization_key_id
-        || !is_lower_hex(&record_value.build_binding_sha256, 64)
-        || !is_lower_hex(&record_value.target_identity_set_sha256, 64)
+        || !has_exact_derived_prebuild_bindings(&record_value, &derived)
         || manifest_value.authorization_public_key
             != lower_hex(signing_key.verifying_key().as_bytes())
     {
@@ -1120,11 +1185,75 @@ pub(super) fn execute(
 #[cfg(test)]
 mod tests {
     use ed25519_dalek::SigningKey;
+    use orchardprobe_core::lab002::artifacts::{
+        AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, Presence, RequiredAppGroups,
+        RequiredEntitlement, Toolchain,
+    };
+    use orchardprobe_core::lab002::{LAB002_PROFILE, LabRole};
 
     use super::{
-        SourceBundle, next_run_ordinal, open_run_ordinal, require_retained_source_match,
+        SourceBundle, derive_prebuild_bindings, has_exact_derived_prebuild_bindings,
+        next_run_ordinal, open_run_ordinal, require_retained_source_match,
         split_fingerprint_and_receipt,
     };
+
+    fn target(role: LabRole, suffix: &str, app_group: bool) -> AuthorizedTarget {
+        let team = "ABCDEFGHIJ";
+        let bundle_id = format!("com.example.demolab.{suffix}");
+        AuthorizedTarget {
+            role,
+            bundle_id: bundle_id.clone(),
+            code_directory_identifier: bundle_id.clone(),
+            code_directory_team_identifier: team.into(),
+            application_identifier: if app_group {
+                RequiredEntitlement {
+                    presence: Presence::Present,
+                    value: Some(format!("{team}.{bundle_id}")),
+                }
+            } else {
+                RequiredEntitlement {
+                    presence: Presence::RequiredAbsent,
+                    value: None,
+                }
+            },
+            developer_team_identifier: if app_group {
+                RequiredEntitlement {
+                    presence: Presence::Present,
+                    value: Some(team.into()),
+                }
+            } else {
+                RequiredEntitlement {
+                    presence: Presence::RequiredAbsent,
+                    value: None,
+                }
+            },
+            application_groups: if app_group {
+                RequiredAppGroups {
+                    presence: Presence::Present,
+                    values: Some(vec!["group.com.example.demolab".into()]),
+                }
+            } else {
+                RequiredAppGroups {
+                    presence: Presence::RequiredAbsent,
+                    values: None,
+                }
+            },
+        }
+    }
+
+    fn toolchain() -> Toolchain {
+        Toolchain {
+            xcode_version: "26.0".into(),
+            xcode_build: "17A100".into(),
+            iphoneos_sdk_version: "26.0".into(),
+            iphoneos_sdk_build: "23A100".into(),
+            xcodegen_version: "2.46.0".into(),
+            xcodegen_architecture: "arm64".into(),
+            xcodegen_executable_sha256: "22".repeat(32),
+            fastlane_version: "2.228.0".into(),
+            gemfile_lock_sha256: "33".repeat(32),
+        }
+    }
 
     fn phase_states() -> impl Iterator<Item = (bool, bool, bool, bool)> {
         (0_u8..16).map(|bits| (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0))
@@ -1187,5 +1316,59 @@ mod tests {
         assert!(
             require_retained_source_match(&source, b"manifest", b"oracle", b"replacement").is_err()
         );
+    }
+
+    #[test]
+    fn prebuild_bindings_are_recomputed_from_manifest_metadata_and_toolchain() {
+        let signing_key = SigningKey::from_bytes(&[7; 32]);
+        let manifest = AuthorizedTargetManifest {
+            schema: <AuthorizedTargetManifest as ClosedArtifact>::SCHEMA.into(),
+            profile: LAB002_PROFILE.into(),
+            identity_nonce: "44".repeat(32),
+            authorization_public_key: super::lower_hex(signing_key.verifying_key().as_bytes()),
+            authorization_key_id: super::sha256_hex(signing_key.verifying_key().as_bytes()),
+            targets: vec![
+                target(LabRole::MainApp, "app", true),
+                target(LabRole::Framework, "framework", false),
+                target(LabRole::ShareExtension, "share", true),
+            ],
+        };
+        let manifest_bytes = manifest.to_canonical_bytes().unwrap();
+        let manifest_sha256 = super::sha256_hex(&manifest_bytes);
+        let mut record = super::super::PrebuildRecord {
+            schema: super::super::PREBUILD_SCHEMA.into(),
+            profile: LAB002_PROFILE.into(),
+            source_commit: "11".repeat(20),
+            fixture_source_root: "fixtures/DemoLab".into(),
+            marketing_version: "1.0".into(),
+            build_number: "3".into(),
+            configuration: "Release".into(),
+            observer_revision: "lab002-observer-v1".into(),
+            generator_revision: "11".repeat(20),
+            identity_nonce: manifest.identity_nonce.clone(),
+            authorization_public_key: manifest.authorization_public_key.clone(),
+            authorization_key_id: manifest.authorization_key_id.clone(),
+            authorized_target_manifest_sha256: manifest_sha256.clone(),
+            build_binding_sha256: "00".repeat(32),
+            target_identity_set_sha256: "00".repeat(32),
+            toolchain: toolchain(),
+            targets: Vec::new(),
+        };
+        let derived = derive_prebuild_bindings(&manifest, &manifest_sha256, &record).unwrap();
+        record.build_binding_sha256 = derived.build_binding_sha256.clone();
+        record.target_identity_set_sha256 = derived.target_identity_set_sha256.clone();
+        record.targets = derived.targets.clone();
+        assert!(has_exact_derived_prebuild_bindings(&record, &derived));
+
+        record.build_binding_sha256 = "55".repeat(32);
+        assert!(!has_exact_derived_prebuild_bindings(&record, &derived));
+        record.build_binding_sha256 = derived.build_binding_sha256.clone();
+        record.targets.swap(0, 1);
+        assert!(!has_exact_derived_prebuild_bindings(&record, &derived));
+
+        record.targets = derived.targets.clone();
+        record.toolchain.xcode_version = "26.1".into();
+        let changed = derive_prebuild_bindings(&manifest, &manifest_sha256, &record).unwrap();
+        assert!(!has_exact_derived_prebuild_bindings(&record, &changed));
     }
 }
