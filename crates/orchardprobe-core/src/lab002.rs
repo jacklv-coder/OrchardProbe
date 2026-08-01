@@ -2655,6 +2655,25 @@ struct FixupSegment {
     filesize: u64,
     is_text: bool,
     is_linkedit: bool,
+    normalizes_filesize: bool,
+}
+
+fn is_closed_linkedit_signature_tail(
+    linkedit_fileoff: u64,
+    linkedit_filesize: u64,
+    signature_offset: u64,
+    signature_size: u64,
+    slice_size: u64,
+) -> Result<bool, Lab002Error> {
+    let linkedit_end = linkedit_fileoff
+        .checked_add(linkedit_filesize)
+        .ok_or_else(|| Lab002Error::InvalidMachO("__LINKEDIT file range overflows".into()))?;
+    let signature_end = signature_offset
+        .checked_add(signature_size)
+        .ok_or_else(|| Lab002Error::InvalidMachO("code-signature range overflows".into()))?;
+    Ok(signature_offset >= linkedit_fileoff
+        && signature_end == linkedit_end
+        && linkedit_end == slice_size)
 }
 
 fn reject_overlapping_segment_vm_ranges(segments: &[FixupSegment]) -> Result<(), Lab002Error> {
@@ -3309,14 +3328,18 @@ fn measure_fixup_layout<R: Read + Seek>(
         digest.update(segment.vmaddr.to_be_bytes());
         digest.update(segment.vmsize.to_be_bytes());
         digest.update(
-            if segment.is_linkedit {
+            if segment.normalizes_filesize {
                 0
             } else {
                 segment.filesize
             }
             .to_be_bytes(),
         );
-        digest.update([u8::from(segment.is_text), u8::from(segment.is_linkedit)]);
+        digest.update([
+            u8::from(segment.is_text),
+            u8::from(segment.is_linkedit),
+            u8::from(segment.normalizes_filesize),
+        ]);
     }
 
     match (layout.classic, layout.chained) {
@@ -3634,6 +3657,9 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                                 )
                             })?,
                         filesize_field_width,
+                        fixup_segments.len(),
+                        fileoff,
+                        filesize,
                     ));
                 }
                 if segment_name == "__TEXT" && image_text_vmaddr.replace(vmaddr).is_some() {
@@ -3647,6 +3673,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                     filesize,
                     is_text: segment_name == "__TEXT",
                     is_linkedit: segment_name == "__LINKEDIT",
+                    normalizes_filesize: false,
                 });
                 for section_index in 0..nsects as usize {
                     let section_start = segment_header_size + section_index * section_size;
@@ -3761,6 +3788,19 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                 "load commands do not consume the declared table".into(),
             ));
         }
+        if let (
+            Some((signature_offset, signature_size)),
+            Some((_, _, segment_index, linkedit_fileoff, linkedit_filesize)),
+        ) = (code_signature, linkedit_filesize_field)
+        {
+            fixup_segments[segment_index].normalizes_filesize = is_closed_linkedit_signature_tail(
+                linkedit_fileoff,
+                linkedit_filesize,
+                u64::from(signature_offset),
+                u64::from(signature_size),
+                slice.size,
+            )?;
+        }
         reject_overlapping_segment_vm_ranges(&fixup_segments)?;
         let image_text_vmaddr = image_text_vmaddr
             .ok_or_else(|| Lab002Error::InvalidMachO("slice has no __TEXT segment".into()))?;
@@ -3860,8 +3900,10 @@ pub fn parse_fixed_sections<R: Read + Seek>(
             let mut normalized_fields = vec![code_signature_size_field.ok_or_else(|| {
                 Lab002Error::InvalidMachO("code-signature size-field location is missing".into())
             })?];
-            if let Some(field) = linkedit_filesize_field {
-                normalized_fields.push(field);
+            if let Some((offset, width, segment_index, _, _)) = linkedit_filesize_field {
+                if fixup_segments[segment_index].normalizes_filesize {
+                    normalized_fields.push((offset, width));
+                }
             }
             let normalized_pre_signature_sha256 =
                 normalized_macho_prefix_sha256(prefix, normalized_fields)?;
@@ -5216,6 +5258,7 @@ mod tests {
                 filesize: 0x1000,
                 is_text: true,
                 is_linkedit: false,
+                normalizes_filesize: false,
             },
             FixupSegment {
                 vmaddr: image_vmaddr + 0x1000,
@@ -5223,6 +5266,7 @@ mod tests {
                 filesize: 0x1000,
                 is_text: false,
                 is_linkedit: false,
+                normalizes_filesize: false,
             },
         ];
         let mut payload = Vec::new();
@@ -5260,6 +5304,7 @@ mod tests {
             filesize: 0x1000 * file_backed_page_count as u64,
             is_text: false,
             is_linkedit: false,
+            normalizes_filesize: false,
         }];
         let mut payload = Vec::new();
         for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 24] {
@@ -5284,6 +5329,7 @@ mod tests {
             filesize: 0x1800,
             is_text: false,
             is_linkedit: false,
+            normalizes_filesize: false,
         }];
         let mut outside_file = Vec::new();
         for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 26] {
@@ -5516,7 +5562,7 @@ mod tests {
     }
 
     #[test]
-    fn fixup_identity_normalizes_only_linkedit_filesize() {
+    fn fixup_identity_normalizes_only_closed_linkedit_signature_tail_filesize() {
         let digest = |segments: &[FixupSegment]| {
             measure_fixup_layout(
                 &mut Cursor::new(Vec::<u8>::new()),
@@ -5541,6 +5587,7 @@ mod tests {
                 filesize: 0x4000,
                 is_text: true,
                 is_linkedit: false,
+                normalizes_filesize: false,
             },
             FixupSegment {
                 vmaddr: 0x1_0000_4000,
@@ -5548,6 +5595,7 @@ mod tests {
                 filesize: 0x1000,
                 is_text: false,
                 is_linkedit: true,
+                normalizes_filesize: true,
             },
         ];
         let mut resized_linkedit = base.clone();
@@ -5561,6 +5609,21 @@ mod tests {
         let mut relabeled_segment = base.clone();
         relabeled_segment[1].is_linkedit = false;
         assert_ne!(digest(&base), digest(&relabeled_segment));
+
+        let mut open_linkedit = base.clone();
+        open_linkedit[1].normalizes_filesize = false;
+        let mut resized_open_linkedit = open_linkedit.clone();
+        resized_open_linkedit[1].filesize += 64;
+        assert_ne!(digest(&open_linkedit), digest(&resized_open_linkedit));
+    }
+
+    #[test]
+    fn linkedit_normalization_requires_an_exact_signature_tail_at_slice_eof() {
+        assert!(is_closed_linkedit_signature_tail(0x600, 0x200, 0x700, 0x100, 0x800).unwrap());
+        assert!(!is_closed_linkedit_signature_tail(0x600, 0x200, 0x680, 0x100, 0x800).unwrap());
+        assert!(!is_closed_linkedit_signature_tail(0x600, 0x180, 0x700, 0x100, 0x800).unwrap());
+        assert!(!is_closed_linkedit_signature_tail(0x600, 0x200, 0x500, 0x300, 0x800).unwrap());
+        assert!(is_closed_linkedit_signature_tail(u64::MAX, 1, 0, 0, 0).is_err());
     }
 
     #[test]

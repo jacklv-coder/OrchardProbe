@@ -173,10 +173,12 @@ signature start after zeroing only the parsed `__LINKEDIT.filesize` and
 `LC_CODE_SIGNATURE.datasize` fields. Those normalized prefix hashes must match;
 an adjacent-byte or any other code/load-command difference therefore fails
 closed even when both binaries are independently validly signed. The oracle
-also normalizes that same parsed `__LINKEDIT.filesize` only while hashing the
-fixup-layout identity; its actual value is still used to validate segment and
-fixup bounds. Every other segment extent and the complete fixup payload remain
-bound. The oracle records the IPA slice size used by the installed-build
+also normalizes that same parsed `__LINKEDIT.filesize` only when the parsed
+Code Signature is contained in `__LINKEDIT` and both ranges end at the slice
+EOF. Its actual value is still used to validate segment and fixup bounds; an
+open/non-tail `__LINKEDIT` keeps the actual filesize in both identities. Every
+other segment extent and the complete fixup payload remain bound. The oracle
+records the IPA slice size used by the installed-build
 verifier. Fat or multi-slice size changes, a moved signature start, growth
 outside the closed signature tail, or any existing identity/range change still
 fails closed.

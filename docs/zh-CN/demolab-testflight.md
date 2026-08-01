@@ -227,9 +227,11 @@ Archive/IPA Code Signature 起点相同，且两侧签名区都精确结束于�
 Oracle 才接受 Size 差异。它还会对共同签名起点之前的全部字节计算 Hash，且只把解析出的
 `__LINKEDIT.filesize` 与 `LC_CODE_SIGNATURE.datasize` 字段归零；两个归一化前缀 Hash
 必须一致。因此即使两份 Binary 都有独立有效签名，相邻字节或任何其他代码/Load-command
-变化也会失败关闭。Fixup-layout 身份 Hash 只对同一个已解析的 `__LINKEDIT.filesize`
-执行归一化；Segment/Fixup 边界校验仍使用它的实际值，其他所有 Segment Extent 与完整
-Fixup Payload 继续被绑定。Oracle 会记录供已安装 Build Verifier 使用的 IPA Slice Size。
+变化也会失败关闭。只有解析出的 Code Signature 位于同一个 `__LINKEDIT` 内，且签名区与
+Segment 都精确结束于 Slice EOF 时，Fixup-layout 身份 Hash 才归一化该
+`__LINKEDIT.filesize`；Segment/Fixup 边界校验仍使用实际值，非闭合/非尾部的
+`__LINKEDIT` 也会在两种身份中保留实际 Filesize。其他所有 Segment Extent 与完整 Fixup
+Payload 继续被绑定。Oracle 会记录供已安装 Build Verifier 使用的 IPA Slice Size。
 Fat 或多 Slice Size 变化、签名起点移动、闭合签名尾之外的增长，或任何既有身份/区间变化
 仍会失败关闭。
 
