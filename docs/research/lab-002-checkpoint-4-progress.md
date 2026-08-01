@@ -114,7 +114,8 @@ All six products had size `3,179,072`, SHA-256
 `0019b20af4d176fa62afe012fbf57cceac89009ffa2db47bdd1b54c2f3b4808f`,
 and CodeDirectory CDHash `b0e3663ee3475784d787239f6ff9fdd7c3ff824c`.
 The temporary measurement hook was removed before this tuple alone was added
-to the reviewed allowlist; the normal non-measurement gate must pass next.
+to the reviewed allowlist; the following normal non-measurement gate rebuilt
+and admitted the exact tuple and passed the unsigned Simulator fixture.
 
 After the Rust verifier fix was committed, two independent complete Fastlane
 gates rebuilt the private Helper from source snapshot

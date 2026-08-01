@@ -86,7 +86,8 @@ Snapshot 为 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`�
 全部六份产物的 Size 均为 `3,179,072`，SHA-256 为
 `0019b20af4d176fa62afe012fbf57cceac89009ffa2db47bdd1b54c2f3b4808f`，
 CodeDirectory CDHash 为 `b0e3663ee3475784d787239f6ff9fdd7c3ff824c`。临时测量 Hook
-已在把唯一该 Tuple 加入已评审 Allowlist 前删除；下一步必须通过正常非测量门禁。
+已在把唯一该 Tuple 加入已评审 Allowlist 前删除；随后正常非测量门禁重新构建并接受了
+该精确 Tuple，且无签名 Simulator Fixture 通过。
 
 Rust 验证器修复提交后，两次独立完整 Fastlane 门禁以 Source Snapshot
 `252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9`、固定工具链和
