@@ -2423,6 +2423,15 @@ fn close_oracle_role(
                 role.fixture_relative_path()
             )
         })?;
+        if archive_slice.normalized_pre_signature_sha256.is_none()
+            || archive_slice.normalized_pre_signature_sha256
+                != ipa_slice.normalized_pre_signature_sha256
+        {
+            return Err(format!(
+                "Archive/IPA {} normalized pre-signature image differs",
+                role.fixture_relative_path()
+            ));
+        }
         if archive_slice.ordinal != ipa_slice.ordinal
             || archive_slice.cpu_type != ipa_slice.cpu_type
             || archive_slice.cpu_subtype != ipa_slice.cpu_subtype
@@ -4486,6 +4495,7 @@ mod tests {
                 }),
                 code_signature_slice_offset: Some(3584),
                 code_signature_size: Some(512),
+                normalized_pre_signature_sha256: Some("22".repeat(32)),
                 signing: Some(PreuploadSigningMetadata {
                     superblob_sha256: format!("{signature_byte:02x}").repeat(32),
                     code_directory_identifier: "com.example.orchardprobe.demolab".into(),
@@ -4623,6 +4633,13 @@ mod tests {
         changed_fixups.slices[0].fixup_layout_sha256 = "aa".repeat(32);
         assert!(
             close_oracle_role(LabRole::MainApp, "77".repeat(32), &changed_fixups, &ipa,).is_err()
+        );
+
+        let mut changed_prefix = ipa.clone();
+        changed_prefix.slices[0].normalized_pre_signature_sha256 = Some("bb".repeat(32));
+        assert!(
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &changed_prefix,)
+                .is_err()
         );
     }
 

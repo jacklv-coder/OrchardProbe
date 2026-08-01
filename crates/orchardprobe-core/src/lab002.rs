@@ -1567,6 +1567,8 @@ pub struct FixedSectionSlice {
     pub code_signature_slice_offset: Option<u64>,
     #[serde(skip)]
     pub code_signature_size: Option<u64>,
+    #[serde(skip)]
+    pub normalized_pre_signature_sha256: Option<String>,
     pub signing: Option<PreuploadSigningMetadata>,
 }
 
@@ -3028,6 +3030,27 @@ fn read_slice_payload<R: Read + Seek>(
     Ok(bytes)
 }
 
+fn normalized_macho_prefix_sha256(
+    mut prefix: Vec<u8>,
+    mut normalized_fields: Vec<(usize, usize)>,
+) -> Result<String, Lab002Error> {
+    normalized_fields.sort_unstable();
+    let mut previous_end = 0_usize;
+    for (start, width) in normalized_fields {
+        let end = start.checked_add(width).ok_or_else(|| {
+            Lab002Error::InvalidMachO("normalized Mach-O field range overflows".into())
+        })?;
+        if width == 0 || start < previous_end || end > prefix.len() {
+            return Err(Lab002Error::InvalidMachO(
+                "normalized Mach-O field range is invalid or overlaps".into(),
+            ));
+        }
+        prefix[start..end].fill(0);
+        previous_end = end;
+    }
+    Ok(sha256_hex(&prefix))
+}
+
 fn inspect_chained_fixups(
     payload: &[u8],
     endianness: Endianness,
@@ -3406,6 +3429,8 @@ pub fn parse_fixed_sections<R: Read + Seek>(
         let mut saw_dynamic_symbol_table = false;
         let mut image_text_vmaddr = None;
         let mut code_signature = None;
+        let mut code_signature_size_field = None;
+        let mut linkedit_filesize_field = None;
         for _ in 0..slice.load_command_count {
             if cursor.checked_add(8).is_none_or(|end| end > commands.len()) {
                 return Err(Lab002Error::InvalidMachO(
@@ -3505,6 +3530,18 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                     read_u32_at(bytes, 8, slice.endianness),
                     read_u32_at(bytes, 12, slice.endianness),
                 ));
+                code_signature_size_field = Some((
+                    usize::try_from(header_size)
+                        .ok()
+                        .and_then(|header| header.checked_add(cursor))
+                        .and_then(|offset| offset.checked_add(12))
+                        .ok_or_else(|| {
+                            Lab002Error::InvalidMachO(
+                                "code-signature size-field offset overflows".into(),
+                            )
+                        })?,
+                    4_usize,
+                ));
             }
 
             let is_segment =
@@ -3570,6 +3607,27 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                     ));
                 }
                 let segment_name = macho_name(&bytes[8..24])?;
+                if segment_name == "__LINKEDIT" {
+                    if linkedit_filesize_field.is_some() {
+                        return Err(Lab002Error::InvalidMachO(
+                            "Mach-O has duplicate __LINKEDIT segments".into(),
+                        ));
+                    }
+                    let filesize_field_offset = if slice.is_64_bit { 48 } else { 36 };
+                    let filesize_field_width = if slice.is_64_bit { 8 } else { 4 };
+                    linkedit_filesize_field = Some((
+                        usize::try_from(header_size)
+                            .ok()
+                            .and_then(|header| header.checked_add(cursor))
+                            .and_then(|offset| offset.checked_add(filesize_field_offset))
+                            .ok_or_else(|| {
+                                Lab002Error::InvalidMachO(
+                                    "__LINKEDIT filesize-field offset overflows".into(),
+                                )
+                            })?,
+                        filesize_field_width,
+                    ));
+                }
                 if segment_name == "__TEXT" && image_text_vmaddr.replace(vmaddr).is_some() {
                     return Err(Lab002Error::InvalidMachO(
                         "Mach-O has duplicate __TEXT segments".into(),
@@ -3762,36 +3820,56 @@ pub fn parse_fixed_sections<R: Read + Seek>(
         reader
             .read_exact(&mut section_bytes)
             .map_err(|error| Lab002Error::Io(error.to_string()))?;
-        let (signing, code_signature_slice_offset, code_signature_size) =
-            if let Some((data_offset, data_size)) = code_signature {
-                if !(12..=MAX_FIXUP_PAYLOAD_BYTES).contains(&data_size)
-                    || u64::from(data_offset) < fixed_end
-                {
-                    return Err(Lab002Error::InvalidMachO(
-                        "code-signature range is invalid or overlaps the fixed section".into(),
-                    ));
-                }
-                let signature = read_slice_payload(
+        let (
+            signing,
+            code_signature_slice_offset,
+            code_signature_size,
+            normalized_pre_signature_sha256,
+        ) = if let Some((data_offset, data_size)) = code_signature {
+            if !(12..=MAX_FIXUP_PAYLOAD_BYTES).contains(&data_size)
+                || u64::from(data_offset) < fixed_end
+            {
+                return Err(Lab002Error::InvalidMachO(
+                    "code-signature range is invalid or overlaps the fixed section".into(),
+                ));
+            }
+            let signature = read_slice_payload(
+                reader,
+                slice.offset,
+                slice.size,
+                data_offset,
+                data_size,
+                "code-signature SuperBlob",
+            )?;
+            let mut prefix = vec![0_u8; data_offset as usize];
+            reader
+                .seek(SeekFrom::Start(slice.offset))
+                .map_err(|error| Lab002Error::Io(error.to_string()))?;
+            reader
+                .read_exact(&mut prefix)
+                .map_err(|error| Lab002Error::Io(error.to_string()))?;
+            let mut normalized_fields = vec![code_signature_size_field.ok_or_else(|| {
+                Lab002Error::InvalidMachO("code-signature size-field location is missing".into())
+            })?];
+            if let Some(field) = linkedit_filesize_field {
+                normalized_fields.push(field);
+            }
+            let normalized_pre_signature_sha256 =
+                normalized_macho_prefix_sha256(prefix, normalized_fields)?;
+            (
+                Some(parse_preupload_code_signature(
+                    &signature,
+                    u64::from(data_offset),
                     reader,
                     slice.offset,
-                    slice.size,
-                    data_offset,
-                    data_size,
-                    "code-signature SuperBlob",
-                )?;
-                (
-                    Some(parse_preupload_code_signature(
-                        &signature,
-                        u64::from(data_offset),
-                        reader,
-                        slice.offset,
-                    )?),
-                    Some(u64::from(data_offset)),
-                    Some(u64::from(data_size)),
-                )
-            } else {
-                (None, None, None)
-            };
+                )?),
+                Some(u64::from(data_offset)),
+                Some(u64::from(data_size)),
+                Some(normalized_pre_signature_sha256),
+            )
+        } else {
+            (None, None, None, None)
+        };
         fixed_slices.push(FixedSectionSlice {
             ordinal: u8::try_from(ordinal).map_err(|_| {
                 Lab002Error::InvalidMachO("slice ordinal exceeds the LAB-002 limit".into())
@@ -3810,6 +3888,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
             encryption: slice.encryption.clone(),
             code_signature_slice_offset,
             code_signature_size,
+            normalized_pre_signature_sha256,
             signing,
         });
     }
@@ -5381,6 +5460,13 @@ mod tests {
         assert!(!signing.cms_signature.is_empty());
         assert_eq!(signing.superblob_sha256.len(), 64);
         assert_eq!(slice.fixup_layout_sha256.len(), 64);
+        assert_eq!(
+            slice
+                .normalized_pre_signature_sha256
+                .as_ref()
+                .map(String::len),
+            Some(64)
+        );
         assert_eq!(slice.slice_file_size, executable_size);
         let signature_offset = slice.code_signature_slice_offset.unwrap();
         let signature_size = slice.code_signature_size.unwrap();
@@ -5390,6 +5476,30 @@ mod tests {
                 .checked_add(signature_size)
                 .is_some_and(|end| end <= slice.slice_file_size)
         );
+    }
+
+    #[test]
+    fn normalized_macho_prefix_excludes_only_declared_nonoverlapping_fields() {
+        let original = (0_u8..64).collect::<Vec<_>>();
+        let digest =
+            normalized_macho_prefix_sha256(original.clone(), vec![(12, 4), (40, 8)]).unwrap();
+
+        let mut allowed_changes = original.clone();
+        allowed_changes[12..16].fill(0xff);
+        allowed_changes[40..48].fill(0xee);
+        assert_eq!(
+            normalized_macho_prefix_sha256(allowed_changes, vec![(40, 8), (12, 4)]).unwrap(),
+            digest
+        );
+
+        let mut adjacent_change = original.clone();
+        adjacent_change[16] ^= 1;
+        assert_ne!(
+            normalized_macho_prefix_sha256(adjacent_change, vec![(12, 4), (40, 8)]).unwrap(),
+            digest
+        );
+        assert!(normalized_macho_prefix_sha256(original.clone(), vec![(12, 4), (15, 4)]).is_err());
+        assert!(normalized_macho_prefix_sha256(original, vec![(60, 8)]).is_err());
     }
 
     #[test]
