@@ -296,3 +296,19 @@ checked-in observer's exact unchecked tuple, while a separate regression keeps
 the independently validated Go tuple closed. These additional Rust changes
 again require fresh reproducibility measurements, the complete local gate, and
 a clean CR before the 4B PR.
+
+After committing the outcome-boundary remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`cbd037cd1b219dbeefeb994bce760cc9e3452a0657f0dc24d3eb0fca22089732`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,270,832`, SHA-256
+`48b8fc4736b828c05b889cb691cf7a324fd1fa5202469e0863e4c02bc06ed51a`,
+and CodeDirectory CDHash `f2be8b9daf358bbd866bade65f387454f6a44db6`.
+The temporary absent-tuple measurement hook was then removed completely and
+the exact single product tuple added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate then rebuilt and admitted the allowlisted Helper and passed
+the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
+all 278 Workspace tests, Ruby syntax, diff check, and the explicit
+no-measurement-hook check also pass. A fresh clean Codex CR remains required
+before the 4B PR.

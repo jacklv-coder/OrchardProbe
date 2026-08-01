@@ -208,3 +208,14 @@ Run 1 已签名 `not_after`，以及保留的 Run 1 完成时间加 120 秒。�
 最终验证时返回该字段，Fastlane 会把后者明确显示为方法级 No-Go。端到端 Fixture 默认改为
 当前 Observer 的精确 Unchecked Tuple，并由独立回归继续封闭 Valid 的 Go Tuple。由于这些
 Rust 修改，4B PR 前仍需新的可复现测量、完整本地门禁和无问题 CR。
+
+提交结果边界修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot
+为 `cbd037cd1b219dbeefeb994bce760cc9e3452a0657f0dc24d3eb0fca22089732`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,270,832`、
+SHA-256 `48b8fc4736b828c05b889cb691cf7a324fd1fa5202469e0863e4c02bc06ed51a`、
+CodeDirectory CDHash `f2be8b9daf358bbd866bade65f387454f6a44db6`。仅在 Tuple 缺失时生效的
+临时测量 Hook 随后被完整删除，并把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建
+并接受 Allowlist Helper，且无签名 Simulator Fixture 通过；
+Format、锁定依赖且拒绝警告的 Clippy、全部 278 项 Workspace 测试、Ruby 语法、Diff 检查和
+明确的无测量 Hook 检查也均通过。4B PR 前只剩一轮全新无问题 Codex CR。
