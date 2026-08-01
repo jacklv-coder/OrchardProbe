@@ -712,7 +712,7 @@ fn verified_export_entry<T: ClosedArtifact>(
     Ok((T::from_canonical_bytes(canonical)?, sha256))
 }
 
-fn verify_oracle_target_bindings(
+pub(crate) fn verify_oracle_target_bindings(
     enrollment: &VerifiedEnrollment,
     oracle: &LabOracle,
 ) -> Result<(), Lab002Error> {

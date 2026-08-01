@@ -1,11 +1,12 @@
 use std::ffi::{OsStr, OsString};
 use std::fs::File;
-use std::io::{self, Read};
+use std::io::{self, Cursor, Read, Seek, SeekFrom};
 use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::SigningKey;
+use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
 use orchardprobe_core::lab002::LAB002_PROFILE;
 use orchardprobe_core::lab002::artifacts::{
     AuthorizationAcknowledgement, AuthorizedTargetManifest, ClosedArtifact,
@@ -25,6 +26,7 @@ use orchardprobe_core::lab002::{
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use super::{
     CHECKPOINT_BUILD_NUMBER, CHECKPOINT_MARKETING_VERSION, MANIFEST_NAME, MAX_IPA_BYTES,
@@ -254,6 +256,7 @@ struct FrozenEvidenceInputs<'a> {
     oracle_sha256: &'a str,
     ipa_size: u64,
     ipa_sha256: &'a str,
+    ipa_bytes: &'a [u8],
 }
 
 struct SourceBundle {
@@ -544,6 +547,103 @@ fn validate_evidence_artifact(
     Ok(())
 }
 
+fn verify_frozen_ipa_entries(
+    ipa_bytes: &[u8],
+    ipa_size: u64,
+    evidence: &PreuploadEvidence,
+) -> Result<(), String> {
+    if u64::try_from(ipa_bytes.len()).ok() != Some(ipa_size) {
+        return Err("frozen IPA bytes do not match their retained size".into());
+    }
+    let mut ipa = Cursor::new(ipa_bytes);
+    let inventory = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("frozen IPA inventory is invalid: {error}"))?;
+    if inventory.app_root != "Payload/DemoLab.app" {
+        return Err("frozen IPA does not contain the fixed DemoLab app root".into());
+    }
+    let expected_paths = EVIDENCE_BINARY_SPECS
+        .iter()
+        .map(|(_, path)| format!("Payload/{path}"))
+        .collect::<Vec<_>>();
+    let executable_paths = inventory
+        .entries
+        .iter()
+        .filter(|entry| entry.executable)
+        .map(|entry| entry.path.as_str())
+        .collect::<Vec<_>>();
+    if !super::same_paths_ignoring_order(
+        executable_paths,
+        &expected_paths
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+    ) {
+        return Err("frozen IPA executable inventory is not the exact three roles".into());
+    }
+
+    for (binary, path) in evidence.artifacts.ipa_binaries.iter().zip(&expected_paths) {
+        let entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == *path)
+            .ok_or_else(|| format!("frozen IPA is missing fixed executable {path}"))?;
+        if entry.uncompressed_size != binary.size {
+            return Err(format!(
+                "frozen IPA executable {path} size does not match the pre-upload evidence"
+            ));
+        }
+        let mut copied_file = tempfile::tempfile()
+            .map_err(|error| format!("could not create private IPA verification file: {error}"))?;
+        let copied = copy_ipa_entry_bounded(
+            &mut ipa,
+            ipa_size,
+            path,
+            super::MAX_EXECUTABLE_BYTES.min(MAX_IPA_ENTRY_COPY_BYTES),
+            &mut copied_file,
+        )
+        .map_err(|error| format!("could not verify frozen IPA executable {path}: {error}"))?;
+        if copied.inventory != inventory || copied.bytes_written != binary.size {
+            return Err(format!(
+                "frozen IPA inventory changed while verifying executable {path}"
+            ));
+        }
+        copied_file
+            .seek(SeekFrom::Start(0))
+            .map_err(|error| format!("could not rewind frozen IPA executable {path}: {error}"))?;
+        let mut digest = Sha256::new();
+        let mut total = 0_u64;
+        let mut buffer = [0_u8; 64 * 1024];
+        loop {
+            let read = copied_file
+                .read(&mut buffer)
+                .map_err(|error| format!("could not hash frozen IPA executable {path}: {error}"))?;
+            if read == 0 {
+                break;
+            }
+            total = total
+                .checked_add(read as u64)
+                .ok_or_else(|| format!("frozen IPA executable {path} size overflowed"))?;
+            if total > super::MAX_EXECUTABLE_BYTES {
+                return Err(format!(
+                    "frozen IPA executable {path} exceeds its size bound"
+                ));
+            }
+            digest.update(&buffer[..read]);
+        }
+        if total != binary.size || lower_hex(&digest.finalize()) != binary.sha256 {
+            return Err(format!(
+                "frozen IPA executable {path} does not match the pre-upload evidence"
+            ));
+        }
+    }
+    let confirmed = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("could not revalidate frozen IPA inventory: {error}"))?;
+    if confirmed != inventory {
+        return Err("frozen IPA inventory changed during evidence verification".into());
+    }
+    Ok(())
+}
+
 fn validate_complete_evidence(
     evidence: &PreuploadEvidence,
     inputs: &FrozenEvidenceInputs<'_>,
@@ -632,7 +732,8 @@ fn validate_complete_evidence(
         inputs.oracle_inode,
         inputs.oracle_size,
         inputs.oracle_sha256,
-    )
+    )?;
+    verify_frozen_ipa_entries(inputs.ipa_bytes, inputs.ipa_size, evidence)
 }
 
 struct DerivedPrebuildBindings {
@@ -1004,6 +1105,7 @@ fn load_source_bundle(
             oracle_sha256: &oracle_sha256,
             ipa_size: ipa.size,
             ipa_sha256: &ipa_sha256,
+            ipa_bytes: &ipa.bytes,
         },
     )?;
     verify_frozen_archive(candidate, &evidence_value)?;
@@ -1712,6 +1814,7 @@ pub(super) fn execute(
 #[cfg(test)]
 mod tests {
     use std::fs::{self, File};
+    use std::io::{Cursor, Write};
 
     use ed25519_dalek::SigningKey;
     use orchardprobe_core::lab002::artifacts::{
@@ -1721,6 +1824,8 @@ mod tests {
     use orchardprobe_core::lab002::{LAB002_PROFILE, LabRole};
     use serde_json::{Value, json};
     use tempfile::tempdir;
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
 
     use super::{
         EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME,
@@ -1728,8 +1833,44 @@ mod tests {
         exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
         require_retained_source_match, require_unchanged_source_artifact,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
-        verify_frozen_archive,
+        verify_frozen_archive, verify_frozen_ipa_entries,
     };
+
+    fn test_ipa() -> (Vec<u8>, Vec<Vec<u8>>) {
+        let payloads = vec![
+            b"main executable".to_vec(),
+            b"framework".to_vec(),
+            b"share".to_vec(),
+        ];
+        let paths = [
+            "Payload/DemoLab.app/DemoLab",
+            "Payload/DemoLab.app/Frameworks/DemoFramework.framework/DemoFramework",
+            "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/DemoShareExtension",
+        ];
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        let directory_options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o755);
+        for directory in [
+            "Payload/",
+            "Payload/DemoLab.app/",
+            "Payload/DemoLab.app/Frameworks/",
+            "Payload/DemoLab.app/Frameworks/DemoFramework.framework/",
+            "Payload/DemoLab.app/PlugIns/",
+            "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/",
+        ] {
+            writer.add_directory(directory, directory_options).unwrap();
+        }
+        let file_options = SimpleFileOptions::default()
+            .compression_method(CompressionMethod::Stored)
+            .unix_permissions(0o755);
+        for (path, bytes) in paths.into_iter().zip(&payloads) {
+            writer.start_file(path, file_options).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        (writer.finish().unwrap().into_inner(), payloads)
+    }
 
     fn complete_evidence_json() -> Value {
         let archive_binary = |role: &str, relative_path: &str| {
@@ -2066,6 +2207,21 @@ mod tests {
         };
         let evidence: PreuploadEvidence = serde_json::from_value(complete_evidence_json()).unwrap();
         assert!(verify_frozen_archive(&candidate, &evidence).is_err());
+    }
+
+    #[test]
+    fn frozen_ipa_entries_must_match_their_claimed_sizes_and_hashes() {
+        let (ipa, payloads) = test_ipa();
+        let mut evidence: PreuploadEvidence =
+            serde_json::from_value(complete_evidence_json()).unwrap();
+        for (binary, bytes) in evidence.artifacts.ipa_binaries.iter_mut().zip(&payloads) {
+            binary.size = bytes.len() as u64;
+            binary.sha256 = super::sha256_hex(bytes);
+        }
+        assert!(verify_frozen_ipa_entries(&ipa, ipa.len() as u64, &evidence).is_ok());
+
+        evidence.artifacts.ipa_binaries[0].sha256 = "ee".repeat(32);
+        assert!(verify_frozen_ipa_entries(&ipa, ipa.len() as u64, &evidence).is_err());
     }
 
     #[test]

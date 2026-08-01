@@ -169,3 +169,12 @@ CDHash `8285d08248480782cf362abb0136a1b37b1a8b91`。临时测量 Hook 已在把�
 加入已评审 Allowlist 前完整删除。正常非测量门禁已重新构建并接受它，且无签名 Simulator
 Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 274 项 Workspace 测试、Ruby
 语法、Diff 检查和明确的无测量 Hook 检查也均通过。4B PR 前只剩全新无问题 Codex CR。
+
+该完整 Diff CR 又发现两个 P2 完整性缺口。Run Control 创作只检查了 Oracle 顶层 Build
+字段，没有在签名前拒绝与已关闭 Enrollment 不同的逐 Role Target Binding 或 Target Set
+摘要；冻结来源加载器也会接受没有从绑定 IPA Entry 重新推导的 IPA Binary Size/Hash 声明。
+修复后，任何 Run Control 签名前都会复用由 Manifest 派生的 Oracle Target Binding 验证器；
+随后对已持有 IPA 进行有界检查与复制，要求精确三个可执行 Entry 的实际 Size 和 SHA-256
+与 Evidence 一致。新增回归分别拒绝 Enrollment 范围外的 Oracle Binding 和伪造的 IPA
+Entry Hash。由于该修复改变 Rust Helper，4B PR 打开前仍需两次新的独立可复现测量、只保留
+新 Tuple 的 Allowlist、正常门禁、全部本地门禁和全新无问题 CR。

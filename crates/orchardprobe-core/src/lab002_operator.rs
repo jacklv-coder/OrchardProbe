@@ -20,7 +20,8 @@ use super::{
         EnrollmentArtifactBytes, RunArtifactBytes, VerifiedEnrollment, VerifiedRun,
         device_selection_fingerprint_sha256, expected_inventory_sha256, sign_authorized_operation,
         verified_artifact_sha256, verify_authorized_operation, verify_enrollment_chain,
-        verify_enrollment_receipt, verify_run_chain, verify_session_export,
+        verify_enrollment_receipt, verify_oracle_target_bindings, verify_run_chain,
+        verify_session_export,
     },
     lower_hex, sha256_hex,
 };
@@ -316,6 +317,7 @@ pub fn create_run_control(
     let run_ordinal = request.run_ordinal;
     let acknowledged_at = request.acknowledged_at;
     let (oracle, oracle_sha256) = verified_artifact_sha256::<LabOracle>(oracle_canonical)?;
+    verify_oracle_target_bindings(enrollment, &oracle)?;
     if authorization_public_key(signing_key) != enrollment.authorization_public_key
         || oracle.authorization_public_key != enrollment.authorization_public_key
         || oracle.authorized_target_manifest_sha256 != enrollment.authorized_target_manifest_sha256
@@ -643,18 +645,16 @@ mod tests {
         }
     }
 
-    fn oracle(
-        host_key: &SigningKey,
-        manifest_sha256: &str,
-        build_binding_sha256: &str,
-    ) -> LabOracle {
+    fn oracle(host_key: &SigningKey, enrollment: &VerifiedEnrollment) -> LabOracle {
         let roles = LabRole::ALL
             .into_iter()
             .enumerate()
             .map(|(index, role)| OracleRole {
                 role,
                 fixture_relative_path: role.fixture_relative_path().into(),
-                target_identity_binding_sha256: digest(0x50 + index as u8),
+                target_identity_binding_sha256: enrollment.target_identity_bindings[index]
+                    .1
+                    .clone(),
                 slices: vec![OracleSlice {
                     ordinal: 0,
                     cpu_type: 16_777_228,
@@ -684,11 +684,11 @@ mod tests {
             configuration: "Release".into(),
             observer_revision: "lab002-observer-v1".into(),
             generator_revision: "11".repeat(20),
-            build_binding_sha256: build_binding_sha256.into(),
-            authorized_target_manifest_sha256: manifest_sha256.into(),
+            build_binding_sha256: enrollment.build_binding_sha256.clone(),
+            authorized_target_manifest_sha256: enrollment.authorized_target_manifest_sha256.clone(),
             authorization_public_key: authorization_public_key(host_key),
             authorization_key_id: sha256_hex(host_key.verifying_key().as_bytes()),
-            target_identity_set_sha256: digest(0x43),
+            target_identity_set_sha256: enrollment.target_identity_set_sha256.clone(),
             toolchain: toolchain(),
             ipa_size: 4_096,
             ipa_sha256: digest(0x44),
@@ -819,8 +819,8 @@ mod tests {
 
     #[test]
     fn run_control_binds_frozen_source_and_uses_distinct_random_values() {
-        let (host_key, manifest, _, _, enrollment) = closed_enrollment();
-        let oracle = oracle(&host_key, &sha256_hex(&manifest), &digest(0x45));
+        let (host_key, _, _, _, enrollment) = closed_enrollment();
+        let oracle = oracle(&host_key, &enrollment);
         let oracle_canonical = oracle.to_canonical_bytes().unwrap();
         let control = create_run_control(
             &host_key,
@@ -865,11 +865,36 @@ mod tests {
 
     #[test]
     fn run_control_rejects_an_oracle_from_a_different_generator_revision() {
-        let (host_key, manifest, _, _, enrollment) = closed_enrollment();
-        let mut oracle = oracle(&host_key, &sha256_hex(&manifest), &digest(0x45));
+        let (host_key, _, _, _, enrollment) = closed_enrollment();
+        let mut oracle = oracle(&host_key, &enrollment);
         oracle.generator_revision = "22".repeat(20);
         let oracle_canonical = crate::lab002::canonical_json(&oracle).unwrap();
         assert!(LabOracle::from_canonical_bytes(&oracle_canonical).is_err());
+
+        assert!(
+            create_run_control(
+                &host_key,
+                &enrollment,
+                &oracle_canonical,
+                RunControlRequest {
+                    preupload_evidence_sha256: digest(0x47),
+                    run_ordinal: 1,
+                    prior_collection_binding_sha256: None,
+                    assertions: assertions(),
+                    acknowledged_at: 2_000,
+                },
+                &mut TestRng(9),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn run_control_rejects_oracle_target_bindings_outside_the_enrollment() {
+        let (host_key, _, _, _, enrollment) = closed_enrollment();
+        let mut oracle = oracle(&host_key, &enrollment);
+        oracle.roles[0].target_identity_binding_sha256 = digest(0xee);
+        let oracle_canonical = oracle.to_canonical_bytes().unwrap();
 
         assert!(
             create_run_control(

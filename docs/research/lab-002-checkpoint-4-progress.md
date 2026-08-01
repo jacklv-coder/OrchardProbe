@@ -237,3 +237,16 @@ and admitted it and passed the unsigned Simulator fixture; formatting, locked
 Clippy with warnings denied, all 274 Workspace tests, Ruby syntax, the diff
 check, and the explicit no-measurement-hook check also pass. A fresh clean
 Codex CR remains required before the 4B PR.
+
+That full-diff CR found two further P2 integrity gaps. Run control authoring
+checked the Oracle's top-level build fields but did not reject per-role target
+bindings or a target-set digest that differed from the closed enrollment; and
+the frozen source loader accepted IPA binary size/hash claims without deriving
+them again from the bound IPA entries. The remediation now applies the same
+manifest-derived Oracle target-binding verifier before signing any run control,
+then boundedly inspects and copies the exact three executable entries from the
+held IPA and compares their actual sizes and SHA-256 values with the evidence.
+Regressions reject both an out-of-enrollment Oracle binding and a fabricated IPA
+entry hash. Because this changes the Rust Helper, two new independent
+reproducibility measurements, a new sole allowlist tuple, the normal gate, all
+local gates, and a fresh clean CR remain required before the 4B PR can open.
