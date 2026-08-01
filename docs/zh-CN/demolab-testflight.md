@@ -215,9 +215,10 @@ Allowlist 的 XcodeGen 绝对路径、版本和文件身份。生成 Oracle 时�
 受控 App Store 导出会显式设置 `uploadSymbols=false`。当前 Xcode 默认把该选项设为
 `true`，可能在 `Payload/` 旁增加顶层 `Symbols/`；LAB-002 不会为了这个仅供导出的
 Sidecar 放宽 IPA Parser 的单一 App Root 边界，Gym 仍会单独保留 Archive dSYM。
-如果 Oracle 在发布前发生确定性错误，Lane 现在会解除 Staging 保留标志，由 Rollback
-删除未发布的 Archive/IPA；只有 Helper 返回精确的“不确定发布”标记时才保留私有
-Staging 等待调和。
+Helper 正常返回错误后，已验证 Helper 会通过持有的目录描述符证明 Staging 精确只有
+Archive 与 IPA、没有 Oracle 或临时 Oracle，再同步并复核目录；只有随后发出的精确
+“发布前可清理”标记才会解除保留。崩溃、Signal、无标记失败、证明失败或“不确定发布”
+标记都会继续保留私有 Staging 等待调和。
 
 ## 安全边界
 

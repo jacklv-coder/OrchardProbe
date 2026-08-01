@@ -224,6 +224,8 @@ DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
 DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER =
   "error: LAB-002 oracle publication is indeterminate; retained private state"
+DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER =
+  "error: LAB-002 oracle failed before publication; cleanup is safe: "
 DEMO_LAB_REVIEWED_GITHUB_SSH_URL =
   "ssh://git@ssh.github.com:443/jacklv-coder/OrchardProbe.git"
 DEMO_LAB_REVIEWED_GITHUB_MAIN_REF = "refs/heads/main"
@@ -2740,7 +2742,7 @@ def create_lab002_private_oracle!(
           "Retained private DemoLab staging for reconciliation: " \
           "#{run_directory}"
         )
-      else
+      elsif lab002_oracle_prepublication_failure?(helper_stderr)
         on_retention_change.call(false)
       end
       UI.user_error!(
@@ -2850,6 +2852,10 @@ end
 
 def lab002_oracle_publication_indeterminate?(stderr)
   stderr.to_s.start_with?(DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER)
+end
+
+def lab002_oracle_prepublication_failure?(stderr)
+  stderr.to_s.start_with?(DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER)
 end
 
 def cleanup_unpublished_demolab_staging!(
@@ -7141,6 +7147,17 @@ platform :ios do
              DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER.delete_prefix("error: ")
            )
       UI.user_error!("LAB-002 indeterminate oracle marker parsing is invalid.")
+    end
+    unless lab002_oracle_prepublication_failure?(
+      "#{DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER} deterministic"
+    ) &&
+           !lab002_oracle_prepublication_failure?(
+             "prefix #{DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER}"
+           ) &&
+           !lab002_oracle_prepublication_failure?(
+             DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER.delete_prefix("error: ")
+           )
+      UI.user_error!("LAB-002 prepublication marker parsing is invalid.")
     end
     Dir.mktmpdir(
       "orchardprobe-lab002-oracle-retention-check-",

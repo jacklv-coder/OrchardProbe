@@ -154,10 +154,13 @@ The controlled App Store export explicitly sets `uploadSymbols` to `false`.
 Current Xcode otherwise defaults that option to `true` and may add a top-level
 `Symbols/` tree beside `Payload/`; LAB-002 deliberately keeps the IPA parser's
 single-app-root boundary closed instead of broadening it for an export-only
-sidecar. Gym still retains the Archive dSYM separately. A deterministic oracle
-error that occurs before publication now disarms staging retention so rollback
-can remove the unpublished Archive/IPA. Only the helper's exact indeterminate
-publication marker keeps private staging for reconciliation.
+sidecar. Gym still retains the Archive dSYM separately. After a normal helper
+error, the verified helper uses the held directory descriptor to prove the
+staging inventory is exactly Archive plus IPA with no oracle or temporary
+oracle, syncs and revalidates the directory, and only then emits the exact
+pre-publication cleanup marker that disarms retention. A crash, signal,
+markerless failure, failed proof, or indeterminate-publication marker keeps the
+private staging for reconciliation.
 
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload
