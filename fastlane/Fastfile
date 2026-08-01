@@ -202,7 +202,12 @@ DEMO_LAB_LAB002_ORACLE_REQUEST_SCHEMA =
   "orchardprobe.lab002.oracle-request.v1"
 DEMO_LAB_LAB002_ORACLE_RESULT_SCHEMA =
   "orchardprobe.lab002.oracle-result.v1"
+DEMO_LAB_LAB002_UPLOAD_GATE_REQUEST_SCHEMA =
+  "orchardprobe.lab002.upload-gate-request.v1"
+DEMO_LAB_LAB002_UPLOAD_GATE_RESULT_SCHEMA =
+  "orchardprobe.lab002.upload-gate-result.v1"
 DEMO_LAB_LAB002_ORACLE_NAME = "lab-002-oracle-v1.json"
+DEMO_LAB_LAB002_MANIFEST_NAME = "lab-002-authorized-targets-v1.json"
 DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA =
   "orchardprobe.lab002.published-directory.v1"
 DEMO_LAB_LAB002_CS_OPS_CDHASH = 5
@@ -5318,6 +5323,8 @@ def write_pre_upload_evidence(
   archive_path:,
   ipa_path:,
   oracle_result:,
+  manifest_identity:,
+  prebuild_inputs:,
   source_commit:,
   xcodegen_version:,
   marketing_version:,
@@ -5367,6 +5374,28 @@ def write_pre_upload_evidence(
     packaged,
     archive_source_measurements
   )
+  unless manifest_identity.fetch("name") == DEMO_LAB_LAB002_MANIFEST_NAME &&
+         manifest_identity.fetch("mode") == 0o400 &&
+         manifest_identity.fetch("sha256") ==
+           prebuild_inputs.fetch("authorized_target_manifest_sha256")
+    UI.user_error!("LAB-002 manifest identity changed before evidence binding.")
+  end
+  oracle_identity = {
+    "name" => oracle_result.fetch("oracle_name"),
+    "device" => oracle_result.fetch("oracle_device"),
+    "inode" => oracle_result.fetch("oracle_inode"),
+    "mode" => oracle_result.fetch("oracle_mode"),
+    "size" => oracle_result.fetch("oracle_size"),
+    "sha256" => oracle_result.fetch("oracle_sha256"),
+  }
+  evidence_manifest_identity = {
+    "name" => manifest_identity.fetch("name"),
+    "device" => manifest_identity.fetch("device").to_s,
+    "inode" => manifest_identity.fetch("inode").to_s,
+    "mode" => manifest_identity.fetch("mode"),
+    "size" => manifest_identity.fetch("size"),
+    "sha256" => manifest_identity.fetch("sha256"),
+  }
 
   evidence = {
     "schema_version" => 1,
@@ -5406,6 +5435,13 @@ def write_pre_upload_evidence(
         ["archive", "binaries"].include?(key)
       end,
       "ipa_binaries" => packaged["binaries"],
+    },
+    "lab002" => {
+      "build_binding_sha256" => prebuild_inputs.fetch("build_binding_sha256"),
+      "target_identity_set_sha256" =>
+        prebuild_inputs.fetch("target_identity_set_sha256"),
+      "authorized_target_manifest" => evidence_manifest_identity,
+      "oracle" => oracle_identity,
     },
     "lineage" => {
       "uploaded_ipa_bound" => false,
@@ -5511,20 +5547,22 @@ def validate_binary_measurement!(measurement, specification, archive:)
 end
 
 def validate_upload_evidence_structure!(evidence)
+  expected_evidence_keys = %w[
+    schema_version
+    profile
+    purpose
+    decision
+    created_at
+    source
+    toolchain
+    build
+    artifacts
+    lineage
+  ]
+  expected_evidence_keys << "lab002" if evidence.is_a?(Hash) && evidence.key?("lab002")
   require_exact_hash_keys!(
     evidence,
-    %w[
-      schema_version
-      profile
-      purpose
-      decision
-      created_at
-      source
-      toolchain
-      build
-      artifacts
-      lineage
-    ],
+    expected_evidence_keys,
     "DemoLab evidence"
   )
 
@@ -5606,6 +5644,13 @@ def validate_upload_evidence_structure!(evidence)
            "operator-provided first-party identifiers; redacted"
     UI.user_error!("DemoLab build evidence is incomplete.")
   end
+  checkpoint_3 =
+    build["marketing_version"] ==
+      DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+    build["build_number"] == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+  unless evidence.key?("lab002") == checkpoint_3
+    UI.user_error!("DemoLab LAB-002 evidence binding does not match its build tuple.")
+  end
 
   artifacts = evidence["artifacts"]
   require_exact_hash_keys!(
@@ -5660,6 +5705,8 @@ def validate_upload_evidence_structure!(evidence)
     )
   end
 
+  validate_lab002_evidence_binding!(evidence["lab002"], ipa) if checkpoint_3
+
   lineage = evidence["lineage"]
   require_exact_hash_keys!(
     lineage,
@@ -5672,6 +5719,56 @@ def validate_upload_evidence_structure!(evidence)
     "note" => DEMO_LAB_LINEAGE_NOTE,
   }
     UI.user_error!("DemoLab lineage evidence is incomplete.")
+  end
+end
+
+def validate_lab002_evidence_artifact!(artifact, expected_name, label)
+  require_exact_hash_keys!(
+    artifact,
+    %w[name device inode mode size sha256],
+    label
+  )
+  unless artifact["name"] == expected_name &&
+         %w[device inode].all? { |key|
+           /\A(?:0|[1-9][0-9]*)\z/.match?(artifact[key].to_s)
+         } &&
+         artifact["mode"] == 0o400 &&
+         artifact["size"].is_a?(Integer) &&
+         artifact["size"].positive? &&
+         artifact["size"] <= 16 * 1024 &&
+         /\A[0-9a-f]{64}\z/.match?(artifact["sha256"].to_s)
+    UI.user_error!("#{label} is invalid.")
+  end
+end
+
+def validate_lab002_evidence_binding!(binding, ipa)
+  require_exact_hash_keys!(
+    binding,
+    %w[
+      build_binding_sha256
+      target_identity_set_sha256
+      authorized_target_manifest
+      oracle
+    ],
+    "LAB-002 evidence binding"
+  )
+  unless %w[build_binding_sha256 target_identity_set_sha256].all? { |key|
+           /\A[0-9a-f]{64}\z/.match?(binding[key].to_s)
+         }
+    UI.user_error!("LAB-002 evidence digests are invalid.")
+  end
+  validate_lab002_evidence_artifact!(
+    binding["authorized_target_manifest"],
+    DEMO_LAB_LAB002_MANIFEST_NAME,
+    "LAB-002 manifest evidence"
+  )
+  validate_lab002_evidence_artifact!(
+    binding["oracle"],
+    DEMO_LAB_LAB002_ORACLE_NAME,
+    "LAB-002 oracle evidence"
+  )
+  unless ipa["size"].positive? && /\A[0-9a-f]{64}\z/.match?(ipa["sha256"])
+    UI.user_error!("LAB-002 IPA evidence binding is invalid.")
   end
 end
 
@@ -5763,15 +5860,159 @@ def verify_evidence_bound_archive!(
   true
 end
 
-def reject_unbound_lab002_upload!(marketing_version, build_number)
-  return unless marketing_version ==
-                DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
-                build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+def verify_lab002_upload_gate!(evidence_path, evidence, xcode_toolchain:)
+  marketing_version = evidence.dig("build", "marketing_version")
+  build_number = evidence.dig("build", "build_number")
+  return true unless marketing_version ==
+                     DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+                     build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
 
-  UI.user_error!(
-    "DemoLab 1.0 (3) upload is blocked until 3B.3 binds and verifies the " \
-    "authorization manifest and LAB-002 oracle in pre-upload evidence."
+  source_commit = evidence.dig("source", "commit")
+  binding = evidence.fetch("lab002")
+  run_directory = File.dirname(evidence_path)
+  expected_run_name =
+    "#{marketing_version}-#{build_number}-#{source_commit[0, 12]}"
+  unless File.basename(run_directory) == expected_run_name &&
+         File.basename(evidence_path) == "demolab-pre-upload-evidence.json"
+    UI.user_error!("LAB-002 evidence is outside its exact private run directory.")
+  end
+  output_root = File.dirname(run_directory)
+  prebuild_directory = File.join(
+    output_root,
+    "lab002-prebuild-#{marketing_version}-#{build_number}-#{source_commit}"
   )
+  output_identity = private_directory_identity!(
+    output_root,
+    "LAB-002 upload output root"
+  )
+  prebuild_identity = private_directory_identity!(
+    prebuild_directory,
+    "LAB-002 upload prebuild directory"
+  )
+  run_identity = private_directory_identity!(
+    run_directory,
+    "LAB-002 upload run directory"
+  )
+
+  binary = nil
+  tool_workspace = nil
+  with_locked_private_directory(
+    output_root,
+    output_identity,
+    "LAB-002 upload output root"
+  ) do |output_handle|
+    with_locked_private_directory(
+      prebuild_directory,
+      prebuild_identity,
+      "LAB-002 upload prebuild directory"
+    ) do |prebuild_handle|
+      with_locked_private_directory(
+        run_directory,
+        run_identity,
+        "LAB-002 upload run directory"
+      ) do |run_handle|
+        begin
+          binary, tool_workspace, tool_identity, =
+            build_lab002_private_tool(source_commit)
+          request = {
+            "schema" => DEMO_LAB_LAB002_UPLOAD_GATE_REQUEST_SCHEMA,
+            "source_commit" => source_commit,
+            "marketing_version" => marketing_version,
+            "build_number" => build_number,
+            "build_binding_sha256" =>
+              binding.fetch("build_binding_sha256"),
+            "target_identity_set_sha256" =>
+              binding.fetch("target_identity_set_sha256"),
+            "authorized_target_manifest" =>
+              binding.fetch("authorized_target_manifest"),
+            "oracle" => binding.fetch("oracle"),
+            "ipa_size" => evidence.dig("artifacts", "ipa", "size"),
+            "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
+          }
+          verify_locked_directory!(
+            output_handle,
+            output_root,
+            output_identity,
+            "LAB-002 upload output root"
+          )
+          verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+          verify_selected_xcode_toolchain!(xcode_toolchain)
+          result_json = nil
+          helper_stderr = ""
+          status = nil
+          Open3.popen3(
+            sanitized_dynamic_loader_environment,
+            binary,
+            "verify-upload-gate",
+            "--prebuild-directory",
+            prebuild_directory,
+            "--prebuild-directory-device",
+            prebuild_handle.stat.dev.to_s,
+            "--prebuild-directory-inode",
+            prebuild_handle.stat.ino.to_s,
+            "--run-directory",
+            run_directory,
+            "--run-directory-device",
+            run_handle.stat.dev.to_s,
+            "--run-directory-inode",
+            run_handle.stat.ino.to_s,
+            4 => prebuild_handle,
+            5 => run_handle,
+            chdir: repository_root,
+            close_others: true
+          ) do |stdin, stdout, error_stream, wait_thread|
+            verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
+            stdin.write(JSON.generate(request))
+            stdin.close
+            result_json =
+              stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+            helper_stderr =
+              error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+            status = wait_thread.value
+          end
+          if result_json&.bytesize.to_i >
+             DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+             helper_stderr.to_s.bytesize >
+               DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+            UI.user_error!("LAB-002 upload-gate helper output exceeded its limit.")
+          end
+          unless status.success?
+            UI.user_error!(
+              "LAB-002 upload gate rejected the private tuple: " \
+              "#{helper_stderr.to_s.strip}"
+            )
+          end
+          result = JSON.parse(result_json)
+          require_exact_hash_keys!(
+            result,
+            %w[schema authorized_target_manifest oracle],
+            "LAB-002 upload-gate result"
+          )
+          unless result == {
+            "schema" => DEMO_LAB_LAB002_UPLOAD_GATE_RESULT_SCHEMA,
+            "authorized_target_manifest" =>
+              binding.fetch("authorized_target_manifest"),
+            "oracle" => binding.fetch("oracle"),
+          }
+            UI.user_error!("LAB-002 upload-gate result changed its evidence binding.")
+          end
+          verify_locked_directory!(
+            output_handle,
+            output_root,
+            output_identity,
+            "LAB-002 upload output root"
+          )
+          verify_selected_xcode_toolchain!(xcode_toolchain)
+          verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+        rescue JSON::ParserError
+          UI.user_error!("LAB-002 upload-gate helper returned invalid JSON.")
+        ensure
+          FileUtils.rm_rf(tool_workspace) if tool_workspace
+        end
+      end
+    end
+  end
+  true
 end
 
 def load_upload_evidence(
@@ -5804,7 +6045,6 @@ def load_upload_evidence(
          filename == "DemoLab-#{build_number}.ipa"
     UI.user_error!("Evidence IPA filename does not match the DemoLab build.")
   end
-  reject_unbound_lab002_upload!(marketing_version, build_number)
   unless expected_size.is_a?(Integer) &&
          expected_size.positive? &&
          expected_size <= DEMO_LAB_MAX_IPA_BYTES
@@ -5842,6 +6082,12 @@ def load_upload_evidence(
   unless observed_package["binaries"] == evidence.dig("artifacts", "ipa_binaries")
     UI.user_error!("Packaged DemoLab binaries do not match the archive evidence.")
   end
+
+  verify_lab002_upload_gate!(
+    evidence_path,
+    evidence,
+    xcode_toolchain: xcode_toolchain
+  )
 
   [evidence_path, evidence, ipa_path, archive_path]
 end
@@ -8875,20 +9121,6 @@ platform :ios do
       end
       UI.user_error!("DemoLab package evidence status is incomplete.") unless statuses_valid
 
-      reject_unbound_lab002_upload!("1.0", "1")
-      lab002_upload_blocked = false
-      begin
-        reject_unbound_lab002_upload!(
-          DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION,
-          DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
-        )
-      rescue FastlaneCore::Interface::FastlaneError
-        lab002_upload_blocked = true
-      end
-      unless lab002_upload_blocked
-        UI.user_error!("The unbound LAB-002 candidate was uploadable.")
-      end
-
       source_commit = git_command_output("rev-parse", "HEAD")
       complete_evidence = {
         "schema_version" => 1,
@@ -8945,6 +9177,53 @@ platform :ios do
         },
       }
       validate_upload_evidence_structure!(complete_evidence)
+      unbound_lab002_evidence = JSON.parse(JSON.generate(complete_evidence))
+      unbound_lab002_evidence["build"]["build_number"] =
+        DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+      unbound_lab002_evidence["artifacts"]["ipa"]["filename"] =
+        "DemoLab-#{DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER}.ipa"
+      unbound_lab002_rejected = false
+      begin
+        validate_upload_evidence_structure!(unbound_lab002_evidence)
+      rescue FastlaneCore::Interface::FastlaneError
+        unbound_lab002_rejected = true
+      end
+      unless unbound_lab002_rejected
+        UI.user_error!("LAB-002 evidence without its closed binding was accepted.")
+      end
+      bound_lab002_evidence = JSON.parse(JSON.generate(unbound_lab002_evidence))
+      bound_lab002_evidence["lab002"] = {
+        "build_binding_sha256" => "4" * 64,
+        "target_identity_set_sha256" => "5" * 64,
+        "authorized_target_manifest" => {
+          "name" => DEMO_LAB_LAB002_MANIFEST_NAME,
+          "device" => "1",
+          "inode" => "2",
+          "mode" => 0o400,
+          "size" => 1024,
+          "sha256" => "6" * 64,
+        },
+        "oracle" => {
+          "name" => DEMO_LAB_LAB002_ORACLE_NAME,
+          "device" => "1",
+          "inode" => "3",
+          "mode" => 0o400,
+          "size" => 2048,
+          "sha256" => "7" * 64,
+        },
+      }
+      validate_upload_evidence_structure!(bound_lab002_evidence)
+      altered_oracle_binding = JSON.parse(JSON.generate(bound_lab002_evidence))
+      altered_oracle_binding["lab002"]["oracle"]["mode"] = 0o600
+      altered_oracle_binding_rejected = false
+      begin
+        validate_upload_evidence_structure!(altered_oracle_binding)
+      rescue FastlaneCore::Interface::FastlaneError
+        altered_oracle_binding_rejected = true
+      end
+      unless altered_oracle_binding_rejected
+        UI.user_error!("An unsafe LAB-002 oracle identity was accepted.")
+      end
       malformed_timestamp_evidence = JSON.parse(
         JSON.generate(complete_evidence)
       )
@@ -10001,20 +10280,26 @@ platform :ios do
                 xcode_toolchain: xcode_toolchain,
                 on_retention_change: ->(retain) { retain_staging = retain }
               )
+              manifest_identity = lab002_published_artifact_identity!(
+                prebuild_handle,
+                DEMO_LAB_LAB002_MANIFEST_NAME
+              )
+              evidence_path, evidence_identity = write_pre_upload_evidence(
+                run_directory: staging_directory,
+                archive_path: archive_path,
+                ipa_path: ipa_path,
+                oracle_result: oracle_result,
+                manifest_identity: manifest_identity,
+                prebuild_inputs: prebuild_inputs,
+                source_commit: source_commit,
+                xcodegen_version: project_xcodegen_version,
+                marketing_version: marketing_version,
+                build_number: build_number,
+                app_identifier: app_identifier,
+                share_identifier: share_identifier,
+                xcode_toolchain: xcode_toolchain
+              )
             end
-            evidence_path, evidence_identity = write_pre_upload_evidence(
-              run_directory: staging_directory,
-              archive_path: archive_path,
-              ipa_path: ipa_path,
-              oracle_result: oracle_result,
-              source_commit: source_commit,
-              xcodegen_version: project_xcodegen_version,
-              marketing_version: marketing_version,
-              build_number: build_number,
-              app_identifier: app_identifier,
-              share_identifier: share_identifier,
-              xcode_toolchain: xcode_toolchain
-            )
             verify_selected_xcode_toolchain!(xcode_toolchain)
           end
           publish_verified_lab002_staged_run!(
@@ -10179,11 +10464,16 @@ platform :ios do
       key_content = nil
       upload_snapshot,
         upload_snapshot_path,
-        upload_snapshot_identity,
+      upload_snapshot_identity,
         upload_workspace_identity = stage_evidence_bound_ipa(
           ipa_path,
           evidence
         )
+      verify_lab002_upload_gate!(
+        evidence_path,
+        evidence,
+        xcode_toolchain: xcode_toolchain
+      )
       attempt = {
         "schema_version" => 1,
         "source_commit" => evidence.dig("source", "commit"),

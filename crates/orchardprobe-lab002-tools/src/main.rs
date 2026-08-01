@@ -31,6 +31,8 @@ const INSPECT_REQUEST_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-reque
 const INSPECT_RESULT_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-result.v1";
 const ORACLE_REQUEST_SCHEMA: &str = "orchardprobe.lab002.oracle-request.v1";
 const ORACLE_RESULT_SCHEMA: &str = "orchardprobe.lab002.oracle-result.v1";
+const UPLOAD_GATE_REQUEST_SCHEMA: &str = "orchardprobe.lab002.upload-gate-request.v1";
+const UPLOAD_GATE_RESULT_SCHEMA: &str = "orchardprobe.lab002.upload-gate-result.v1";
 const PREBUILD_SCHEMA: &str = "orchardprobe.lab002.prebuild.v1";
 const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directory.v1";
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
@@ -43,6 +45,8 @@ const PREBUILD_NAME: &str = "lab-002-prebuild-v1.json";
 const CHECKPOINT_MARKETING_VERSION: &str = "1.0";
 const CHECKPOINT_BUILD_NUMBER: &str = "3";
 const MAX_PRIVATE_ARTIFACT_BYTES: usize = 16 * 1024;
+const MAX_UPLOAD_RESULT_BYTES: usize = 64 * 1024;
+const MAX_RECONCILED_UPLOAD_RECORDS: usize = 32;
 const MAX_IPA_BYTES: u64 = 250 * 1024 * 1024;
 const MAX_EXECUTABLE_BYTES: u64 = 100 * 1024 * 1024;
 const MAX_INFO_PLIST_BYTES: u64 = 1024 * 1024;
@@ -58,6 +62,9 @@ const SYSTEM_OPENSSL_PATH: &str = "/usr/bin/openssl";
 const SYSTEM_SECURITY_PATH: &str = "/usr/bin/security";
 const SYSTEM_ROOT_KEYCHAIN_PATH: &str = "/System/Library/Keychains/SystemRootCertificates.keychain";
 const ORACLE_NAME: &str = "lab-002-oracle-v1.json";
+const RECONCILED_UPLOAD_PREFIX: &str = "demolab-upload-result-reconciled-";
+const RECONCILED_UPLOAD_SUFFIX: &str = ".json";
+const RECONCILED_UPLOAD_NOTE: &str = "The operator explicitly confirmed that this exact version and build were absent in App Store Connect before permitting a new upload attempt.";
 
 #[derive(Debug)]
 struct PrivateOutputRoot {
@@ -102,6 +109,36 @@ struct OracleRequest {
     observer_revision: String,
     toolchain: Toolchain,
     targets: Vec<AuthorizedTarget>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UploadGateRequest {
+    schema: String,
+    source_commit: String,
+    marketing_version: String,
+    build_number: String,
+    build_binding_sha256: String,
+    target_identity_set_sha256: String,
+    authorized_target_manifest: PrivateArtifactIdentity,
+    oracle: PrivateArtifactIdentity,
+    ipa_size: u64,
+    ipa_sha256: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReconciledUploadRecord {
+    schema_version: u8,
+    source_commit: String,
+    ipa_sha256: String,
+    attempt_started_at: String,
+    destination: String,
+    external_distribution: bool,
+    status: String,
+    note: String,
+    reconciled_at: String,
+    reconciliation: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -179,6 +216,13 @@ struct OracleOutput {
 }
 
 #[derive(Debug, Serialize)]
+struct UploadGateOutput {
+    schema: &'static str,
+    authorized_target_manifest: PrivateArtifactIdentity,
+    oracle: PrivateArtifactIdentity,
+}
+
+#[derive(Debug, Serialize)]
 struct OracleSourceMeasurement {
     relative_path: String,
     size: u64,
@@ -191,9 +235,11 @@ enum CommandOutput {
     Prepare(PrepareOutput),
     InspectPrebuild(Box<InspectPrebuildOutput>),
     Oracle(OracleOutput),
+    UploadGate(UploadGateOutput),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PrivateArtifactIdentity {
     name: String,
     device: String,
@@ -217,18 +263,18 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let run_directory =
-        if arguments.first().and_then(|value| value.to_str()) == Some("create-oracle") {
-            match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
-                Ok(directory) => Some(directory),
-                Err(error) => {
-                    eprintln!("error: could not receive the held private run directory: {error}");
-                    return ExitCode::FAILURE;
-                }
+    let operation = arguments.first().and_then(|value| value.to_str());
+    let run_directory = if matches!(operation, Some("create-oracle" | "verify-upload-gate")) {
+        match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
+            Ok(directory) => Some(directory),
+            Err(error) => {
+                eprintln!("error: could not receive the held private run directory: {error}");
+                return ExitCode::FAILURE;
             }
-        } else {
-            None
-        };
+        }
+    } else {
+        None
+    };
     match execute(
         arguments,
         output_root_directory,
@@ -339,7 +385,7 @@ fn execute(
                 .map(CommandOutput::InspectPrebuild)
         }
         Some("create-oracle") => {
-            let directories = parse_oracle_directory_arguments(&arguments)?;
+            let directories = parse_oracle_directory_arguments(&arguments, "create-oracle")?;
             let prebuild_directory = validate_bound_private_output_root(
                 &directories.prebuild_path,
                 output_root_directory,
@@ -356,9 +402,28 @@ fn execute(
             }
             create_oracle(prebuild_directory, run_directory, request).map(CommandOutput::Oracle)
         }
+        Some("verify-upload-gate") => {
+            let directories = parse_oracle_directory_arguments(&arguments, "verify-upload-gate")?;
+            let prebuild_directory = validate_bound_private_output_root(
+                &directories.prebuild_path,
+                output_root_directory,
+                directories.prebuild_identity,
+            )?;
+            let run_directory = validate_bound_private_output_root(
+                &directories.run_path,
+                run_directory.ok_or_else(|| "held private run directory is missing".to_owned())?,
+                directories.run_identity,
+            )?;
+            let request: UploadGateRequest = read_request(io::stdin().lock())?;
+            if request.schema != UPLOAD_GATE_REQUEST_SCHEMA {
+                return Err("upload-gate request schema is invalid".into());
+            }
+            verify_upload_gate(prebuild_directory, run_directory, request)
+                .map(CommandOutput::UploadGate)
+        }
         _ => Err(
-            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle with fixed private \
-             directories"
+            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle|verify-upload-gate \
+             with fixed private directories"
                 .into(),
         ),
     }
@@ -373,9 +438,10 @@ struct OracleDirectoryArguments {
 
 fn parse_oracle_directory_arguments(
     arguments: &[std::ffi::OsString],
+    operation: &str,
 ) -> Result<OracleDirectoryArguments, String> {
     let expected = [
-        "create-oracle",
+        operation,
         "--prebuild-directory",
         "",
         "--prebuild-directory-device",
@@ -396,13 +462,12 @@ fn parse_oracle_directory_arguments(
             .filter(|(_, value)| !value.is_empty())
             .any(|(index, value)| arguments[index] != *value)
     {
-        return Err(
-            "usage: oprobe-lab002 create-oracle --prebuild-directory ABSOLUTE_DIRECTORY \
+        return Err(format!(
+            "usage: oprobe-lab002 {operation} --prebuild-directory ABSOLUTE_DIRECTORY \
              --prebuild-directory-device DECIMAL --prebuild-directory-inode DECIMAL \
              --run-directory ABSOLUTE_DIRECTORY --run-directory-device DECIMAL \
              --run-directory-inode DECIMAL"
-                .into(),
-        );
+        ));
     }
     Ok(OracleDirectoryArguments {
         prebuild_path: PathBuf::from(&arguments[2]),
@@ -766,6 +831,222 @@ fn inspect_prebuild_directory(
         build_binding_sha256: expected_build_binding,
         target_identity_set_sha256: expected_identity_set,
         toolchain: request.toolchain,
+    })
+}
+
+fn private_artifact_identity(
+    name: &str,
+    artifact: &ReadPrivateArtifact,
+) -> PrivateArtifactIdentity {
+    PrivateArtifactIdentity {
+        name: name.into(),
+        device: artifact.device.to_string(),
+        inode: artifact.inode.to_string(),
+        mode: artifact.mode,
+        size: artifact.size,
+        sha256: sha256_hex(&artifact.bytes),
+    }
+}
+
+fn verify_upload_gate(
+    prebuild_directory: PrivateOutputRoot,
+    run_directory: PrivateOutputRoot,
+    request: UploadGateRequest,
+) -> Result<UploadGateOutput, String> {
+    verify_private_artifact_inventory(&prebuild_directory.directory)?;
+    let reconciled_names =
+        verify_upload_run_inventory(&run_directory.directory, &request.build_number)?;
+
+    let seed = read_private_artifact(&prebuild_directory.directory, PRIVATE_SEED_NAME, 32)?;
+    let manifest_artifact = read_private_artifact(
+        &prebuild_directory.directory,
+        MANIFEST_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )?;
+    let record_artifact = read_private_artifact(
+        &prebuild_directory.directory,
+        PREBUILD_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )?;
+    let oracle_artifact = read_private_artifact(
+        &run_directory.directory,
+        ORACLE_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )?;
+    let reconciled_artifacts =
+        read_reconciled_upload_records(&run_directory.directory, &reconciled_names, &request)?;
+
+    let seed_bytes: [u8; 32] = seed
+        .bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| "authorization seed must contain exactly 32 bytes")?;
+    let signing_key = SigningKey::from_bytes(&seed_bytes);
+    if signing_key.verifying_key().is_weak() {
+        return Err("authorization seed produces a weak Ed25519 public key".into());
+    }
+    let public_key = signing_key.verifying_key().to_bytes();
+    let public_key_hex = lower_hex(&public_key);
+    let authorization_key_id = sha256_hex(&public_key);
+
+    let manifest = AuthorizedTargetManifest::from_canonical_bytes(&manifest_artifact.bytes)
+        .map_err(|error| format!("authorized-target manifest is invalid: {error}"))?;
+    let manifest_sha256 = sha256_hex(&manifest_artifact.bytes);
+    let record: PrebuildRecord = serde_json::from_slice(&record_artifact.bytes)
+        .map_err(|error| format!("prebuild record is invalid: {error}"))?;
+    let canonical_record =
+        canonical_json(&record).map_err(|error| format!("prebuild record is invalid: {error}"))?;
+    if canonical_record != record_artifact.bytes {
+        return Err("prebuild record is not exact canonical JSON".into());
+    }
+    let oracle = LabOracle::from_canonical_bytes(&oracle_artifact.bytes)
+        .map_err(|error| format!("LAB-002 oracle is invalid: {error}"))?;
+
+    validate_request_fields(
+        &request.source_commit,
+        &request.marketing_version,
+        &request.build_number,
+        "Release",
+        &manifest.targets,
+    )?;
+    if request.ipa_size == 0
+        || request.ipa_size > MAX_IPA_BYTES
+        || !is_lower_hex(&request.ipa_sha256, 64)
+        || !is_lower_hex(&request.build_binding_sha256, 64)
+        || !is_lower_hex(&request.target_identity_set_sha256, 64)
+    {
+        return Err("upload-gate request binding is invalid".into());
+    }
+
+    let build_input = BuildBindingInput {
+        source_commit: record.source_commit.clone(),
+        marketing_version: record.marketing_version.clone(),
+        build_number: record.build_number.clone(),
+        configuration: record.configuration.clone(),
+        observer_revision: record.observer_revision.clone(),
+        authorized_target_manifest_sha256: manifest_sha256.clone(),
+        xcode_version: record.toolchain.xcode_version.clone(),
+        xcode_build: record.toolchain.xcode_build.clone(),
+        iphoneos_sdk_version: record.toolchain.iphoneos_sdk_version.clone(),
+        iphoneos_sdk_build: record.toolchain.iphoneos_sdk_build.clone(),
+        xcodegen_version: record.toolchain.xcodegen_version.clone(),
+        xcodegen_architecture: record.toolchain.xcodegen_architecture.clone(),
+        xcodegen_executable_sha256: record.toolchain.xcodegen_executable_sha256.clone(),
+        fastlane_version: record.toolchain.fastlane_version.clone(),
+        gemfile_lock_sha256: record.toolchain.gemfile_lock_sha256.clone(),
+    };
+    let expected_build_binding =
+        build_binding_sha256(&build_input).map_err(|error| error.to_string())?;
+    let mut target_digests = Vec::with_capacity(manifest.targets.len());
+    let mut expected_targets = Vec::with_capacity(manifest.targets.len());
+    for target in &manifest.targets {
+        let identity_input = target_identity_input(&manifest.identity_nonce, target)?;
+        let digest =
+            target_identity_binding_sha256(&identity_input).map_err(|error| error.to_string())?;
+        target_digests.push((target.role, digest.clone()));
+        expected_targets.push(PreparedTarget {
+            role: target.role,
+            target_identity_binding_sha256: digest,
+        });
+    }
+    let expected_identity_set =
+        target_identity_set_sha256(&target_digests).map_err(|error| error.to_string())?;
+    let oracle_target_digests: Vec<_> = oracle
+        .roles
+        .iter()
+        .map(|role| (role.role, role.target_identity_binding_sha256.clone()))
+        .collect();
+
+    let manifest_identity = private_artifact_identity(MANIFEST_NAME, &manifest_artifact);
+    let oracle_identity = private_artifact_identity(ORACLE_NAME, &oracle_artifact);
+    if manifest.authorization_public_key != public_key_hex
+        || manifest.authorization_key_id != authorization_key_id
+        || record.schema != PREBUILD_SCHEMA
+        || record.profile != LAB002_PROFILE
+        || record.source_commit != request.source_commit
+        || record.fixture_source_root != "fixtures/DemoLab"
+        || record.marketing_version != request.marketing_version
+        || record.build_number != request.build_number
+        || record.configuration != "Release"
+        || record.observer_revision != "lab002-observer-v1"
+        || record.generator_revision != request.source_commit
+        || record.identity_nonce != manifest.identity_nonce
+        || record.authorization_public_key != manifest.authorization_public_key
+        || record.authorization_key_id != manifest.authorization_key_id
+        || record.authorized_target_manifest_sha256 != manifest_sha256
+        || record.build_binding_sha256 != expected_build_binding
+        || record.target_identity_set_sha256 != expected_identity_set
+        || record.targets != expected_targets
+        || request.build_binding_sha256 != expected_build_binding
+        || request.target_identity_set_sha256 != expected_identity_set
+        || request.authorized_target_manifest != manifest_identity
+        || request.oracle != oracle_identity
+        || oracle.source_commit != request.source_commit
+        || oracle.fixture_source_root != "fixtures/DemoLab"
+        || oracle.marketing_version != request.marketing_version
+        || oracle.build_number != request.build_number
+        || oracle.configuration != "Release"
+        || oracle.observer_revision != "lab002-observer-v1"
+        || oracle.generator_revision != request.source_commit
+        || oracle.build_binding_sha256 != expected_build_binding
+        || oracle.authorized_target_manifest_sha256 != manifest_sha256
+        || oracle.authorization_public_key != manifest.authorization_public_key
+        || oracle.authorization_key_id != manifest.authorization_key_id
+        || oracle.target_identity_set_sha256 != expected_identity_set
+        || oracle.toolchain != record.toolchain
+        || oracle.ipa_size != request.ipa_size
+        || oracle.ipa_sha256 != request.ipa_sha256
+        || oracle_target_digests != target_digests
+    {
+        return Err("LAB-002 upload artifacts are not one exact authorized tuple".into());
+    }
+
+    verify_private_artifact_inventory(&prebuild_directory.directory)?;
+    for (name, expected) in [
+        (PRIVATE_SEED_NAME, &seed),
+        (MANIFEST_NAME, &manifest_artifact),
+        (PREBUILD_NAME, &record_artifact),
+    ] {
+        if read_private_artifact(
+            &prebuild_directory.directory,
+            name,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )? != *expected
+        {
+            return Err("a private LAB-002 prebuild artifact changed during upload gating".into());
+        }
+    }
+    if read_private_artifact(
+        &run_directory.directory,
+        ORACLE_NAME,
+        MAX_PRIVATE_ARTIFACT_BYTES,
+    )? != oracle_artifact
+    {
+        return Err("the LAB-002 oracle changed during upload gating".into());
+    }
+    for (name, expected) in &reconciled_artifacts {
+        if read_private_file_with_mode(
+            &run_directory.directory,
+            name,
+            MAX_UPLOAD_RESULT_BYTES,
+            0o600,
+        )? != *expected
+        {
+            return Err("a reconciled upload audit record changed during upload gating".into());
+        }
+    }
+    if verify_upload_run_inventory(&run_directory.directory, &request.build_number)?
+        != reconciled_names
+    {
+        return Err("private run directory changed during upload gating".into());
+    }
+    verify_private_output_root_path(&prebuild_directory)?;
+    verify_private_output_root_path(&run_directory)?;
+
+    Ok(UploadGateOutput {
+        schema: UPLOAD_GATE_RESULT_SCHEMA,
+        authorized_target_manifest: manifest_identity,
+        oracle: oracle_identity,
     })
 }
 
@@ -2218,6 +2499,25 @@ fn read_private_artifact_with(
     maximum_size: usize,
     after_read: impl FnOnce(),
 ) -> Result<ReadPrivateArtifact, String> {
+    read_private_file_with_mode_and_after_read(directory, name, maximum_size, 0o400, after_read)
+}
+
+fn read_private_file_with_mode(
+    directory: &File,
+    name: &str,
+    maximum_size: usize,
+    required_mode: u32,
+) -> Result<ReadPrivateArtifact, String> {
+    read_private_file_with_mode_and_after_read(directory, name, maximum_size, required_mode, || {})
+}
+
+fn read_private_file_with_mode_and_after_read(
+    directory: &File,
+    name: &str,
+    maximum_size: usize,
+    required_mode: u32,
+    after_read: impl FnOnce(),
+) -> Result<ReadPrivateArtifact, String> {
     let descriptor = rustix::fs::openat(
         directory,
         name,
@@ -2234,7 +2534,7 @@ fn read_private_artifact_with(
         .map_err(|error| format!("could not inspect private prebuild artifact {name}: {error}"))?;
     if !before.is_file()
         || before.uid() != rustix::process::geteuid().as_raw()
-        || before.mode() & 0o777 != 0o400
+        || before.mode() & 0o777 != required_mode
         || before.len() == 0
         || before.len() > maximum_size as u64
     {
@@ -2318,6 +2618,87 @@ fn verify_private_artifact_inventory(directory: &File) -> Result<(), String> {
         return Err("private prebuild directory does not contain the exact three artifacts".into());
     }
     Ok(())
+}
+
+fn reconciled_upload_record_name(name: &str) -> bool {
+    let Some(random) = name
+        .strip_prefix(RECONCILED_UPLOAD_PREFIX)
+        .and_then(|value| value.strip_suffix(RECONCILED_UPLOAD_SUFFIX))
+    else {
+        return false;
+    };
+    is_lower_hex(random, 24)
+}
+
+fn verify_upload_run_inventory(
+    directory: &File,
+    build_number: &str,
+) -> Result<Vec<String>, String> {
+    let entries = rustix::fs::Dir::read_from(directory)
+        .map_err(|error| format!("could not open private run directory stream: {error}"))?;
+    let mut observed = Vec::with_capacity(4 + MAX_RECONCILED_UPLOAD_RECORDS);
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("could not enumerate private run directory: {error}"))?;
+        let name = entry.file_name().to_bytes();
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        let name = String::from_utf8(name.to_vec())
+            .map_err(|_| "private run artifact name is not valid UTF-8".to_owned())?;
+        observed.push(name);
+        if observed.len() > 4 + MAX_RECONCILED_UPLOAD_RECORDS {
+            return Err("private run directory does not contain the exact upload tuple".into());
+        }
+    }
+    observed.sort();
+    let mut expected = vec![
+        "DemoLab.xcarchive".to_owned(),
+        format!("DemoLab-{build_number}.ipa"),
+        "demolab-pre-upload-evidence.json".to_owned(),
+        ORACLE_NAME.to_owned(),
+    ];
+    let mut reconciled = observed
+        .iter()
+        .filter(|name| reconciled_upload_record_name(name))
+        .cloned()
+        .collect::<Vec<_>>();
+    expected.extend(reconciled.iter().cloned());
+    expected.sort();
+    if observed != expected {
+        return Err("private run directory does not contain the exact upload tuple".into());
+    }
+    reconciled.sort();
+    Ok(reconciled)
+}
+
+fn read_reconciled_upload_records(
+    directory: &File,
+    names: &[String],
+    request: &UploadGateRequest,
+) -> Result<Vec<(String, ReadPrivateArtifact)>, String> {
+    let mut artifacts = Vec::with_capacity(names.len());
+    for name in names {
+        let artifact =
+            read_private_file_with_mode(directory, name, MAX_UPLOAD_RESULT_BYTES, 0o600)?;
+        let record: ReconciledUploadRecord = serde_json::from_slice(&artifact.bytes)
+            .map_err(|error| format!("reconciled upload audit record is invalid: {error}"))?;
+        if record.schema_version != 1
+            || record.source_commit != request.source_commit
+            || record.ipa_sha256 != request.ipa_sha256
+            || !is_bounded_utc_timestamp(&record.attempt_started_at)
+            || record.destination != "TestFlight internal preparation"
+            || record.external_distribution
+            || record.status != "reconciled_absent"
+            || record.note != RECONCILED_UPLOAD_NOTE
+            || !is_bounded_utc_timestamp(&record.reconciled_at)
+            || record.reconciliation != "operator_confirmed_absent_in_app_store_connect"
+        {
+            return Err("reconciled upload audit record does not match this upload tuple".into());
+        }
+        artifacts.push((name.clone(), artifact));
+    }
+    Ok(artifacts)
 }
 
 fn validate_request(request: &PrepareRequest) -> Result<(), String> {
@@ -2967,6 +3348,52 @@ fn lower_hex(bytes: &[u8]) -> String {
     )
 }
 
+fn is_lower_hex(value: &str, expected_length: usize) -> bool {
+    value.len() == expected_length
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn is_bounded_utc_timestamp(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes[19] != b'Z'
+    {
+        return false;
+    }
+    let decimal = |range: std::ops::Range<usize>| -> Option<u32> {
+        bytes[range].iter().try_fold(0_u32, |value, byte| {
+            byte.is_ascii_digit()
+                .then_some(value * 10 + u32::from(byte - b'0'))
+        })
+    };
+    let (Some(year), Some(month), Some(day), Some(hour), Some(minute), Some(second)) = (
+        decimal(0..4),
+        decimal(5..7),
+        decimal(8..10),
+        decimal(11..13),
+        decimal(14..16),
+        decimal(17..19),
+    ) else {
+        return false;
+    };
+    let leap_year = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0);
+    let maximum_day = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap_year => 29,
+        2 => 28,
+        _ => return false,
+    };
+    year >= 2000 && day >= 1 && day <= maximum_day && hour <= 23 && minute <= 59 && second <= 59
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3225,6 +3652,196 @@ mod tests {
         assert_eq!(
             inspected.authorization_key_id,
             sha256_hex(&expected_public_key)
+        );
+    }
+
+    #[test]
+    fn upload_gate_closes_manifest_oracle_ipa_and_directory_inventory() {
+        assert!(is_bounded_utc_timestamp("2026-08-01T00:00:00Z"));
+        assert!(is_bounded_utc_timestamp("2024-02-29T23:59:59Z"));
+        assert!(!is_bounded_utc_timestamp("2026-99-99T99:99:99Z"));
+        assert!(!is_bounded_utc_timestamp("2025-02-29T00:00:00Z"));
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root = root.path().canonicalize().unwrap();
+        let prepared = prepare(&root, request()).unwrap();
+        let prebuild_path = PathBuf::from(&prepared.prebuild_directory);
+        let record: PrebuildRecord =
+            serde_json::from_slice(&fs::read(prebuild_path.join(PREBUILD_NAME)).unwrap()).unwrap();
+        let ipa_bytes = b"evidence-bound IPA";
+        let ipa_sha256 = sha256_hex(ipa_bytes);
+        let oracle_roles = record
+            .targets
+            .iter()
+            .enumerate()
+            .map(|(index, target)| OracleRole {
+                role: target.role,
+                fixture_relative_path: target.role.fixture_relative_path().into(),
+                target_identity_binding_sha256: target.target_identity_binding_sha256.clone(),
+                slices: vec![OracleSlice {
+                    ordinal: 0,
+                    cpu_type: 0x0100000c,
+                    cpu_subtype: 0,
+                    macho_uuid: format!("{index:032x}"),
+                    code_signature_sha256: "44".repeat(32),
+                    slice_file_offset: 0,
+                    slice_file_size: 1024,
+                    archive_cryptid: 0,
+                    ipa_cryptid: 0,
+                    section_slice_offset: 64,
+                    section_file_offset: 64,
+                    section_vm_offset: 64,
+                    section_length: 64,
+                    expected_plaintext_sha256: "55".repeat(32),
+                    ipa_section_sha256: "55".repeat(32),
+                }],
+            })
+            .collect();
+        let oracle = LabOracle {
+            schema: <LabOracle as ClosedArtifact>::SCHEMA.into(),
+            profile: LAB002_PROFILE.into(),
+            source_commit: record.source_commit.clone(),
+            fixture_source_root: record.fixture_source_root.clone(),
+            marketing_version: record.marketing_version.clone(),
+            build_number: record.build_number.clone(),
+            configuration: record.configuration.clone(),
+            observer_revision: record.observer_revision.clone(),
+            generator_revision: record.generator_revision.clone(),
+            build_binding_sha256: record.build_binding_sha256.clone(),
+            authorized_target_manifest_sha256: record.authorized_target_manifest_sha256.clone(),
+            authorization_public_key: record.authorization_public_key.clone(),
+            authorization_key_id: record.authorization_key_id.clone(),
+            target_identity_set_sha256: record.target_identity_set_sha256.clone(),
+            toolchain: record.toolchain.clone(),
+            ipa_size: ipa_bytes.len() as u64,
+            ipa_sha256: ipa_sha256.clone(),
+            roles: oracle_roles,
+        };
+        let oracle_bytes = oracle.to_canonical_bytes().unwrap();
+        let run_path = root.join(format!("1.0-3-{}", &record.source_commit[..12]));
+        fs::create_dir(&run_path).unwrap();
+        fs::set_permissions(
+            &run_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        fs::create_dir(run_path.join("DemoLab.xcarchive")).unwrap();
+        fs::write(run_path.join("DemoLab-3.ipa"), ipa_bytes).unwrap();
+        fs::write(
+            run_path.join("demolab-pre-upload-evidence.json"),
+            b"evidence",
+        )
+        .unwrap();
+        fs::write(run_path.join(ORACLE_NAME), &oracle_bytes).unwrap();
+        fs::set_permissions(
+            run_path.join(ORACLE_NAME),
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+
+        let manifest_artifact = read_private_artifact(
+            &File::open(&prebuild_path).unwrap(),
+            MANIFEST_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )
+        .unwrap();
+        let oracle_artifact = read_private_artifact(
+            &File::open(&run_path).unwrap(),
+            ORACLE_NAME,
+            MAX_PRIVATE_ARTIFACT_BYTES,
+        )
+        .unwrap();
+        let gate_request = || UploadGateRequest {
+            schema: UPLOAD_GATE_REQUEST_SCHEMA.into(),
+            source_commit: record.source_commit.clone(),
+            marketing_version: record.marketing_version.clone(),
+            build_number: record.build_number.clone(),
+            build_binding_sha256: record.build_binding_sha256.clone(),
+            target_identity_set_sha256: record.target_identity_set_sha256.clone(),
+            authorized_target_manifest: private_artifact_identity(
+                MANIFEST_NAME,
+                &manifest_artifact,
+            ),
+            oracle: private_artifact_identity(ORACLE_NAME, &oracle_artifact),
+            ipa_size: ipa_bytes.len() as u64,
+            ipa_sha256: ipa_sha256.clone(),
+        };
+        let verified = verify_upload_gate(
+            validate_private_output_root(&prebuild_path).unwrap(),
+            validate_private_output_root(&run_path).unwrap(),
+            gate_request(),
+        )
+        .unwrap();
+        assert_eq!(verified.schema, UPLOAD_GATE_RESULT_SCHEMA);
+        assert_eq!(verified.oracle.sha256, sha256_hex(&oracle_bytes));
+
+        let mut altered = gate_request();
+        altered.oracle.sha256 = "00".repeat(32);
+        assert!(
+            verify_upload_gate(
+                validate_private_output_root(&prebuild_path).unwrap(),
+                validate_private_output_root(&run_path).unwrap(),
+                altered,
+            )
+            .is_err()
+        );
+
+        let reconciled_path =
+            run_path.join("demolab-upload-result-reconciled-0123456789abcdef01234567.json");
+        let reconciled = ReconciledUploadRecord {
+            schema_version: 1,
+            source_commit: record.source_commit.clone(),
+            ipa_sha256: ipa_sha256.clone(),
+            attempt_started_at: "2026-08-01T00:00:00Z".into(),
+            destination: "TestFlight internal preparation".into(),
+            external_distribution: false,
+            status: "reconciled_absent".into(),
+            note: RECONCILED_UPLOAD_NOTE.into(),
+            reconciled_at: "2026-08-01T00:05:00Z".into(),
+            reconciliation: "operator_confirmed_absent_in_app_store_connect".into(),
+        };
+        fs::write(&reconciled_path, serde_json::to_vec(&reconciled).unwrap()).unwrap();
+        fs::set_permissions(
+            &reconciled_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
+        verify_upload_gate(
+            validate_private_output_root(&prebuild_path).unwrap(),
+            validate_private_output_root(&run_path).unwrap(),
+            gate_request(),
+        )
+        .unwrap();
+
+        let mut wrong_reconciled = reconciled;
+        wrong_reconciled.ipa_sha256 = "99".repeat(32);
+        fs::write(
+            &reconciled_path,
+            serde_json::to_vec(&wrong_reconciled).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            verify_upload_gate(
+                validate_private_output_root(&prebuild_path).unwrap(),
+                validate_private_output_root(&run_path).unwrap(),
+                gate_request(),
+            )
+            .is_err()
+        );
+        fs::remove_file(reconciled_path).unwrap();
+
+        fs::write(run_path.join("unexpected"), b"entry").unwrap();
+        assert!(
+            verify_upload_gate(
+                validate_private_output_root(&prebuild_path).unwrap(),
+                validate_private_output_root(&run_path).unwrap(),
+                gate_request(),
+            )
+            .is_err()
         );
     }
 
