@@ -250,3 +250,17 @@ Regressions reject both an out-of-enrollment Oracle binding and a fabricated IPA
 entry hash. Because this changes the Rust Helper, two new independent
 reproducibility measurements, a new sole allowlist tuple, the normal gate, all
 local gates, and a fresh clean CR remain required before the 4B PR can open.
+
+After committing that integrity remediation, two independent complete Fastlane
+gates each rebuilt three Helpers from source snapshot
+`ff4bdb2c9674d3e63019104e69d96a83aee2e054f609f52227e9016232885b5b`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,270,256`, SHA-256
+`c840e1a92ddeabc18fc63376a5ec193c8f0710508cd2015085dcfba75af3f0b4`,
+and CodeDirectory CDHash `03450ddbd3e5096f7c948abdf2c8bc73245b2e8e`.
+The temporary measurement hook was removed completely before that exact tuple
+was added to the reviewed allowlist. The normal non-measurement gate rebuilt
+and admitted it and passed the unsigned Simulator fixture; formatting, locked
+Clippy with warnings denied, all 276 Workspace tests, Ruby syntax, the diff
+check, and the explicit no-measurement-hook check also pass. A fresh clean
+Codex CR remains required before the 4B PR.

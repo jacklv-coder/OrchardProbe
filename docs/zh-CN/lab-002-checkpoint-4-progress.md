@@ -178,3 +178,13 @@ Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 274 项
 与 Evidence 一致。新增回归分别拒绝 Enrollment 范围外的 Oracle Binding 和伪造的 IPA
 Entry Hash。由于该修复改变 Rust Helper，4B PR 打开前仍需两次新的独立可复现测量、只保留
 新 Tuple 的 Allowlist、正常门禁、全部本地门禁和全新无问题 CR。
+
+提交该完整性修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot
+为 `ff4bdb2c9674d3e63019104e69d96a83aee2e054f609f52227e9016232885b5b`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,270,256`、
+SHA-256 `c840e1a92ddeabc18fc63376a5ec193c8f0710508cd2015085dcfba75af3f0b4`、
+CodeDirectory CDHash `03450ddbd3e5096f7c948abdf2c8bc73245b2e8e`。临时测量 Hook 已在
+把该精确 Tuple 加入已评审 Allowlist 前完整删除。正常非测量门禁已重新构建并接受它，且
+无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 276 项
+Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均通过。4B PR 前只剩
+全新无问题 Codex CR。
