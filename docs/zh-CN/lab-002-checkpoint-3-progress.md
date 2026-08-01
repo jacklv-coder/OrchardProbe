@@ -17,7 +17,7 @@
 | 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
 | 3B | Archive/Oracle/证据闭合 | `完成；PR #63-#65 已合并` | 加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，把其外部 SHA-256 绑定进上传前证据，并在闭合 Manifest/Oracle Tuple 缺失或不匹配时拒绝上传。[PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 以 `ca19db07a8badc5d7ce55cc556ab9205181056a5` 合并最终 Gate |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `完成；PR #66 已合并` | 临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture 已覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝。全部 P1/P2 已解决，完整本地验证与必需 CI 已通过，评审后的实现已按 PR #62-#65 合并，且此前没有构建签名 `1.0 (3)` 候选。[PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 以 `e973f6057f5d03e3bab4f5857fdb47ed7699574a` 合并闭环和 3D 转换 |
-| 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `进行中；PR #70 等待 Review 与 CI` | 首方 App ID 与专用 App Group 已在私有环境完成配置，独立临时签名预检通过。PR #67-#69 已闭合导出后 XcodeGen 复核、仅供导出的 `Symbols/` Sidecar、Rollback 分类及可复现私有 Helper Allowlist。下一次全新 Source-bound Run 再次完成签名 Archive/Export，随后安全拒绝主 App 与 Share Extension 在 App Store 重签名时各自合法增长 64 字节的签名尾。没有发布 Oracle/Evidence 或 Candidate；Cleanup Proof 已清理 Staging，也没有上传、安装或设备观察。PR #70 现已绑定归一化后的完整签名前镜像，等待最终 Review/CI |
+| 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `进行中；PR #71 P1 后续修复等待重新 Review/CI` | 首方 App ID 与专用 App Group 已在私有环境完成配置，独立临时签名预检通过。PR #67-#70 已闭合导出后 XcodeGen 复核、仅供导出的 `Symbols/` Sidecar、Rollback 分类、可复现私有 Helper Allowlist、签名尾 Extent 与归一化后的完整签名前镜像。PR #70 合并后的第一次全新 Run 再次完成签名 Archive/Export 并通过新前缀门禁，随后因既有 Fixup-layout 身份也 Hash 了允许增长 64 字节的 `__LINKEDIT.filesize` 而安全拒绝。没有发布 Oracle/Evidence 或 Candidate；Cleanup Proof 已清理 Staging，也没有上传、安装或设备观察 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
 
 ### 3D 顺序执行门禁
@@ -28,15 +28,17 @@
 | 3D.2 | 导出后固定 XcodeGen 复核 | `完成；PR #67 已合并` | 进入固定 Xcode 环境前捕获 Allowlist 内 XcodeGen 的绝对 Path/Version/文件身份；生成 Oracle 时直接复核同一文件；恢复调用方 PATH 后，再以 PATH 选择复核一次才允许发布 |
 | 3D.3 | 关闭的 Xcode 导出策略与已证明的发布前 Rollback | `完成；PR #68 已合并` | 设置 `uploadSymbols=false`，使受控 IPA 保持单一 `Payload/*.app` Tree，同时单独保留 Archive dSYM。只有已验证 Helper 通过持有的目录描述符证明精确 Archive/IPA Pair 存在且没有 Oracle 状态，并发出显式 Cleanup-safe 标记时才解除保留；崩溃、Signal、无标记失败、证明失败与不确定发布均继续保留 |
 | 3D.4 | 可复现私有 Helper 产品复核 | `完成；PR #69 已合并` | PR #68 修改了 Helper，因此旧产品 Allowlist 正确阻止了 3A 准备。使用合并源 `091be371...`、固定 Rust 1.85.0 工具链、已验证离线依赖与受审沙箱独立构建两次，所得 Size、完整 SHA-256 与 CodeDirectory CDHash 完全一致；PR #69 只允许该精确 Tuple，并以 `7c058004c3b002f0a20e4f29b777d18bf5e9fd08` 合并 |
-| 3D.5 | 闭合 App Store 重签名 Extent | `实现完成；PR #70 等待 Review/CI` | 全新 `7c058004...` Run 证明当前 Xcode 保持相同 Thin Container、架构、CPU Subtype、UUID、固定区间及签名起点，只为主 App 与 Share Extension 把末尾 Code Signature/`__LINKEDIT` Extent 增长 64 字节。实现仅接受单 Slice Thin Binary，要求 Archive/IPA 签名尾起点相同且各自精确结束于 EOF；只把解析出的 `__LINKEDIT.filesize` 与 `LC_CODE_SIGNATURE.datasize` 字段归零后比较全部签名前字节，并保留全部既有身份/区间/Fixup/Encryption/签名检查、记录最终 IPA Slice Size。相邻字节或其他任何未列出的前缀变化都闭合失败。精确 P1 修复 Commit `512d359...` 已独立沙箱构建两次，私有 Helper Size、完整 SHA-256 与 CodeDirectory CDHash 一致；精确 Tuple 已加入 Allowlist，第三次正常白名单构建通过 |
-| 3D.6 | 全新精确候选 | `被 3D.5 合并阻塞` | 从干净的已合并签名尾修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用任何失败运行的 Tuple，不得上传、安装或观察设备 |
+| 3D.5 | 闭合 App Store 重签名 Extent 与前缀 | `完成；PR #70 已合并` | 全新 `7c058004...` Run 证明当前 Xcode 保持相同 Thin Container、架构、CPU Subtype、UUID、固定区间及签名起点，只为主 App 与 Share Extension 把末尾 Code Signature/`__LINKEDIT` Extent 增长 64 字节。实现仅接受单 Slice Thin Binary，要求 Archive/IPA 签名尾起点相同且各自精确结束于 EOF；只把解析出的 `__LINKEDIT.filesize` 与 `LC_CODE_SIGNATURE.datasize` 字段归零后比较全部签名前字节，并保留全部既有身份/区间/Fixup/Encryption/签名检查、记录最终 IPA Slice Size。相邻字节或其他任何未列出的前缀变化都闭合失败。精确 P1 修复 Commit `512d359...` 已独立沙箱构建两次，私有 Helper Size、完整 SHA-256 与 CodeDirectory CDHash 一致；精确 Tuple 已加入 Allowlist，第三次正常白名单构建与全部 CI 通过，P1 已解决，PR #70 以 `b601a4b2599f4da9f2ed11869525d245b079ae0c` 合并 |
+| 3D.6 | 闭合重签名后的 Fixup 身份 | `P1 后续修复已实现；PR #71 等待重新 Review/CI` | 从已合并 `b601a4b...` 发起的唯一授权 Run 使用全新且经验证的 Owner-only 3A Tuple，完成签名 Archive/Export，并通过闭合 Extent 与归一化前缀检查。随后它在 Oracle 发布前安全拒绝，因为 `fixup_layout_sha256` 还绑定了获准变化的 `__LINKEDIT.filesize`。PR #71 第一版继续使用实际 Filesize 校验 Segment/Fixup 边界，并在 Fixup 身份中归一化已解析的 `__LINKEDIT` Filesize；`d737ce2...` 已独立构建两次且结果一致，精确 Tuple、第三次正常白名单构建及首轮 CI 均通过。随后 Codex Review 发现一个 P1：同大小 Binary 中开放或独立变化的 `__LINKEDIT` Extent 也可能被归一化。后续 Commit `34ef08b...` 现在只在解析出的 Code Signature 位于 `__LINKEDIT` 内，且签名区与 Segment 均精确结束于 Slice EOF 时，才同时在完整签名前身份与 Fixup 身份中归一化该字段；否则继续绑定实际 Filesize。全部边界检查仍使用实际值，其他所有 Segment Extent 与完整 Fixup Payload 继续绑定，回归覆盖非尾部签名、开放 Extent、同大小变化、重标记和溢出。精确后续源码已独立沙箱构建两次，Helper Size、完整 SHA-256 与 CodeDirectory CDHash 相同，只登记这个新 Tuple，且第三次正常白名单构建通过。再次运行前仍需完整 CI、Codex 重新 Review、P1 解决与合并 |
+| 3D.7 | 全新精确候选 | `被 3D.6 合并阻塞` | 从干净的已合并 Fixup 身份修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用任何失败运行的 Tuple，不得上传、安装或观察设备 |
 
-三次签名运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
+四次签名运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
 Tuple。第一次未发布 Staging 已由 Rollback 清理；第二次确定性失败在保守的 Helper 前
 门禁下保留了一个私有 Staging；经确认其中只有 Archive/IPA、没有 Oracle/Evidence 后，
 已原子移动到非候选诊断名称。第三次确定性签名尾不匹配已证明没有 Oracle 状态并完成
-持久清理。全部 Source-bound Prebuild Tuple 只作为私有历史诊断保留，修复改变 `main`
-后不得复用。
+持久清理。第四次通过归一化前缀门禁，但暴露了 Fixup 身份对
+`__LINKEDIT.filesize` 的矛盾绑定；它同样证明没有 Oracle 状态并完成持久清理。全部
+Source-bound Prebuild Tuple 只作为私有历史诊断保留，修复改变 `main` 后不得复用。
 
 ### 3B 顺序实现切片
 
