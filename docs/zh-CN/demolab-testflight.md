@@ -206,6 +206,12 @@ SDK/Toolchain/xcconfig 选择，并为导出包装器使用以已验证 Xcode To
 版本/Build，归档和证据生成后再次复核。回归 Lane 还会在 PATH 最前放置伪造的
 `xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo`/`otool`，确认它们均不会被选中。
 
+Archive 进入上述仅含 Xcode 工具的最小环境前，会捕获生成工程时使用且已进入
+Allowlist 的 XcodeGen 绝对路径、版本和文件身份。生成 Oracle 时直接重新验证这个
+不可写的精确可执行文件，不会尝试从故意缩减的 `PATH` 再次发现 XcodeGen。调用方环境
+恢复后，Lane 还必须重新执行一次基于 PATH 选择的常规 XcodeGen 校验，才允许发布最终
+候选。回归 Lane 会确认缺失版本或文件身份不匹配在缩减环境中也必须被拒绝。
+
 ## 安全边界
 
 - 只能使用首方 DemoLab、自有 Apple 账号和自有且获授权的 iPhone。
