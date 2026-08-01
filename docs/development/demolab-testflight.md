@@ -276,7 +276,13 @@ displays. `start_run` automatically selects only the next legal ordinal,
 creates a non-overlapping 15-minute window, retains the full Intent on the Mac,
 and exposes only the signed Challenge for import. `close_run` accepts one
 bounded signed Export and derives the Binding before re-running the complete
-verifier. The second close additionally verifies the ordered two-run chain.
+verifier. Before authoring, accepting, or finally verifying any run, the helper
+reopens the original prebuild and frozen candidate and requires the retained
+manifest, Oracle, and pre-upload evidence to remain byte-identical. Every
+signed role report must then match the Oracle's exact role/slice identity,
+initial encryption coverage, and expected mapped plaintext digest. The second
+close additionally requires byte-identical normalized observations across the
+ordered two-run chain.
 
 Every publishing lane uses a random owner-only staging directory, fixed
 filenames, exclusive rename, directory fsync, and exact phase inventory. It

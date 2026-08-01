@@ -256,8 +256,10 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
 关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
 显示的全部 64 位小写十六进制 Fingerprint。开始 Run 自动选择唯一合法的下一 Ordinal，
-完整 Intent 留在 Mac，只导入签名 Challenge。关闭 Run 验证设备签名 Export、派生
-Binding 并再次执行完整验证；第二轮还会验证有序两轮链。
+完整 Intent 留在 Mac，只导入签名 Challenge。开始、关闭或最终验证任何 Run 前，Helper
+都会重新打开原始 Prebuild 与冻结 Candidate，要求保留的 Manifest、Oracle 和预上传证据
+逐字节不变。关闭 Run 会验证设备签名 Export、逐 Role/Slice 对照冻结 Oracle 的身份、初始
+加密覆盖和预期映射明文摘要，再派生 Binding；第二轮还要求有序两轮的规范化观察完全一致。
 
 每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
 和精确阶段清单；已有或不完整阶段会失败关闭，不能覆盖或静默重试。授权 Seed 只留在

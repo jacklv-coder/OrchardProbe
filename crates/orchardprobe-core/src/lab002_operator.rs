@@ -6,7 +6,6 @@
 
 use ed25519_dalek::SigningKey;
 use rand_core::{CryptoRng, RngCore};
-use serde::Serialize;
 
 use super::{
     AUTHORIZATION_POLICY_VERSION, LAB002_PROFILE, Lab002Error,
@@ -17,17 +16,14 @@ use super::{
         DeviceSelectionConfirmation, Environment, LabOracle, LogicalFilename, RoleFileHashes,
         RoleReport, SessionReport, SignedEnrollmentReceipt, SignedSessionExport,
     },
-    canonical_json,
     host::{
         EnrollmentArtifactBytes, RunArtifactBytes, VerifiedEnrollment, VerifiedRun,
-        device_selection_fingerprint_sha256, sign_authorized_operation, verified_artifact_sha256,
-        verify_authorized_operation, verify_enrollment_chain, verify_enrollment_receipt,
-        verify_run_chain, verify_session_export,
+        device_selection_fingerprint_sha256, expected_inventory_sha256, sign_authorized_operation,
+        verified_artifact_sha256, verify_authorized_operation, verify_enrollment_chain,
+        verify_enrollment_receipt, verify_run_chain, verify_session_export,
     },
     lower_hex, sha256_hex,
 };
-
-const EXPECTED_INVENTORY_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.expected-inventory.v1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AuthorizationAssertions {
@@ -302,25 +298,6 @@ pub fn close_enrollment(
     ))
 }
 
-#[derive(Serialize)]
-struct InventoryProjection<'a> {
-    roles: &'a [super::artifacts::OracleRole],
-}
-
-pub fn expected_inventory_sha256(oracle: &LabOracle) -> Result<String, Lab002Error> {
-    oracle.validate()?;
-    let canonical = canonical_json(&InventoryProjection {
-        roles: &oracle.roles,
-    })?;
-    let size = u32::try_from(canonical.len())
-        .map_err(|_| Lab002Error::InvalidEvidence("expected inventory projection is too large"))?;
-    let mut input = Vec::with_capacity(EXPECTED_INVENTORY_DOMAIN.len() + 4 + canonical.len());
-    input.extend_from_slice(EXPECTED_INVENTORY_DOMAIN);
-    input.extend_from_slice(&size.to_be_bytes());
-    input.extend_from_slice(&canonical);
-    Ok(sha256_hex(&input))
-}
-
 pub struct RunControlRequest {
     pub preupload_evidence_sha256: String,
     pub run_ordinal: u8,
@@ -472,6 +449,7 @@ fn entry<T: ClosedArtifact>(
 
 pub fn close_run(
     enrollment: &VerifiedEnrollment,
+    frozen_oracle: &[u8],
     run_acknowledgement: &[u8],
     authorization_envelope: &[u8],
     collection_intent: &[u8],
@@ -527,6 +505,7 @@ pub fn close_run(
     let verified = verify_run_chain(
         enrollment,
         RunArtifactBytes {
+            frozen_oracle,
             run_acknowledgement,
             authorization_envelope,
             collection_intent,

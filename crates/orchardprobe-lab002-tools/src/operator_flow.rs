@@ -12,12 +12,12 @@ use orchardprobe_core::lab002::artifacts::{
     DeviceEnrollmentBinding, Environment, LabOracle,
 };
 use orchardprobe_core::lab002::host::{
-    EnrollmentArtifactBytes, RunArtifactBytes, verify_enrollment_chain, verify_run_chain,
-    verify_two_run_chain,
+    EnrollmentArtifactBytes, RunArtifactBytes, expected_inventory_sha256, verify_enrollment_chain,
+    verify_run_chain, verify_two_run_chain,
 };
 use orchardprobe_core::lab002::operator::{
     AuthorizationAssertions, RunControlRequest, close_enrollment, close_run,
-    create_installation_control, create_run_control, expected_inventory_sha256,
+    create_installation_control, create_run_control,
 };
 use rand_core::OsRng;
 use serde::{Deserialize, Serialize};
@@ -491,6 +491,43 @@ fn load_source_bundle(
     })
 }
 
+fn verify_retained_source_bundle(
+    root: &PrivateOutputRoot,
+    prebuild: &PrivateOutputRoot,
+    candidate: &PrivateOutputRoot,
+) -> Result<SourceBundle, String> {
+    let source = load_source_bundle(prebuild, candidate)?;
+    let retained_manifest = read_root_artifact(root, SOURCE_MANIFEST_NAME)?;
+    let retained_oracle = read_root_artifact(root, SOURCE_ORACLE_NAME)?;
+    let retained_evidence = read_root_artifact(root, SOURCE_EVIDENCE_NAME)?;
+    require_retained_source_match(
+        &source,
+        &retained_manifest,
+        &retained_oracle,
+        &retained_evidence,
+    )?;
+    Ok(source)
+}
+
+fn require_retained_source_match(
+    source: &SourceBundle,
+    retained_manifest: &[u8],
+    retained_oracle: &[u8],
+    retained_evidence: &[u8],
+) -> Result<(), String> {
+    if retained_manifest == source.manifest
+        && retained_oracle == source.oracle
+        && retained_evidence == source.evidence
+    {
+        Ok(())
+    } else {
+        Err(
+            "retained experiment source no longer matches the exact frozen prebuild/candidate tuple"
+                .into(),
+        )
+    }
+}
+
 fn read_root_artifact(root: &PrivateOutputRoot, name: &str) -> Result<Vec<u8>, String> {
     read_private_artifact(&root.directory, name, MAX_OPERATOR_INPUT_BYTES).map(|value| value.bytes)
 }
@@ -780,26 +817,28 @@ fn start_run(
     arguments: &[OsString],
     experiment_descriptor: File,
     prebuild_descriptor: File,
+    candidate_descriptor: File,
     mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<OperatorOutput, String> {
-    if arguments.len() != 13 {
-        return Err("operator-start-run requires bound experiment and prebuild directories".into());
+    if arguments.len() != 19 {
+        return Err(
+            "operator-start-run requires bound experiment, prebuild, and candidate directories"
+                .into(),
+        );
     }
     let (experiment_path, experiment_identity) =
         parse_bound(arguments, 1, "--experiment-directory")?;
     let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
+    let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
     let root = held_root(experiment_path, experiment_identity, experiment_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
+    let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     let request: StartRunRequest = read_request(io::stdin().lock())?;
     if request.schema != START_RUN_SCHEMA {
         return Err("operator run request schema is invalid".into());
     }
     let (_, enrollment) = verified_enrollment(&root)?;
-    let (signing_key, prebuild_manifest, _record) = private_seed_and_record(&prebuild)?;
-    let retained_manifest = read_root_artifact(&root, SOURCE_MANIFEST_NAME)?;
-    if prebuild_manifest != retained_manifest {
-        return Err("operator prebuild no longer matches the enrolled experiment".into());
-    }
+    let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     let run_one_control = phase_exists(&root, &run_directory_name(1, "control"))?;
     let run_one_result = phase_exists(&root, &run_directory_name(1, "result"))?;
     let run_two_control = phase_exists(&root, &run_directory_name(2, "control"))?;
@@ -826,14 +865,12 @@ fn start_run(
         ]
     };
     exact_experiment_inventory(&root, &phases)?;
-    let oracle = read_root_artifact(&root, SOURCE_ORACLE_NAME)?;
-    let evidence = read_root_artifact(&root, SOURCE_EVIDENCE_NAME)?;
     let control = create_run_control(
-        &signing_key,
+        &source.signing_key,
         &enrollment,
-        &oracle,
+        &source.oracle,
         RunControlRequest {
-            preupload_evidence_sha256: sha256_hex(&evidence),
+            preupload_evidence_sha256: sha256_hex(&source.evidence),
             run_ordinal: ordinal,
             prior_collection_binding_sha256: prior,
             assertions: assertions(
@@ -873,13 +910,23 @@ fn start_run(
 fn close_run_phase(
     arguments: &[OsString],
     experiment_descriptor: File,
+    prebuild_descriptor: File,
+    candidate_descriptor: File,
     mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<OperatorOutput, String> {
-    if arguments.len() != 7 {
-        return Err("operator-close-run requires one bound experiment directory".into());
+    if arguments.len() != 19 {
+        return Err(
+            "operator-close-run requires bound experiment, prebuild, and candidate directories"
+                .into(),
+        );
     }
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
+    let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
+    let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
     let root = held_root(path, identity, experiment_descriptor)?;
+    let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
+    let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
+    let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     let one_control_name = run_directory_name(1, "control");
     let one_result_name = run_directory_name(1, "result");
     let two_control_name = run_directory_name(2, "control");
@@ -908,6 +955,7 @@ fn close_run_phase(
     let export = read_raw(MAX_OPERATOR_INPUT_BYTES)?;
     let (closure, verified_run) = close_run(
         &enrollment,
+        &source.oracle,
         &acknowledgement,
         &envelope,
         &intent,
@@ -930,6 +978,7 @@ fn close_run_phase(
         let verified_one = verify_run_chain(
             &enrollment,
             RunArtifactBytes {
+                frozen_oracle: &source.oracle,
                 run_acknowledgement: &run_one.acknowledgement,
                 authorization_envelope: &run_one.envelope,
                 collection_intent: &run_one.intent,
@@ -959,12 +1008,21 @@ fn close_run_phase(
 fn verify_complete(
     arguments: &[OsString],
     experiment_descriptor: File,
+    prebuild_descriptor: File,
+    candidate_descriptor: File,
 ) -> Result<OperatorOutput, String> {
-    if arguments.len() != 7 {
-        return Err("operator-verify requires one bound experiment directory".into());
+    if arguments.len() != 19 {
+        return Err(
+            "operator-verify requires bound experiment, prebuild, and candidate directories".into(),
+        );
     }
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
+    let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
+    let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
     let root = held_root(path, identity, experiment_descriptor)?;
+    let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
+    let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
+    let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     exact_experiment_inventory(
         &root,
         &[
@@ -983,6 +1041,7 @@ fn verify_complete(
     let verified_one = verify_run_chain(
         &enrollment,
         RunArtifactBytes {
+            frozen_oracle: &source.oracle,
             run_acknowledgement: &one.acknowledgement,
             authorization_envelope: &one.envelope,
             collection_intent: &one.intent,
@@ -994,6 +1053,7 @@ fn verify_complete(
     let verified_two = verify_run_chain(
         &enrollment,
         RunArtifactBytes {
+            frozen_oracle: &source.oracle,
             run_acknowledgement: &two.acknowledgement,
             authorization_envelope: &two.envelope,
             collection_intent: &two.intent,
@@ -1037,19 +1097,34 @@ pub(super) fn execute(
             arguments,
             output_descriptor,
             secondary_descriptor.ok_or("held prebuild directory is missing")?,
+            candidate_descriptor.ok_or("held candidate directory is missing")?,
             arm_publication,
         ),
-        Some("operator-close-run") => {
-            close_run_phase(arguments, output_descriptor, arm_publication)
-        }
-        Some("operator-verify") => verify_complete(arguments, output_descriptor),
+        Some("operator-close-run") => close_run_phase(
+            arguments,
+            output_descriptor,
+            secondary_descriptor.ok_or("held prebuild directory is missing")?,
+            candidate_descriptor.ok_or("held candidate directory is missing")?,
+            arm_publication,
+        ),
+        Some("operator-verify") => verify_complete(
+            arguments,
+            output_descriptor,
+            secondary_descriptor.ok_or("held prebuild directory is missing")?,
+            candidate_descriptor.ok_or("held candidate directory is missing")?,
+        ),
         _ => Err("unknown LAB-002 operator command".into()),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{next_run_ordinal, open_run_ordinal, split_fingerprint_and_receipt};
+    use ed25519_dalek::SigningKey;
+
+    use super::{
+        SourceBundle, next_run_ordinal, open_run_ordinal, require_retained_source_match,
+        split_fingerprint_and_receipt,
+    };
 
     fn phase_states() -> impl Iterator<Item = (bool, bool, bool, bool)> {
         (0_u8..16).map(|bits| (bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0))
@@ -1094,6 +1169,23 @@ mod tests {
         );
         assert!(
             split_fingerprint_and_receipt(format!("{}\n", "ab".repeat(32)).as_bytes()).is_err()
+        );
+    }
+
+    #[test]
+    fn retained_source_match_includes_preupload_evidence_bytes() {
+        let source = SourceBundle {
+            signing_key: SigningKey::from_bytes(&[7; 32]),
+            manifest: b"manifest".to_vec(),
+            oracle: b"oracle".to_vec(),
+            evidence: b"evidence".to_vec(),
+            build_binding_sha256: "11".repeat(32),
+        };
+        assert!(
+            require_retained_source_match(&source, b"manifest", b"oracle", b"evidence").is_ok()
+        );
+        assert!(
+            require_retained_source_match(&source, b"manifest", b"oracle", b"replacement").is_err()
         );
     }
 }

@@ -280,6 +280,8 @@ fn main() -> ExitCode {
                 | "verify-upload-gate"
                 | "operator-start-enrollment"
                 | "operator-start-run"
+                | "operator-close-run"
+                | "operator-verify"
         )
     ) {
         match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
@@ -292,7 +294,15 @@ fn main() -> ExitCode {
     } else {
         None
     };
-    let candidate_directory = if matches!(operation, Some("operator-start-enrollment")) {
+    let candidate_directory = if matches!(
+        operation,
+        Some(
+            "operator-start-enrollment"
+                | "operator-start-run"
+                | "operator-close-run"
+                | "operator-verify"
+        )
+    ) {
         match File::open(PRIVATE_CANDIDATE_DIRECTORY_PATH) {
             Ok(directory) => Some(directory),
             Err(error) => {

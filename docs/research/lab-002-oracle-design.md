@@ -1085,7 +1085,7 @@ LAB-002 is Go only when both sessions satisfy every row:
 |---|---|
 | Frozen provenance | Same source commit, version/build, private authorization-manifest digest, build binding, IPA digest, externally stored oracle digest, toolchain, and three-role inventory |
 | Authorized targets | Every role's observed target-identity binding matches the private authorized Bundle ID, signed identifier/team, and selected entitlement tuple |
-| Authorized operation | One fresh supported-policy acknowledgement precedes installation and one precedes each run; all four RFC-0001 assertions are true, and each exact app/device/technique/data/retention/time scope is authenticated by the compiled host authorization key and validates as one-time |
+| Authorized operation | One fresh supported-policy acknowledgement precedes installation and one precedes each run; explicit confirmation plus all four RFC-0001 scope assertions are true, and each exact app/device/technique/data/retention/time scope is authenticated by the compiled host authorization key and validates as one-time |
 | Fresh collection | Two distinct one-shot host challenges, valid response digests, ordered windows, and a valid run-2-to-run-1 binding chain |
 | Physical environment | Authenticated installation enrollment and full host/device fingerprint comparison select the physical device before run 1; its device-only key signs the receipt and both exports, and both runs have the same non-null enrollment/device-installation bindings, hardware model, iOS product version, and iOS build, with no reinstall, state reset, device change, or OS update |
 | Installed inventory | Exact role/slice equality; no missing, extra, inactive, or reclassified slice |

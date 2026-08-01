@@ -7455,7 +7455,12 @@ platform :ios do
           "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
           "LAB-002 prebuild"
         )
-      handles.concat([experiment_handle, prebuild_handle])
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY",
+          "LAB-002 frozen candidate"
+        )
+      handles.concat([experiment_handle, prebuild_handle, candidate_handle])
       request = lab002_operator_assertions!.merge(
         "schema" => "orchardprobe.lab002.operator-start-run.v1"
       )
@@ -7478,6 +7483,14 @@ platform :ios do
             descriptor: 5,
             label: "LAB-002 prebuild",
           },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
         ],
         input: JSON.generate(request),
         publishes: true
@@ -7493,12 +7506,20 @@ platform :ios do
   lane :demolab_operator_close_run do
     ensure_manual_lane!
     ensure_clean_source!
-    handle = nil
+    handles = []
     begin
       path, handle, identity = lab002_operator_bound_directory!(
-        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
-        "LAB-002 experiment"
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY", "LAB-002 experiment"
       )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY", "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
+        )
+      handles.concat([handle, prebuild_handle, candidate_handle])
       export_path = required_environment("DEMO_LAB_LAB002_EXPORT_PATH")
       unless Pathname.new(export_path).absolute?
         UI.user_error!("DEMO_LAB_LAB002_EXPORT_PATH must be absolute.")
@@ -7519,6 +7540,22 @@ platform :ios do
             descriptor: 4,
             label: "LAB-002 experiment",
           },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
         ],
         input: export,
         publishes: true
@@ -7526,7 +7563,7 @@ platform :ios do
       UI.success("Verified the signed export and closed the current run.")
       result
     ensure
-      handle&.close unless handle&.closed?
+      handles.each { |item| item.close unless item.closed? }
     end
   end
 
@@ -7534,12 +7571,21 @@ platform :ios do
   lane :demolab_operator_verify do
     ensure_manual_lane!
     ensure_clean_source!
-    handle = nil
+    handles = []
     begin
       path, handle, identity = lab002_operator_bound_directory!(
         "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
         "LAB-002 experiment"
       )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY", "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
+        )
+      handles.concat([handle, prebuild_handle, candidate_handle])
       result = run_lab002_operator_helper!(
         operation: "operator-verify",
         bindings: [
@@ -7551,6 +7597,22 @@ platform :ios do
             descriptor: 4,
             label: "LAB-002 experiment",
           },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
         ],
         input: "",
         publishes: false
@@ -7558,7 +7620,7 @@ platform :ios do
       UI.success("Verified the complete retained enrollment and two-run chain.")
       result
     ensure
-      handle&.close unless handle&.closed?
+      handles.each { |item| item.close unless item.closed? }
     end
   end
 
