@@ -1,7 +1,7 @@
 # LAB-002 检查点 3 进度台账
 
-激活 [PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61)
-进入 `main` 后的状态：**DemoLab `1.0 (3)` 为 `active`**
+完成记录 [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)
+进入 `main` 后的状态：**本地 DemoLab `1.0 (3)` Candidate/Oracle Pair 已完成**
 
 跟踪 Issue：[#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
@@ -9,7 +9,7 @@
 签名候选与冻结上传前 Oracle。本授权不包含 TestFlight 上传、安装、物理设备观察或
 设备 Backend 工作；这些操作仍须分别通过门禁。
 
-只有本激活 PR 合并进 `main` 后，本台账才具有权威性。工作必须依次进行；前一行完成
+只有完成记录 PR #72 合并进 `main` 后，本台账才具有权威性。工作必须依次进行；前一行完成
 前，后一行保持阻塞。
 
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
@@ -18,7 +18,7 @@
 | 3B | Archive/Oracle/证据闭合 | `完成；PR #63-#65 已合并` | 加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，把其外部 SHA-256 绑定进上传前证据，并在闭合 Manifest/Oracle Tuple 缺失或不匹配时拒绝上传。[PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 以 `ca19db07a8badc5d7ce55cc556ab9205181056a5` 合并最终 Gate |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `完成；PR #66 已合并` | 临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture 已覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝。全部 P1/P2 已解决，完整本地验证与必需 CI 已通过，评审后的实现已按 PR #62-#65 合并，且此前没有构建签名 `1.0 (3)` 候选。[PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 以 `e973f6057f5d03e3bab4f5857fdb47ed7699574a` 合并闭环和 3D 转换 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `本地完成；PR #71 已合并` | PR #71 闭合了最后的重签名 Fixup 身份缺口；P1 修复、全部 CI 通过且精确 Head 的 Codex 重新 Review 未发现重大问题后，以 `319ba9480fa3d8051869a48cdd78c54e66f8edd2` 合并。从该干净合并 Commit 创建的全新 Source-bound 3A Tuple 随后驱动恰好一次签名 Archive/Export Run，并发布了通过验证的 Owner-only Archive、IPA、冻结 Oracle 与 Evidence Tuple。没有 TestFlight 上传、安装或设备观察 |
-| 3E | 脱敏完成记录 | `进行中；完成记录 PR 待处理` | 已独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定。只在 Issue #55 和本中英文文档记录非秘密 Hash/工具链/Build 事实，然后执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
+| 3E | 脱敏完成记录 | `完成；PR #72 完成门禁` | 已独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只把非秘密 Hash/工具链/Build 事实记录到 [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527) 与本中英文文档。[PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) 是检查点 3 最终 Codex CR/CI/Review 与合并门禁，其合并使本完成状态生效 |
 
 ### 3D 顺序执行门禁
 
@@ -30,7 +30,7 @@
 | 3D.4 | 可复现私有 Helper 产品复核 | `完成；PR #69 已合并` | PR #68 修改了 Helper，因此旧产品 Allowlist 正确阻止了 3A 准备。使用合并源 `091be371...`、固定 Rust 1.85.0 工具链、已验证离线依赖与受审沙箱独立构建两次，所得 Size、完整 SHA-256 与 CodeDirectory CDHash 完全一致；PR #69 只允许该精确 Tuple，并以 `7c058004c3b002f0a20e4f29b777d18bf5e9fd08` 合并 |
 | 3D.5 | 闭合 App Store 重签名 Extent 与前缀 | `完成；PR #70 已合并` | 全新 `7c058004...` Run 证明当前 Xcode 保持相同 Thin Container、架构、CPU Subtype、UUID、固定区间及签名起点，只为主 App 与 Share Extension 把末尾 Code Signature/`__LINKEDIT` Extent 增长 64 字节。实现仅接受单 Slice Thin Binary，要求 Archive/IPA 签名尾起点相同且各自精确结束于 EOF；只把解析出的 `__LINKEDIT.filesize` 与 `LC_CODE_SIGNATURE.datasize` 字段归零后比较全部签名前字节，并保留全部既有身份/区间/Fixup/Encryption/签名检查、记录最终 IPA Slice Size。相邻字节或其他任何未列出的前缀变化都闭合失败。精确 P1 修复 Commit `512d359...` 已独立沙箱构建两次，私有 Helper Size、完整 SHA-256 与 CodeDirectory CDHash 一致；精确 Tuple 已加入 Allowlist，第三次正常白名单构建与全部 CI 通过，P1 已解决，PR #70 以 `b601a4b2599f4da9f2ed11869525d245b079ae0c` 合并 |
 | 3D.6 | 闭合重签名后的 Fixup 身份 | `完成；PR #71 已合并` | 从已合并 `b601a4b...` 发起的唯一授权 Run 使用全新且经验证的 Owner-only 3A Tuple，完成签名 Archive/Export，并通过闭合 Extent 与归一化前缀检查。随后它在 Oracle 发布前安全拒绝，因为 `fixup_layout_sha256` 还绑定了获准变化的 `__LINKEDIT.filesize`。PR #71 第一版继续使用实际 Filesize 校验 Segment/Fixup 边界，并在 Fixup 身份中归一化已解析的 `__LINKEDIT` Filesize；`d737ce2...` 已独立构建两次且结果一致，精确 Tuple、第三次正常白名单构建及首轮 CI 均通过。随后 Codex Review 发现一个 P1：同大小 Binary 中开放或独立变化的 `__LINKEDIT` Extent 也可能被归一化。后续 Commit `34ef08b...` 只在解析出的 Code Signature 位于 `__LINKEDIT` 内，且签名区与 Segment 均精确结束于 Slice EOF 时，才同时在完整签名前身份与 Fixup 身份中归一化该字段；否则继续绑定实际 Filesize。全部边界检查仍使用实际值，其他所有 Segment Extent 与完整 Fixup Payload 继续绑定，回归覆盖非尾部签名、开放 Extent、同大小变化、重标记和溢出。精确后续源码已独立沙箱构建两次，Helper Size、完整 SHA-256 与 CodeDirectory CDHash 相同；只登记该 Tuple，且第三次正常白名单构建通过。P1 已解决，精确 Head 的三项必需 CI 全部通过，最终 Codex 重新 Review 未发现重大问题，PR #71 以 `319ba9480fa3d8051869a48cdd78c54e66f8edd2` 合并 |
-| 3D.7 | 全新精确候选 | `本地完成；等待 3E 记录` | 从干净的已合并 Commit `319ba9480fa3d8051869a48cdd78c54e66f8edd2` 创建全新 Owner-only 3A Tuple，并驱动恰好一次签名 `demolab_archive` Run。该 Run 发布了 Archive、IPA、冻结 Oracle 与上传前 Evidence；独立发布后检查确认精确 Source/Version/Build、Clean-tree 标记、Manifest/Oracle/IPA 摘要交叉绑定、Build Binding、Target Identity Set、签名身份校验及出口合规校验。Evidence 保持 `pending_controlled_device_observation`，Upload 与 Installation Lineage 均为 False |
+| 3D.7 | 全新精确候选 | `本地完成；已记录到 Issue #55 与 PR #72` | 从干净的已合并 Commit `319ba9480fa3d8051869a48cdd78c54e66f8edd2` 创建全新 Owner-only 3A Tuple，并驱动恰好一次签名 `demolab_archive` Run。该 Run 发布了 Archive、IPA、冻结 Oracle 与上传前 Evidence；独立发布后检查确认精确 Source/Version/Build、Clean-tree 标记、Manifest/Oracle/IPA 摘要交叉绑定、Build Binding、Target Identity Set、签名身份校验及出口合规校验。Evidence 保持 `pending_controlled_device_observation`，Upload 与 Installation Lineage 均为 False |
 
 前四次签名运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
 Tuple。第一次未发布 Staging 已由 Rollback 清理；第二次确定性失败在保守的 Helper 前
@@ -96,7 +96,7 @@ CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`。
 | 顺序 | 门禁 | 状态 | 完成标准 |
 |---:|---|---|---|
 | 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
-| 3B.2.2 | Archive/IPA 一致性 | `完成；3D.5 Refinement 进行中` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、非签名 Extent、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致。当前 Xcode 的有界 App Store 重签名 Extent 只能通过闭合的 3D.5 签名尾规则处理；不得跳过任何 Role 或 Slice |
+| 3B.2.2 | Archive/IPA 一致性 | `完成；3D.5 Refinement 已合并` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、非签名 Extent、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致。当前 Xcode 的有界 App Store 重签名 Extent 只能通过闭合的 3D.5 签名尾规则处理；不得跳过任何 Role 或 Slice |
 | 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
 | 3B.2.4 | 纯设备无关闭环测试 | `完成；PR #64 已合并` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、签名特殊槽、Plaintext、规范化、权限、替换、逐 Entry IPA 变更与原子发布失败；文档、Codex CR 与全部必需 CI 均在 3B.3 开始前通过 |
 

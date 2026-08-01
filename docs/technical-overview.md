@@ -236,7 +236,8 @@ within its approved boundary. LAB-002 completed its device-free design and
 implementation checkpoints through PR #59. Checkpoint 3 has produced exactly
 one verified local DemoLab `1.0 (3)` signed candidate and frozen pre-upload
 oracle from the clean merged PR #71 source; its sanitized completion record is
-still being merged. Upload, installation, and device observation remain
+the final [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) merge
+gate. Upload, installation, and device observation remain
 unauthorized. It evaluates
 a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in

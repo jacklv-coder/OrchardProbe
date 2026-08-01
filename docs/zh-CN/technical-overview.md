@@ -196,7 +196,8 @@ Version、可执行文件清单、架构与 Slice、Mach-O UUID 和代码签名�
 有界 No-Go：在批准边界内无法独立观察精确已安装 Lineage、初始保护和明文范围。
 LAB-002 已通过 PR #59 完成无设备设计与实现检查点。检查点 3 已从 PR #71 合并后的
 干净源码生成恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选与冻结上传前
-Oracle，其脱敏完成记录仍在合并中；上传、安装与设备观察仍未授权。
+Oracle；其脱敏完成记录只剩最终 [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)
+合并门禁，上传、安装与设备观察仍未授权。
 它用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；
 设备观察前，已评审的设计/构建清单必须冻结精确 DemoLab 源码 Commit/Build 身份、
