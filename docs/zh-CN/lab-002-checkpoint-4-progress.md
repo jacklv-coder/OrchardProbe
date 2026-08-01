@@ -134,3 +134,11 @@ CodeDirectory CDHash `6777ec989e0c6ac034ea3905b3646f61fb1d1b98`。临时测量 H
 把该精确 Tuple 加入已评审 Allowlist 前完整移除。正常非测量门禁已重新构建并接受它，且
 无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 271 项
 Workspace 测试、Ruby 语法和 Diff 检查也均通过。4B PR 前只剩全新无问题 Codex CR。
+
+该 CR 又发现两个 P2 完整性缺口：Close-run 没有拒绝当前 Control 阶段目录中的额外条目；
+可复用工件边界也没有要求 Oracle 的 Generator Revision 与 Source Commit 相等。修复后会
+持有当前 Control 目录描述符，在读取任何 Control 工件前验证精确三文件清单，并把
+Generator/Source Revision 相等纳入 `LabOracle` 验证，使 Control 创作与 Run 验证共享同一
+约束。新增回归分别拒绝未计入的 Control 条目和由另一 Generator Revision 归因、格式仍合法
+的 Oracle。由于该修复改变 Rust Helper，仍需新的两次独立可复现测量、Allowlist Tuple、
+完整门禁和全新无问题 CR。

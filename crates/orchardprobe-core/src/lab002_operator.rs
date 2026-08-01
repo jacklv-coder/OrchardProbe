@@ -862,4 +862,30 @@ mod tests {
         assert_ne!(acknowledgement.acknowledgement_id, core.challenge);
         assert_ne!(core.challenge, core.collection_id);
     }
+
+    #[test]
+    fn run_control_rejects_an_oracle_from_a_different_generator_revision() {
+        let (host_key, manifest, _, _, enrollment) = closed_enrollment();
+        let mut oracle = oracle(&host_key, &sha256_hex(&manifest), &digest(0x45));
+        oracle.generator_revision = "22".repeat(20);
+        let oracle_canonical = crate::lab002::canonical_json(&oracle).unwrap();
+        assert!(LabOracle::from_canonical_bytes(&oracle_canonical).is_err());
+
+        assert!(
+            create_run_control(
+                &host_key,
+                &enrollment,
+                &oracle_canonical,
+                RunControlRequest {
+                    preupload_evidence_sha256: digest(0x47),
+                    run_ordinal: 1,
+                    prior_collection_binding_sha256: None,
+                    assertions: assertions(),
+                    acknowledged_at: 2_000,
+                },
+                &mut TestRng(9),
+            )
+            .is_err()
+        );
+    }
 }

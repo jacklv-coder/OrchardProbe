@@ -619,7 +619,7 @@ fn lab002_schema_closes_every_artifact_family_and_fixed_order() {
             "build_number": "1",
             "configuration": "Release",
             "observer_revision": "lab002-observer-v1",
-            "generator_revision": "22".repeat(20),
+            "generator_revision": "11".repeat(20),
             "build_binding_sha256": digest(0x05),
             "authorized_target_manifest_sha256": digest(0x06),
             "authorization_public_key": digest(0x16),

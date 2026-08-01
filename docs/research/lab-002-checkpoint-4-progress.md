@@ -184,3 +184,14 @@ was added to the reviewed allowlist. The normal non-measurement gate rebuilt
 and admitted it and passed the unsigned Simulator fixture; formatting, locked
 Clippy with warnings denied, all 271 Workspace tests, Ruby syntax, and the diff
 check also pass. A fresh clean Codex CR remains required before the 4B PR.
+
+That CR found two final P2 integrity gaps: close-run did not reject an extra
+entry inside the current control phase, and the reusable artifact boundary did
+not require the Oracle generator revision to equal its source commit. The
+remediation holds the current control directory, verifies its exact three-file
+inventory before reading any control artifact, and makes generator/source
+revision equality part of `LabOracle` validation shared by control authoring
+and run verification. Regressions reject both an unaccounted control entry and
+a syntactically valid Oracle attributed to a different generator revision.
+Because this changes the Rust Helper, a new two-build reproducibility
+measurement, allowlist tuple, complete gate, and fresh clean CR are required.

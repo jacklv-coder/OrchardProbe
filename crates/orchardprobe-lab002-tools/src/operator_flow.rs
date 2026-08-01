@@ -981,15 +981,6 @@ fn read_root_artifact(root: &PrivateOutputRoot, name: &str) -> Result<Vec<u8>, S
     read_private_artifact(&root.directory, name, MAX_OPERATOR_INPUT_BYTES).map(|value| value.bytes)
 }
 
-fn read_phase_artifact(
-    root: &PrivateOutputRoot,
-    directory_name: &str,
-    name: &str,
-) -> Result<Vec<u8>, String> {
-    let directory = open_owner_directory(&root.directory, directory_name)?;
-    read_private_artifact(&directory, name, MAX_OPERATOR_INPUT_BYTES).map(|value| value.bytes)
-}
-
 fn enrollment_files(root: &PrivateOutputRoot) -> Result<EnrollmentFiles, String> {
     let result = open_owner_directory(&root.directory, ENROLLMENT_RESULT_DIRECTORY)?;
     exact_inventory(
@@ -1411,9 +1402,25 @@ fn close_run_phase(
     };
     exact_experiment_inventory(&root, &phases)?;
     let control_name = run_directory_name(ordinal, "control");
-    let acknowledgement = read_phase_artifact(&root, &control_name, RUN_ACK_NAME)?;
-    let envelope = read_phase_artifact(&root, &control_name, RUN_ENVELOPE_NAME)?;
-    let intent = read_phase_artifact(&root, &control_name, RUN_INTENT_NAME)?;
+    let control_directory = open_owner_directory(&root.directory, &control_name)?;
+    exact_inventory(
+        &control_directory,
+        &[RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME],
+    )?;
+    let acknowledgement =
+        read_private_artifact(&control_directory, RUN_ACK_NAME, MAX_OPERATOR_INPUT_BYTES)?.bytes;
+    let envelope = read_private_artifact(
+        &control_directory,
+        RUN_ENVELOPE_NAME,
+        MAX_OPERATOR_INPUT_BYTES,
+    )?
+    .bytes;
+    let intent = read_private_artifact(
+        &control_directory,
+        RUN_INTENT_NAME,
+        MAX_OPERATOR_INPUT_BYTES,
+    )?
+    .bytes;
     verify_intent_source(&root, &intent)?;
     let export = read_raw(MAX_OPERATOR_INPUT_BYTES)?;
     let (closure, verified_run) = close_run(
@@ -1594,10 +1601,11 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, SourceBundle, UploadResult,
-        derive_prebuild_bindings, has_exact_derived_prebuild_bindings, next_run_ordinal,
-        open_run_ordinal, require_retained_source_match, split_fingerprint_and_receipt,
-        valid_upload_result, validate_evidence_artifact, verify_frozen_archive,
+        EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME,
+        RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle, UploadResult, derive_prebuild_bindings,
+        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        require_retained_source_match, split_fingerprint_and_receipt, valid_upload_result,
+        validate_evidence_artifact, verify_frozen_archive,
     };
 
     fn complete_evidence_json() -> Value {
@@ -1762,6 +1770,20 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn control_phase_inventory_rejects_an_unaccounted_entry() {
+        let temporary = tempdir().unwrap();
+        for name in [RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME] {
+            File::create(temporary.path().join(name)).unwrap();
+        }
+        let directory = File::open(temporary.path()).unwrap();
+        let expected = [RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME];
+        assert!(exact_inventory(&directory, &expected).is_ok());
+
+        File::create(temporary.path().join("unexpected.json")).unwrap();
+        assert!(exact_inventory(&directory, &expected).is_err());
     }
 
     #[test]
