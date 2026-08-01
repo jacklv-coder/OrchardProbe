@@ -235,6 +235,45 @@ Payload 继续被绑定。Oracle 会记录供已安装 Build Verifier 使用的 
 Fat 或多 Slice Size 变化、签名起点移动、闭合签名尾之外的增长，或任何既有身份/区间变化
 仍会失败关闭。
 
+## 检查点 4 Host 操作流程
+
+这套维护者流程必须先随实现 PR 进入 `main`，随后才能安装精确 TestFlight Build。
+它不是安装命令，不会访问 App Group、启动 App、上传 Build，也不接受用于观察的自由
+Target/Path/Range。固定顺序为：
+
+```sh
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_verify
+```
+
+开始 Enrollment 只接受冻结 Prebuild/Candidate Tuple，在仓库外已存在的 `0700` 输出根
+下排他发布一个随机实验目录，并保留全新 15 分钟确认/信封。通过 TestFlight Provision
+已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
+关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
+显示的全部 64 位小写十六进制 Fingerprint。开始 Run 自动选择唯一合法的下一 Ordinal，
+完整 Intent 留在 Mac，只导入签名 Challenge。关闭 Run 验证设备签名 Export、派生
+Binding 并再次执行完整验证；第二轮还会验证有序两轮链。
+
+每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
+和精确阶段清单；已有或不完整阶段会失败关闭，不能覆盖或静默重试。授权 Seed 只留在
+冻结 Prebuild，设备 Enrollment 私钥永不离开设备。
+
+所有 Lane 都要求
+`DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI`，拒绝 CI、
+Dirty Checkout，以及不在已认证 GitHub `main` 历史中的 `HEAD`；完成前还会重新检查
+Clean、Reviewed Source。本流程需要仓库外私有目录变量、所选自有 iPhone 的脱敏
+Hardware/iOS Tuple、每次操作
+前全新的五项 `DEMO_LAB_LAB002_CONFIRM_* = true` RFC-0001 确认，以及关闭 Enrollment
+时的 Receipt Path、完整 Fingerprint 和显式匹配确认，或关闭 Run 时的 Export Path。
+具体变量名与约束见英文 Runbook。不得把私有值、实验 ID、Fingerprint、路径、
+Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或已开始后中断的阶段必须
+按 No-Go 保留，不能删除后重建成 Pass。
+
 ## 安全边界
 
 - 只能使用首方 DemoLab、自有 Apple 账号和自有且获授权的 iPhone。

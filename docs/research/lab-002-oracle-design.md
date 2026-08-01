@@ -846,6 +846,14 @@ set digest, enrollment public key, expected device-installation binding,
 complete toolchain identity, pre-upload evidence SHA-256, IPA SHA-256,
 external oracle SHA-256, expected inventory digest, and observer revision.
 
+The expected inventory digest is SHA-256 over the domain
+`"orchardprobe.demolab.lab002.expected-inventory.v1\0"`, one `u32be` byte
+length, and the canonical JSON object whose only key is `roles` and whose value
+is the frozen oracle's exact ordered role array. It therefore binds every role,
+target-identity digest, slice identity, coordinate, and frozen range digest.
+The complete intent remains Host-side; only its already-hashed signed challenge
+envelope is imported to DemoLab.
+
 All wall-clock fields are signed Unix UTC seconds. The Mac samples
 `CLOCK_REALTIME` once when it closes each acknowledgement, sets `not_before` to
 that sample and `not_after` to exactly `not_before + 900`, and rejects overflow

@@ -48,7 +48,7 @@ start until the matching signed one-shot envelope exists.
 | Order | Step | Status | Completion gate |
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete when the activation PR is on main` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
-| 4B | Closed Host operator workflow | `planned` | A reviewed owner-only Host command creates and retains the installation acknowledgement/envelope, then receives, retains, and verifies the device-created signed receipt before creating the selection confirmation/enrollment binding. For each run it creates and retains the acknowledgement/challenge/intent, receives and retains the device-created signed export, creates the binding, and verifies the final two-run chain. Device-free tests, Codex CR, CI, PR, and merge pass before installation |
+| 4B | Closed Host operator workflow | `complete when the implementation PR is on main` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require all fresh RFC-0001 assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge must pass before installation |
 | 4C | Exact installation and enrollment | `blocked on 4B` | Record the fresh installation acknowledgement and sign its one-shot envelope; independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
@@ -79,8 +79,10 @@ submission was requested.
 
 Checkpoint 2 merged the closed artifact schemas, canonical encoders, signing
 primitive, complete enrollment/run/two-run verifiers, device UI, and synthetic
-tests. The repository does not yet expose a reviewed operator command that
-constructs and durably retains the exact real-operation Host artifact bundles.
-Hand-authoring JSON, borrowing test fixtures, or installing first and filling
-the records afterward would violate the frozen method. Step 4B closes that
-operator gap before the exact TestFlight installation.
+tests. Step 4B adds the missing reviewed operator workflow as five private
+Fastlane lanes: start/close enrollment, start/close the next run, and verify
+the complete retained chain. Each publishing action uses a random owner-only
+staging directory, exclusive rename, parent-directory sync, fixed filenames,
+and exact phase inventory. The authorization seed remains only in the frozen
+prebuild directory; device-created private keys remain only on the device.
+Hand-authored JSON and filling records after an operation remain forbidden.

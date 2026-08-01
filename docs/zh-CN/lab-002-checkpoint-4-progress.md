@@ -37,7 +37,7 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 | 顺序 | 步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 4A | 激活并关闭提前上传/对账治理偏差 | `激活 PR 进入 main 时完成` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
-| 4B | 闭合 Host 操作流程 | `planned` | 一个已评审、仅 Owner 可读写的 Host 命令创建并保留安装确认/信封，随后接收、保留并验证设备创建的签名 Receipt，再创建选择确认/Enrollment Binding。每轮由 Host 创建并保留确认/Challenge/Intent，接收并保留设备创建的签名 Export，创建 Binding，并验证最终两轮链。安装前必须通过无设备测试、Codex CR、CI、PR 与合并 |
+| 4B | 闭合 Host 操作流程 | `实现 PR 进入 main 时完成` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次全新的 RFC-0001 断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前必须通过无设备测试、Codex CR、CI、PR 与合并 |
 | 4C | 精确安装与 Enrollment | `blocked on 4B` | 记录全新安装确认并签署一次性信封；在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
 | 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
 | 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
@@ -62,6 +62,7 @@ Review 或 App Store 提交。
 ## Host 工具门禁
 
 检查点 2 已合并闭合工件 Schema、规范编码器、签名原语、完整 Enrollment/Run/两轮验证器、
-设备 UI 与合成测试；但仓库尚未提供一个已评审的操作员命令，用于构造并持久保留真实操作
-所需的完整 Host 工件集合。手写 JSON、借用测试 Fixture，或先安装再补记录都会违反冻结
-方法。因此步骤 4B 必须在精确 TestFlight 安装前关闭这个操作缺口。
+设备 UI 与合成测试。步骤 4B 增加五个私有 Fastlane Lane：开始/关闭 Enrollment、开始/关闭
+下一轮，以及验证完整保留链。每个发布动作使用随机 Owner-only Staging、排他 Rename、父目录
+同步、固定文件名和精确阶段清单。授权 Seed 只留在冻结 Prebuild 目录；设备私钥只留在设备。
+仍禁止手写 JSON、借用测试 Fixture 或操作后补填记录。

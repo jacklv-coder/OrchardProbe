@@ -1,7 +1,8 @@
-//! Private, host-only build artifact tooling for the repository-owned DemoLab.
+//! Private, host-only build and operator artifact tooling for DemoLab.
 //!
 //! This binary is invoked by the hardened Fastlane flow. It has no device,
-//! upload, installation, decryption, or arbitrary-target operation.
+//! installation, decryption, or arbitrary-target operation. Its operator mode
+//! only authors and verifies the fixed user-mediated LAB-002 control chain.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -26,6 +27,8 @@ use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod operator_flow;
+
 const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
 const INSPECT_REQUEST_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-request.v1";
 const INSPECT_RESULT_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-result.v1";
@@ -38,6 +41,7 @@ const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directo
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
 const PRIVATE_OUTPUT_ROOT_PATH: &str = "/dev/fd/4";
 const PRIVATE_RUN_DIRECTORY_PATH: &str = "/dev/fd/5";
+const PRIVATE_CANDIDATE_DIRECTORY_PATH: &str = "/dev/fd/6";
 const MAX_REQUEST_BYTES: usize = 32 * 1024;
 const PRIVATE_SEED_NAME: &str = "lab-002-authorization-seed-v1.bin";
 const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
@@ -240,6 +244,7 @@ enum CommandOutput {
     InspectPrebuild(Box<InspectPrebuildOutput>),
     Oracle(OracleOutput),
     UploadGate(UploadGateOutput),
+    Operator(operator_flow::OperatorOutput),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -268,7 +273,15 @@ fn main() -> ExitCode {
         }
     };
     let operation = arguments.first().and_then(|value| value.to_str());
-    let run_directory = if matches!(operation, Some("create-oracle" | "verify-upload-gate")) {
+    let run_directory = if matches!(
+        operation,
+        Some(
+            "create-oracle"
+                | "verify-upload-gate"
+                | "operator-start-enrollment"
+                | "operator-start-run"
+        )
+    ) {
         match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
             Ok(directory) => Some(directory),
             Err(error) => {
@@ -279,10 +292,22 @@ fn main() -> ExitCode {
     } else {
         None
     };
+    let candidate_directory = if matches!(operation, Some("operator-start-enrollment")) {
+        match File::open(PRIVATE_CANDIDATE_DIRECTORY_PATH) {
+            Ok(directory) => Some(directory),
+            Err(error) => {
+                eprintln!("error: could not receive the held private candidate directory: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
     match execute(
         arguments,
         output_root_directory,
         run_directory,
+        candidate_directory,
         |staging_name, identity| {
             write_publication_identity(&mut stdout, staging_name, identity)?;
             wait_for_publication_ack()
@@ -351,8 +376,23 @@ fn execute(
     arguments: Vec<std::ffi::OsString>,
     output_root_directory: File,
     run_directory: Option<File>,
+    candidate_directory: Option<File>,
     arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<CommandOutput, String> {
+    if arguments
+        .first()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.starts_with("operator-"))
+    {
+        return operator_flow::execute(
+            &arguments,
+            output_root_directory,
+            run_directory,
+            candidate_directory,
+            arm_publication,
+        )
+        .map(CommandOutput::Operator);
+    }
     match arguments.first().and_then(|value| value.to_str()) {
         Some("prepare") => {
             let (path, expected_identity) =
@@ -439,7 +479,7 @@ fn execute(
                 .map(CommandOutput::UploadGate)
         }
         _ => Err(
-            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle|verify-upload-gate \
+            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle|verify-upload-gate|operator-* \
              with fixed private directories"
                 .into(),
         ),

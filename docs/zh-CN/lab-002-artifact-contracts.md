@@ -59,6 +59,9 @@ Bundle 是自包含的 Draft 2020-12 JSON Schema。每个允许的顶层工件�
   使用 `0000000000000002` 且 Prior Binding 非空。Challenge、Intent、未签名
   Export、Session Report、Role Report 与 Collection Binding 都闭合该
   Ordinal/Counter 关系。
+- Host 以固定 Domain、`u32be` 长度和规范
+  `{"roles": <精确 Oracle Role Array>}` 字节计算 `expected_inventory_sha256`。
+  Intent 只保留在 Host，绝不会作为设备输入。
 - Session Report 与 Role Report 都持久保存签名授权中的精确
   `authorization_not_after`。设备观察/完成动作与 Host Verifier 都拒绝晚于该绝对
   时间加固定 120 秒时钟偏差的 Phase 或完成时间，不能从 Session 创建时间推导

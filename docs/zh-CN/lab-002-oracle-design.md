@@ -326,6 +326,11 @@ Binding Hash/公钥、已建立的 Device/Installation Binding 与时间窗。Ho
 Intent 绑定该文件 Hash/签名、同一精确 Counter、安装确认与 Enrollment Binding
 Hash、本轮确认、
 授权清单/Target 身份集合、工具链、预上传证据、IPA、外部 Oracle 和预期清单。
+预期清单摘要的输入依次为固定 Domain
+`"orchardprobe.demolab.lab002.expected-inventory.v1\0"`、一个 `u32be` 字节长度，
+以及只包含 `roles` 一个 Key、Value 为冻结 Oracle 精确有序 Role Array 的规范 JSON。
+因此它绑定全部 Role、Target-identity 摘要、Slice 身份、坐标与冻结区间摘要。完整
+Intent 只保留在 Host；DemoLab 只导入已经 Hash 并签名的 Challenge 信封。
 Run 1 的 Prior Binding 为 `null`，但 Enrollment/Device Binding 已经非空；Run 2
 还必须写入 Run 1 Binding Hash。维护者通过 AirDrop 或 Files 显式导入签名信封；
 任何 OrchardProbe Host/Helper API 都不能访问 App Group，且自由路径/Target/Range

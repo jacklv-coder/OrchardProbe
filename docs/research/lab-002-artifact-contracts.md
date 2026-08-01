@@ -65,6 +65,9 @@ acknowledgement and operation core rather than parsed copies.
   requires counter `0000000000000002` and a non-null prior binding. That
   ordinal/counter relationship is closed in the challenge, intent, unsigned
   export, session report, role report, and collection binding.
+- The Host computes `expected_inventory_sha256` from the fixed domain, a
+  `u32be` length, and canonical `{"roles": <exact oracle role array>}` bytes.
+  The intent is retained on the Host and is never accepted as device input.
 - The session and role reports persist the exact signed
   `authorization_not_after`. Device observation/completion and the Host
   verifier reject phase or completion times later than that absolute value

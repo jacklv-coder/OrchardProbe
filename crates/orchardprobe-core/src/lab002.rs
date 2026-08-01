@@ -9,6 +9,8 @@
 pub mod artifacts;
 #[path = "lab002_host.rs"]
 pub mod host;
+#[path = "lab002_operator.rs"]
+pub mod operator;
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};

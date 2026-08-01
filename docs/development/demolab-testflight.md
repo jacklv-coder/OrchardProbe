@@ -246,6 +246,73 @@ Prefer the least-privileged App Store Connect key that can upload this app.
 The lane uses the key only for Apple's local `altool` package-upload command;
 it does not create a Fastlane Pilot session.
 
+## Checkpoint 4 Host operator workflow
+
+This maintainer-only workflow must be merged on `main` before the exact
+TestFlight installation. It is not an installation command and it never opens
+an App Group, launches an app, uploads a build, or accepts a target/path/range
+for observation. The five lanes are deliberately serial:
+
+```sh
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_verify
+```
+
+`start_enrollment` accepts only the frozen prebuild/candidate tuple and creates
+a new `lab002-experiment-<random-id>` child below an already existing mode
+`0700` operator output root. It retains the exact source controls and a fresh
+15-minute acknowledgement/envelope. Provisioning the already processed build
+through TestFlight remains a separate operator action outside OrchardProbe;
+only the fixed installation envelope is imported afterward.
+
+`close_enrollment` accepts one bounded signed Receipt and the complete 64
+lowercase-hex fingerprint after the operator compares the Mac and iPhone
+displays. `start_run` automatically selects only the next legal ordinal,
+creates a non-overlapping 15-minute window, retains the full Intent on the Mac,
+and exposes only the signed Challenge for import. `close_run` accepts one
+bounded signed Export and derives the Binding before re-running the complete
+verifier. The second close additionally verifies the ordered two-run chain.
+
+Every publishing lane uses a random owner-only staging directory, fixed
+filenames, exclusive rename, directory fsync, and exact phase inventory. It
+refuses an existing/incomplete phase rather than overwriting or silently
+retrying it. The authorization seed remains only in the frozen prebuild; the
+device enrollment private key never leaves the device.
+
+The operator lanes use these additional private environment values:
+
+- `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` must equal
+  `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`; every lane rejects CI, a dirty checkout,
+  and a `HEAD` that is not contained in the authenticated GitHub `main`
+  history, then rechecks the clean reviewed source before completion;
+- `DEMO_LAB_LAB002_OPERATOR_OUTPUT_ROOT`: new, empty, absolute mode-`0700`
+  directory outside the repository;
+- `DEMO_LAB_LAB002_PREBUILD_DIRECTORY`: exact frozen 3A prebuild directory;
+- `DEMO_LAB_BUILD_OUTPUT_DIRECTORY`: exact frozen candidate directory;
+- `DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY`: the exclusively published experiment
+  child used by every later lane;
+- `DEMO_LAB_LAB002_HARDWARE_MODEL`, `DEMO_LAB_LAB002_IOS_PRODUCT_VERSION`, and
+  `DEMO_LAB_LAB002_IOS_BUILD`: sanitized expected environment for the selected
+  owned iPhone, with no stable device identifier;
+- the five `DEMO_LAB_LAB002_CONFIRM_*` authorization variables shown by
+  `lab002_operator_assertions!`: each must equal `true` only after the fresh
+  RFC-0001 acknowledgement immediately preceding enrollment or a run;
+- `DEMO_LAB_LAB002_RECEIPT_PATH` plus the full
+  `DEMO_LAB_LAB002_DEVICE_SELECTION_FINGERPRINT` and
+  `DEMO_LAB_LAB002_CONFIRM_FINGERPRINT_MATCH=true` for enrollment closure;
+- `DEMO_LAB_LAB002_EXPORT_PATH` for the current run's signed Export.
+
+Receipt/Export files may come from AirDrop or Files, but must be regular,
+bounded, non-symlink files. Do not paste private values, experiment IDs,
+fingerprints, paths, Receipt/Export contents, or Host results into GitHub or
+logs. A failed/expired/post-start phase is retained and evaluated under the
+reviewed No-Go rules; it is not deleted and recreated to obtain a pass.
+
 ## Stage 1: create the signed candidate
 
 Before the first run, sign in to the correct development team in Xcode and

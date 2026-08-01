@@ -7137,7 +7137,423 @@ end
 
 default_platform(:ios)
 
+def lab002_operator_assertions!
+  names = %w[
+    DEMO_LAB_LAB002_CONFIRM_AUTHORIZED_USE
+    DEMO_LAB_LAB002_CONFIRM_OWNERSHIP
+    DEMO_LAB_LAB002_CONFIRM_SCOPE
+    DEMO_LAB_LAB002_CONFIRM_LEGAL_LIMITS
+    DEMO_LAB_LAB002_CONFIRM_OUTPUT_PROTECTION
+  ]
+  values = names.to_h { |name| [name, required_environment(name)] }
+  unless values.values.all? { |value| value == "true" }
+    UI.user_error!(
+      "Every fresh LAB-002 RFC-0001 acknowledgement must be exactly true."
+    )
+  end
+  {
+    "confirmed" => true,
+    "owns_or_explicitly_authorized_target" => true,
+    "within_authorized_scope" => true,
+    "understands_legal_limits" => true,
+    "will_protect_output_and_not_resign_install_or_redistribute" => true,
+  }
+end
+
+def lab002_operator_bound_directory!(environment_name, label)
+  raw = required_environment(environment_name)
+  unless Pathname.new(raw).absolute?
+    UI.user_error!("#{environment_name} must be an absolute path.")
+  end
+  path = ensure_outside_repository!(File.expand_path(raw), label)
+  handle, identity = lab002_open_bound_directory!(
+    path,
+    label,
+    required_mode: 0o700
+  )
+  [path, handle, identity]
+end
+
+def run_lab002_operator_helper!(
+  operation:,
+  bindings:,
+  input:,
+  publishes:
+)
+  source_commit = reviewed_main_source_commit
+  binary = nil
+  tool_workspace = nil
+  acknowledgement_reader = nil
+  acknowledgement_writer = nil
+  begin
+    binary, tool_workspace, tool_identity, =
+      build_lab002_private_tool(source_commit)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    arguments = [binary, operation]
+    descriptor_map = {}
+    bindings.each do |binding|
+      option = binding.fetch(:option)
+      path = binding.fetch(:path)
+      handle = binding.fetch(:handle)
+      identity = binding.fetch(:identity)
+      descriptor = binding.fetch(:descriptor)
+      verify_held_lab002_directory!(
+        path,
+        handle,
+        identity,
+        binding.fetch(:label),
+        required_mode: 0o700
+      )
+      arguments.concat(
+        [
+          option,
+          path,
+          "#{option}-device",
+          identity[0].to_s,
+          "#{option}-inode",
+          identity[1].to_s,
+        ]
+      )
+      descriptor_map[descriptor] = handle
+    end
+    acknowledgement_reader, acknowledgement_writer = IO.pipe if publishes
+    descriptor_map[3] = acknowledgement_reader if publishes
+    stdout_content = nil
+    helper_stderr = nil
+    status = nil
+    spawn_options = descriptor_map.merge(
+      chdir: repository_root,
+      close_others: true
+    )
+    Open3.popen3(
+      sanitized_dynamic_loader_environment,
+      *arguments,
+      spawn_options
+    ) do |stdin, stdout, error_stream, wait_thread|
+      acknowledgement_reader&.close
+      verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
+      stdin.binmode
+      stdin.write(input)
+      stdin.close
+      if publishes
+        identity_line = stdout.gets&.chomp
+        match = /\A#{Regexp.escape(
+          DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA
+        )} (\.lab002-prebuild-[0-9a-f]{32}) (0|[1-9][0-9]*) (0|[1-9][0-9]*)\z/
+          .match(identity_line.to_s)
+        acknowledgement_writer.write(match ? "A" : "X")
+        acknowledgement_writer.flush
+        acknowledgement_writer.close
+        UI.user_error!("LAB-002 operator publication identity is missing.") unless match
+      end
+      stdout_content = stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      helper_stderr = error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      status = wait_thread.value
+    ensure
+      acknowledgement_writer&.close unless acknowledgement_writer&.closed?
+    end
+    if stdout_content.to_s.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+       helper_stderr.to_s.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+      UI.user_error!("LAB-002 operator output exceeded its fixed limit.")
+    end
+    unless status&.success?
+      UI.user_error!("LAB-002 operator failed: #{helper_stderr.to_s.strip}")
+    end
+    result = JSON.parse(stdout_content)
+    allowed = %w[
+      schema
+      status
+      phase
+      experiment_id
+      run_ordinal
+      import_relative_path
+      device_selection_fingerprint_sha256
+    ]
+    unless result.is_a?(Hash) &&
+           (result.keys - allowed).empty? &&
+           result["schema"] == "orchardprobe.lab002.operator-result.v1" &&
+           /\A[0-9a-f]{64}\z/.match?(result["experiment_id"].to_s)
+      UI.user_error!("LAB-002 operator returned an invalid closed result.")
+    end
+    bindings.each do |binding|
+      verify_held_lab002_directory!(
+        binding.fetch(:path),
+        binding.fetch(:handle),
+        binding.fetch(:identity),
+        binding.fetch(:label),
+        required_mode: 0o700
+      )
+    end
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    ensure_clean_source!
+    unless reviewed_main_source_commit == source_commit
+      UI.user_error!("The reviewed LAB-002 operator source changed during use.")
+    end
+    result
+  ensure
+    acknowledgement_reader&.close unless acknowledgement_reader&.closed?
+    acknowledgement_writer&.close unless acknowledgement_writer&.closed?
+    FileUtils.rm_rf(tool_workspace) if tool_workspace
+  end
+end
+
 platform :ios do
+  desc "Create the fresh owner-only LAB-002 installation control bundle"
+  lane :demolab_operator_start_enrollment do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      output_path, output_handle, output_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_OPERATOR_OUTPUT_ROOT",
+          "LAB-002 operator output"
+        )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
+          "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY",
+          "LAB-002 frozen candidate"
+        )
+      handles.concat([output_handle, prebuild_handle, candidate_handle])
+      request = lab002_operator_assertions!.merge(
+        "schema" =>
+          "orchardprobe.lab002.operator-start-enrollment.v1",
+        "expected_environment" => {
+          "hardware_model" => required_environment(
+            "DEMO_LAB_LAB002_HARDWARE_MODEL",
+            pattern: /\AiPhone[0-9]+,[0-9]+\z/
+          ),
+          "ios_product_version" => required_environment(
+            "DEMO_LAB_LAB002_IOS_PRODUCT_VERSION",
+            pattern: /\A[0-9]+(?:\.[0-9]+){0,3}\z/
+          ),
+          "ios_build" => required_environment(
+            "DEMO_LAB_LAB002_IOS_BUILD",
+            pattern: /\A[0-9]+[A-Z][0-9A-Za-z]+\z/
+          ),
+        },
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-start-enrollment",
+        bindings: [
+          {
+            option: "--output-root",
+            path: output_path,
+            handle: output_handle,
+            identity: output_identity,
+            descriptor: 4,
+            label: "LAB-002 operator output",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: JSON.generate(request),
+        publishes: true
+      )
+      UI.success(
+        "Created the fresh installation control bundle; import only its " \
+        "fixed installation envelope after TestFlight provisioning."
+      )
+      result
+    ensure
+      handles.each { |handle| handle.close unless handle.closed? }
+    end
+  end
+
+  desc "Verify a device receipt and close LAB-002 enrollment"
+  lane :demolab_operator_close_enrollment do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handle = nil
+    begin
+      path, handle, identity = lab002_operator_bound_directory!(
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+        "LAB-002 experiment"
+      )
+      receipt_path = required_environment(
+        "DEMO_LAB_LAB002_RECEIPT_PATH"
+      )
+      unless Pathname.new(receipt_path).absolute?
+        UI.user_error!("DEMO_LAB_LAB002_RECEIPT_PATH must be absolute.")
+      end
+      receipt = read_regular_file_snapshot(
+        receipt_path,
+        16 * 1024,
+        "LAB-002 signed enrollment receipt"
+      )
+      fingerprint = required_environment(
+        "DEMO_LAB_LAB002_DEVICE_SELECTION_FINGERPRINT",
+        pattern: /\A[0-9a-f]{64}\z/
+      )
+      unless required_environment(
+        "DEMO_LAB_LAB002_CONFIRM_FINGERPRINT_MATCH"
+      ) == "true"
+        UI.user_error!("The full device-selection fingerprint was not confirmed.")
+      end
+      result = run_lab002_operator_helper!(
+        operation: "operator-close-enrollment",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: path,
+            handle: handle,
+            identity: identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+        ],
+        input: "#{fingerprint}\n".b + receipt,
+        publishes: true
+      )
+      UI.success("Verified the signed receipt and closed device enrollment.")
+      result
+    ensure
+      handle&.close unless handle&.closed?
+    end
+  end
+
+  desc "Create the next fresh owner-only LAB-002 run control bundle"
+  lane :demolab_operator_start_run do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      experiment_path, experiment_handle, experiment_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+          "LAB-002 experiment"
+        )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
+          "LAB-002 prebuild"
+        )
+      handles.concat([experiment_handle, prebuild_handle])
+      request = lab002_operator_assertions!.merge(
+        "schema" => "orchardprobe.lab002.operator-start-run.v1"
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-start-run",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: experiment_path,
+            handle: experiment_handle,
+            identity: experiment_identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+        ],
+        input: JSON.generate(request),
+        publishes: true
+      )
+      UI.success("Created the next one-shot run challenge and retained its intent.")
+      result
+    ensure
+      handles.each { |handle| handle.close unless handle.closed? }
+    end
+  end
+
+  desc "Verify a device export and close the current LAB-002 run"
+  lane :demolab_operator_close_run do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handle = nil
+    begin
+      path, handle, identity = lab002_operator_bound_directory!(
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+        "LAB-002 experiment"
+      )
+      export_path = required_environment("DEMO_LAB_LAB002_EXPORT_PATH")
+      unless Pathname.new(export_path).absolute?
+        UI.user_error!("DEMO_LAB_LAB002_EXPORT_PATH must be absolute.")
+      end
+      export = read_regular_file_snapshot(
+        export_path,
+        512 * 1024,
+        "LAB-002 signed session export"
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-close-run",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: path,
+            handle: handle,
+            identity: identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+        ],
+        input: export,
+        publishes: true
+      )
+      UI.success("Verified the signed export and closed the current run.")
+      result
+    ensure
+      handle&.close unless handle&.closed?
+    end
+  end
+
+  desc "Verify the retained LAB-002 enrollment and two-run Host chain"
+  lane :demolab_operator_verify do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handle = nil
+    begin
+      path, handle, identity = lab002_operator_bound_directory!(
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+        "LAB-002 experiment"
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-verify",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: path,
+            handle: handle,
+            identity: identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+        ],
+        input: "",
+        publishes: false
+      )
+      UI.success("Verified the complete retained enrollment and two-run chain.")
+      result
+    ensure
+      handle&.close unless handle&.closed?
+    end
+  end
+
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
