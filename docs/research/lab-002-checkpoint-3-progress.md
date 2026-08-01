@@ -42,7 +42,7 @@ preceding row is complete.
 
 The 3B.3 helper was independently built twice from the read-only source
 snapshot at implementation commit
-`da758e9614402184833ab1ad7faeb4cc2860836c`; both products were
+`da758e963e8516cbb38f04e7c7786a041b6a4d9d`; both products were
 byte-identical. The registered tuple is Rust
 `1.85.0-aarch64-apple-darwin`, source snapshot SHA-256
 `4e59c359dcfa514ebfe1d22fcfa403f24b75fb2fb072aa46b12b339e2ea94116`,

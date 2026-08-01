@@ -38,7 +38,7 @@
 | 3B.3.4 | 文档、Codex CR、CI 与合并 | `进行中` | 更新中英文用户/技术文档，通过 Workspace/Fastlane 与 Helper 可复现验证，解决全部 P1/P2 审查问题，合并 PR 后再激活 3C |
 
 3B.3 Helper 已从实现 Commit
-`da758e9614402184833ab1ad7faeb4cc2860836c` 的只读源码快照独立构建两次，
+`da758e963e8516cbb38f04e7c7786a041b6a4d9d` 的只读源码快照独立构建两次，
 产物字节完全一致。登记 Tuple 为 Rust `1.85.0-aarch64-apple-darwin`，
 Source Snapshot SHA-256
 `4e59c359dcfa514ebfe1d22fcfa403f24b75fb2fb072aa46b12b339e2ea94116`，
