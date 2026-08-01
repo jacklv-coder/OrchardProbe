@@ -18,9 +18,9 @@ preceding row is complete.
 | Order | Substep | Status | Completion gate |
 |---:|---|---|---|
 | 3A | Private pre-build input generator | `complete; PR #62 merged` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests, Codex CR, and CI passed; [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) merged as `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
-| 3B | Archive/oracle/evidence closure | `in progress; 3B.1 and 3B.2 complete, 3B.3 active` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
-| 3C | Device-free tests, Codex CR, CI, and implementation merge | `blocked` | Use only temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures; cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection; merge the reviewed implementation before any signed candidate is built |
-| 3D | Exact signed DemoLab `1.0 (3)` candidate | `blocked` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
+| 3B | Archive/oracle/evidence closure | `complete; PRs #63-#65 merged` | The hardened archive flow consumes and revalidates the exact 3A artifacts, builds only the three allowlisted roles, compares Archive and IPA slice identity plus `__TEXT,__oprobe`, publishes the canonical frozen oracle, binds its external SHA-256 into pre-upload evidence, and rejects upload when the closed manifest/oracle tuple is absent or mismatched. [PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) merged the final gate as `ca19db07a8badc5d7ce55cc556ab9205181056a5` |
+| 3C | Device-free tests, Codex CR, CI, and implementation merge | `complete; closure PR #66 in review` | Temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection. All P1/P2 findings were resolved, the full local verification set and required CI passed, and the reviewed implementation merged through PRs #62-#65 before any signed `1.0 (3)` candidate was built. [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) records the closure and 3D transition |
+| 3D | Exact signed DemoLab `1.0 (3)` candidate | `activates when PR #66 merges` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
 | 3E | Sanitized completion record | `blocked` | Independently rehash and verify the local candidate, manifest, oracle, and evidence bindings; record only non-secret hashes/toolchain/build facts in Issue #55 and bilingual docs, run final Codex CR/CI/review, and merge the checkpoint-3 result |
 
 ### 3B ordered implementation slices
@@ -29,7 +29,7 @@ preceding row is complete.
 |---:|---|---|---|
 | 3B.1 | Secure 3A consumption | `complete; PR #63 merged` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper descriptor-relatively reads exactly the three mode-`0400` owner files, rederives the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and returns only a bounded private IPC envelope. Fastlane injects the closed values without caller-supplied nonce, public-key, or Build-Binding variables. Device-free regressions, Codex CR, GitHub Codex review, and CI passed; [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) merged as `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
 | 3B.2 | Archive/IPA oracle closure | `complete; PR #64 merged` | The helper and Fastlane hold and revalidate the final Archive App, IPA, all six Archive sources, oracle, and evidence across publication; signed special slots, zero-fill rules, per-entry IPA mutation, replacement, and indeterminate publication regressions passed Codex CR and all required CI. [PR #64](https://github.com/jacklv-coder/OrchardProbe/pull/64) merged as `5bf31bf305e30abb0121a0bcb76e5fcdf48eb3bc` |
-| 3B.3 | Evidence and upload gate | `implementation and local verification complete; final CR/CI/merge in progress` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
+| 3B.3 | Evidence and upload gate | `complete; PR #65 merged` | The manifest/oracle identities and external oracle SHA-256 are bound into pre-upload evidence; the upload lane rejects an absent, changed, or inconsistent closed tuple. [PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) merged as `ca19db07a8badc5d7ce55cc556ab9205181056a5` |
 
 ### 3B.3 ordered execution gates
 
@@ -37,8 +37,8 @@ preceding row is complete.
 |---:|---|---|---|
 | 3B.3.1 | Closed Evidence binding | `complete` | Persist the exact owner-only manifest and oracle file identities, external oracle SHA-256, Build Binding, Target Identity Set, and IPA size/SHA-256 in the pre-upload record while the prebuild directory remains locked |
 | 3B.3.2 | Upload-time private tuple verification | `complete` | Derive only the fixed sibling prebuild/run directories from the evidence source/version/build, pass their held descriptors to the reviewed helper, and reparse canonical Manifest, Prebuild, and Oracle artifacts before upload |
-| 3B.3.3 | Fail-closed regressions | `complete locally` | Cover missing LAB-002 binding, changed manifest/oracle identity or digest, inconsistent Build Binding/Target Set/IPA tuple, noncanonical private artifacts, unsafe permissions, directory substitution, extra/missing run entries, and strictly bound reconciled-retry audit records without any network action |
-| 3B.3.4 | Documentation, Codex CR, CI, and merge | `in progress` | Update bilingual operator/technical documentation, pass workspace/Fastlane checks and reproducible Helper verification, resolve every P1/P2 review finding, merge the PR, then activate 3C |
+| 3B.3.3 | Fail-closed regressions | `complete` | Missing LAB-002 binding, changed manifest/oracle identity or digest, inconsistent Build Binding/Target Set/IPA tuple, noncanonical private artifacts, unsafe permissions, directory substitution, extra/missing run entries, and strictly bound reconciled-retry audit records are covered without any network action |
+| 3B.3.4 | Documentation, Codex CR, CI, and merge | `complete; PR #65 merged` | Bilingual operator/technical documentation, workspace/Fastlane checks, reproducible Helper verification, two final Codex CR passes, and all required CI completed with no unresolved P1/P2 before merge |
 
 The 3B.3 helper was independently built twice from the read-only source
 snapshot at implementation commit
@@ -57,7 +57,7 @@ and CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`.
 | 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
 | 3B.2.2 | Archive/IPA parity | `complete` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree; no role or slice may be skipped |
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
-| 3B.2.4 | Device-free closure tests | `local tests and helper reproduction complete; P1 and both P2 regressions passed; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, signed-special-slot, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
+| 3B.2.4 | Device-free closure tests | `complete; PR #64 merged` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, signed-special-slot, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and all required CI passed before 3B.3 started |
 
 The final P1/P2-fixed 3B.2 helper was independently built twice from the
 read-only source snapshot at commit
@@ -72,6 +72,24 @@ present signed CodeDirectory special slot before accepting signing metadata and 
 the device/inode of the still-held final Archive App root, allowing Fastlane to
 bind final evidence and publication validation to the exact helper-measured
 directory rather than a replaceable pathname.
+
+## 3C closure evidence
+
+- PRs [#62](https://github.com/jacklv-coder/OrchardProbe/pull/62),
+  [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63),
+  [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and
+  [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65) merged the complete
+  reviewed implementation in dependency order before any signed `1.0 (3)`
+  candidate was built.
+- The final local gate passed `cargo test --workspace --all-targets --locked`,
+  workspace Clippy with warnings denied, all 36 `oprobe-lab002` helper tests,
+  Fastfile syntax, `fastlane ios demolab_check`, and `git diff --check`.
+- The final Codex CR found no actionable defect after earlier P1/P2 findings
+  were fixed. PR #65 then passed Repository quality, Rust Test and lint, and
+  the complete DemoLab Simulator fixture workflow with no review threads.
+- Every 3C run remained device-free and used only repository-owned or synthetic
+  inputs. No signed Archive, TestFlight upload, installation, connected-device
+  observation, or Apple upload request occurred.
 
 ## Fixed safety boundaries
 
@@ -250,8 +268,9 @@ Fastlane; it is not printed. Fastlane requires its exact schema and fields,
 checks the held directory identity, source/version/build/toolchain, every
 64-hex binding, and the non-weak public key, then revalidates the reviewed
 helper, selected Xcode/XcodeGen, and held directory. Only those closed values
-are injected into the repository-owned build. This slice does not yet claim
-an Archive/IPA oracle or enable upload; those remain blocked on 3B.2 and 3B.3.
+are injected into the repository-owned build. PRs #64 and #65 subsequently
+closed the Archive/IPA oracle and upload-time evidence gates; this earlier
+3B.1 boundary alone still makes neither claim.
 
 ## 3B.2 implementation boundary
 
@@ -368,8 +387,7 @@ explicit operator reconciliation rather than silently accumulating private
 artifacts. This deliberately preserves both the expected bytes and any
 concurrently substituted name instead of risking deletion of an unrelated
 same-user file. This implementation does not upload to TestFlight, inspect a
-device, reconstruct an IPA, or provide the future one-file end-user
-decryption command. Until 3B.3 binds this oracle and the authorization manifest
-into pre-upload evidence, the existing upload lane explicitly rejects the
-exact LAB-002 `1.0 (3)` tuple, so transient archive-time comparison cannot be
-used to bypass the pending upload gate.
+device, reconstruct an IPA, or provide the future one-file end-user decryption
+command. PR #65 now binds the oracle and authorization manifest into pre-upload
+evidence; the upload lane revalidates that exact closed tuple and rejects any
+absent or mismatched binding before Apple network access.
