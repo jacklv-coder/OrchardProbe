@@ -62,6 +62,10 @@ const SYSTEM_OPENSSL_PATH: &str = "/usr/bin/openssl";
 const SYSTEM_SECURITY_PATH: &str = "/usr/bin/security";
 const SYSTEM_ROOT_KEYCHAIN_PATH: &str = "/System/Library/Keychains/SystemRootCertificates.keychain";
 const ORACLE_NAME: &str = "lab-002-oracle-v1.json";
+const ORACLE_PREPUBLICATION_FAILURE_PREFIX: &str =
+    "LAB-002 oracle failed before publication; cleanup is safe: ";
+const ORACLE_INDETERMINATE_PREFIX: &str =
+    "LAB-002 oracle publication is indeterminate; retained private state";
 const RECONCILED_UPLOAD_PREFIX: &str = "demolab-upload-result-reconciled-";
 const RECONCILED_UPLOAD_SUFFIX: &str = ".json";
 const RECONCILED_UPLOAD_NOTE: &str = "The operator explicitly confirmed that this exact version and build were absent in App Store Connect before permitting a new upload attempt.";
@@ -400,7 +404,20 @@ fn execute(
             if request.schema != ORACLE_REQUEST_SCHEMA {
                 return Err("oracle request schema is invalid".into());
             }
-            create_oracle(prebuild_directory, run_directory, request).map(CommandOutput::Oracle)
+            let build_number = request.build_number.clone();
+            match create_oracle(prebuild_directory, &run_directory, request) {
+                Ok(output) => Ok(CommandOutput::Oracle(output)),
+                Err(error) if error.starts_with(ORACLE_INDETERMINATE_PREFIX) => Err(error),
+                Err(error) => {
+                    match prove_oracle_prepublication_cleanup(&run_directory, &build_number) {
+                        Ok(()) => Err(format!("{ORACLE_PREPUBLICATION_FAILURE_PREFIX}{error}")),
+                        Err(proof_error) => Err(indeterminate_oracle_publication_error(
+                            &run_directory.directory,
+                            format!("{error}; prepublication cleanup proof failed: {proof_error}"),
+                        )),
+                    }
+                }
+            }
         }
         Some("verify-upload-gate") => {
             let directories = parse_oracle_directory_arguments(&arguments, "verify-upload-gate")?;
@@ -1081,7 +1098,7 @@ fn open_archive_app_beneath(run_directory: &File) -> Result<File, String> {
 
 fn create_oracle(
     prebuild_directory: PrivateOutputRoot,
-    run_directory: PrivateOutputRoot,
+    run_directory: &PrivateOutputRoot,
     request: OracleRequest,
 ) -> Result<OracleOutput, String> {
     validate_request_fields(
@@ -1096,7 +1113,7 @@ fn create_oracle(
     }
     let inspected =
         inspect_prebuild_directory(prebuild_directory, oracle_inspect_request(&request))?;
-    verify_private_output_root_path(&run_directory)?;
+    verify_private_output_root_path(run_directory)?;
 
     let archive_app = open_archive_app_beneath(&run_directory.directory)?;
     let archive_app_identity = stable_directory_identity(&archive_app, "Archive app")?;
@@ -1362,7 +1379,7 @@ fn create_oracle(
         .to_canonical_bytes()
         .map_err(|error| format!("could not encode closed LAB-002 oracle: {error}"))?;
     let rebound_sources = rebind_oracle_source_paths(
-        &run_directory,
+        run_directory,
         archive_app_identity,
         &initial_archive_executables,
         &archive_executable_paths,
@@ -1383,8 +1400,8 @@ fn create_oracle(
             sha256: measurement.sha256.clone(),
         })
         .collect();
-    let artifact = publish_oracle(&run_directory, &oracle_bytes)?;
-    verify_private_output_root_path(&run_directory)?;
+    let artifact = publish_oracle(run_directory, &oracle_bytes)?;
+    verify_private_output_root_path(run_directory)?;
     Ok(OracleOutput {
         schema: ORACLE_RESULT_SCHEMA,
         oracle_name: ORACLE_NAME,
@@ -1399,6 +1416,70 @@ fn create_oracle(
         ipa_sha256,
         archive_files,
     })
+}
+
+fn prove_oracle_prepublication_cleanup(
+    run_directory: &PrivateOutputRoot,
+    build_number: &str,
+) -> Result<(), String> {
+    let expected_ipa = format!("DemoLab-{build_number}.ipa");
+    let snapshot = || -> Result<BTreeMap<String, (rustix::fs::FileType, u64, u64)>, String> {
+        verify_private_output_root_path(run_directory)?;
+        let entries = rustix::fs::Dir::read_from(&run_directory.directory)
+            .map_err(|error| format!("could not open private run directory stream: {error}"))?;
+        let mut observed = BTreeMap::new();
+        for entry in entries {
+            let entry = entry
+                .map_err(|error| format!("could not enumerate private run directory: {error}"))?;
+            let raw_name = entry.file_name().to_bytes();
+            if matches!(raw_name, b"." | b"..") {
+                continue;
+            }
+            let name = std::str::from_utf8(raw_name)
+                .map_err(|_| "private run artifact name is not valid UTF-8".to_owned())?;
+            if name != "DemoLab.xcarchive" && name != expected_ipa {
+                return Err("private run directory contains possible oracle state".into());
+            }
+            let stat = rustix::fs::statat(
+                &run_directory.directory,
+                name,
+                rustix::fs::AtFlags::SYMLINK_NOFOLLOW,
+            )
+            .map_err(|error| format!("could not inspect private run artifact: {error}"))?;
+            if observed
+                .insert(
+                    name.to_owned(),
+                    (
+                        rustix::fs::FileType::from_raw_mode(stat.st_mode),
+                        stat.st_dev as u64,
+                        stat.st_ino as u64,
+                    ),
+                )
+                .is_some()
+            {
+                return Err("private run directory contains a duplicate artifact".into());
+            }
+        }
+        if observed.get("DemoLab.xcarchive").map(|entry| entry.0)
+            != Some(rustix::fs::FileType::Directory)
+            || observed.get(&expected_ipa).map(|entry| entry.0)
+                != Some(rustix::fs::FileType::RegularFile)
+            || observed.len() != 2
+        {
+            return Err("private run directory is not the exact prepublication pair".into());
+        }
+        Ok(observed)
+    };
+    let before = snapshot()?;
+    run_directory
+        .directory
+        .sync_all()
+        .map_err(|error| format!("could not sync private run directory: {error}"))?;
+    let after = snapshot()?;
+    if after != before {
+        return Err("private run prepublication pair changed during cleanup proof".into());
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -2480,7 +2561,7 @@ fn indeterminate_oracle_publication_error(directory: &File, error: String) -> St
         .map(|sync_error| format!("; directory sync also failed: {sync_error}"))
         .unwrap_or_default();
     format!(
-        "LAB-002 oracle publication is indeterminate; retained private state must be \
+        "{ORACLE_INDETERMINATE_PREFIX} must be \
          reconciled before retry: {error}{sync_detail}"
     )
 }
@@ -4785,6 +4866,35 @@ mod tests {
         fs::create_dir(&app).unwrap();
         let error = reopen_expected_archive_app(&root_directory, identity).unwrap_err();
         assert!(error.contains("path no longer names"));
+    }
+
+    #[test]
+    fn prepublication_cleanup_proof_requires_exact_archive_ipa_pair() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        fs::create_dir(root_path.join("DemoLab.xcarchive")).unwrap();
+        fs::write(root_path.join("DemoLab-3.ipa"), b"signed-ipa").unwrap();
+        let held = validate_private_output_root(&root_path).unwrap();
+
+        prove_oracle_prepublication_cleanup(&held, "3").unwrap();
+
+        fs::write(root_path.join(ORACLE_NAME), b"possible-oracle").unwrap();
+        let error = prove_oracle_prepublication_cleanup(&held, "3").unwrap_err();
+        assert!(error.contains("possible oracle state"));
+        fs::remove_file(root_path.join(ORACLE_NAME)).unwrap();
+
+        fs::write(
+            root_path.join(".lab-002-oracle-interrupted.tmp"),
+            b"possible-oracle",
+        )
+        .unwrap();
+        let error = prove_oracle_prepublication_cleanup(&held, "3").unwrap_err();
+        assert!(error.contains("possible oracle state"));
     }
 
     #[test]

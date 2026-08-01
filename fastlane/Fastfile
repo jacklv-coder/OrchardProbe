@@ -224,6 +224,8 @@ DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION = "1.0"
 DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER = "3"
 DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER =
   "error: LAB-002 oracle publication is indeterminate; retained private state"
+DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER =
+  "error: LAB-002 oracle failed before publication; cleanup is safe: "
 DEMO_LAB_REVIEWED_GITHUB_SSH_URL =
   "ssh://git@ssh.github.com:443/jacklv-coder/OrchardProbe.git"
 DEMO_LAB_REVIEWED_GITHUB_MAIN_REF = "refs/heads/main"
@@ -2740,6 +2742,8 @@ def create_lab002_private_oracle!(
           "Retained private DemoLab staging for reconciliation: " \
           "#{run_directory}"
         )
+      elsif lab002_oracle_prepublication_failure?(helper_stderr)
+        on_retention_change.call(false)
       end
       UI.user_error!(
         "LAB-002 private oracle generation failed: " \
@@ -2848,6 +2852,10 @@ end
 
 def lab002_oracle_publication_indeterminate?(stderr)
   stderr.to_s.start_with?(DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER)
+end
+
+def lab002_oracle_prepublication_failure?(stderr)
+  stderr.to_s.start_with?(DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER)
 end
 
 def cleanup_unpublished_demolab_staging!(
@@ -4143,6 +4151,19 @@ def demolab_bundle_identifiers
   end
 
   [app_identifier, share_identifier]
+end
+
+def demolab_export_options(team_identifier)
+  unless /\A[A-Z0-9]{10}\z/.match?(team_identifier.to_s)
+    UI.user_error!("DemoLab export team identifier is invalid.")
+  end
+  {
+    method: "app-store",
+    signingStyle: "automatic",
+    teamID: team_identifier,
+    manageAppVersionAndBuildNumber: false,
+    uploadSymbols: false,
+  }
 end
 
 def copy_tracked_demolab_fixture(workspace)
@@ -7081,6 +7102,16 @@ platform :ios do
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     xcodegen_selection = selected_xcodegen
+    export_options = demolab_export_options("A" * 10)
+    unless export_options == {
+      method: "app-store",
+      signingStyle: "automatic",
+      teamID: "A" * 10,
+      manageAppVersionAndBuildNumber: false,
+      uploadSymbols: false,
+    }
+      UI.user_error!("Controlled DemoLab export options changed.")
+    end
     parser_commit = git_command_output("rev-parse", "HEAD")
     [parser_commit, "a" * 40, "b" * 64].uniq.each do |candidate_oid|
       parsed_reviewed_main = parse_reviewed_github_main_ref!(
@@ -7116,6 +7147,17 @@ platform :ios do
              DEMO_LAB_LAB002_ORACLE_INDETERMINATE_MARKER.delete_prefix("error: ")
            )
       UI.user_error!("LAB-002 indeterminate oracle marker parsing is invalid.")
+    end
+    unless lab002_oracle_prepublication_failure?(
+      "#{DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER} deterministic"
+    ) &&
+           !lab002_oracle_prepublication_failure?(
+             "prefix #{DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER}"
+           ) &&
+           !lab002_oracle_prepublication_failure?(
+             DEMO_LAB_LAB002_ORACLE_PREPUBLICATION_MARKER.delete_prefix("error: ")
+           )
+      UI.user_error!("LAB-002 prepublication marker parsing is invalid.")
     end
     Dir.mktmpdir(
       "orchardprobe-lab002-oracle-retention-check-",
@@ -10307,12 +10349,7 @@ platform :ios do
                 output_name: "DemoLab-#{build_number}.ipa",
                 buildlog_path: gym_scratch_root,
                 export_method: "app-store",
-                export_options: {
-                  method: "app-store",
-                  signingStyle: "automatic",
-                  teamID: team_identifier,
-                  manageAppVersionAndBuildNumber: false,
-                },
+                export_options: demolab_export_options(team_identifier),
                 xcargs: xcargs,
                 export_xcargs: "-allowProvisioningUpdates",
                 result_bundle: true,
