@@ -409,7 +409,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory, checkpoint 3 is active only for the DemoLab `1.0 (3)` candidate/oracle, private 3A generation is complete in merged [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), and 3B.1 secure consumption is active; no signed candidate, upload, device verification, or Go result exists |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory, checkpoint 3 is active only for the DemoLab `1.0 (3)` candidate/oracle, private 3A generation and 3B.1 secure consumption are complete in merged [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) and [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63), and the 3B.2 Archive/IPA oracle closure implementation is complete pending CR/CI/merge; no signed candidate, upload, device verification, or Go result exists |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |

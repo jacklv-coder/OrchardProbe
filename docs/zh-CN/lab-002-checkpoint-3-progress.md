@@ -15,7 +15,7 @@
 | 顺序 | 子步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
 | 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
-| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已实现，等待 PR 评审/合并` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
+| 3B | Archive/Oracle/证据闭合 | `进行中；3B.1 已完成，3B.2 等待最终 P1 修复 CR/CI` | 让加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，并把其外部 SHA-256 绑定进上传前证据；Upload Lane 必须拒绝缺失或不匹配的 Manifest/Oracle 证据 |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `blocked` | 只使用临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture；覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝；任何签名候选构建前必须先合并已评审实现 |
 | 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `blocked` | 从干净已合并的 3C Commit 出发，只从本机私有配置恢复已验证的首方签名标识，创建全新 3A 输入，Archive/Export `1.0 (3)`，并在新的 Owner-only Run 目录冻结 3B Oracle/证据；不得上传、安装或观察设备 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
@@ -24,9 +24,30 @@
 
 | 顺序 | 切片 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 3B.1 | 安全消费 3A 工件 | `已实现；等待 PR 评审/合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 必须以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量 |
-| 3B.2 | Archive/IPA Oracle 闭合 | `被 3B.1 阻塞` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
-| 3B.3 | Evidence 与 Upload Gate | `被 3B.2 阻塞` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
+| 3B.1 | 安全消费 3A 工件 | `完成；PR #63 已合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量。纯设备无关回归、Codex CR、GitHub Codex Review 与 CI 已通过；[PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 已合并为 `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
+| 3B.2 | Archive/IPA Oracle 闭合 | `P1 特殊槽及 P2 Zero-fill/逐 Entry IPA 重哈希修复已在本地验证；等待最终 CR/CI/合并` | 测量三个 Allowlist Archive/IPA 可执行文件，闭合 Slice/UUID/Range/Fixup 身份，比较 `__TEXT,__oprobe`，再原子发布一个规范 Owner-only Oracle |
+| 3B.3 | Evidence 与 Upload Gate | `等待 3B.2 合并` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
+
+### 3B.2 顺序执行门禁
+
+| 顺序 | 门禁 | 状态 | 完成标准 |
+|---:|---|---|---|
+| 3B.2.1 | 闭合测量契约 | `完成` | 复用已接受的 LAB-002 规范 Oracle 模型和固定三 Role 顺序；所有可执行文件路径只能从已持有 Archive/IPA Root 推导，执行有界普通文件读取，并拒绝未知 Role、Slice、Range、Load Command 或 Fixup Layout |
+| 3B.2.2 | Archive/IPA 一致性 | `完成` | 独立解析每个固定 Archive/IPA `Info.plist`；要求其 Bundle/Version/Executable Tuple，以及所有 Architecture、CPU Subtype、Mach-O UUID、受信 CMS/CodeDirectory 身份、Slice 范围、`__TEXT,__oprobe` 坐标/内容和已接受 Fixup Layout 精确一致；不得跳过任何 Role 或 Slice |
+| 3B.2.3 | 规范私有发布 | `完成` | 编码唯一规范 Oracle，绑定认证后的 Source/Version/Build、3A Manifest 与 Build Binding，再以 Mode `0400` 在身份已持有的 Owner-only Run Directory 下排他、持久化发布且不打印内容 |
+| 3B.2.4 | 纯设备无关闭环测试 | `本地测试与 Helper 复现完成；P1 与两项 P2 回归均已通过；等待最终 CR/CI` | 合成 Fixture 测试覆盖一致性成功，以及 Target、Slice、UUID、Range、Fixup、签名特殊槽、Plaintext、规范化、权限、替换、逐 Entry IPA 变更与原子发布失败；文档、Codex CR 与 CI 通过后才能激活 3B.3 |
+
+最终完成 P1/P2 修复的 3B.2 Helper 已从 Commit
+`7db46b22e409ec635b015091f1eff0b3e6f8287a` 的只读源码快照独立构建两次，
+产物字节完全一致。登记 Tuple 为：
+Rust `1.85.0-aarch64-apple-darwin`，Source Snapshot SHA-256
+`ac687ac04a25cad4d57dc7de6f503081e4ee038cf55f7eb1a1924cf44bdeffbf`，
+Size `1884528`，SHA-256
+`d4f2b1c089371d91eda6363e9df9c9efcd0ed284305b948db4dca20a7883d971`，
+CDHash `cadae3e5ba93f22c82aa811d7fb35c15dae16696`。该 Helper 在接受签名元数据前
+会验证每个实际存在的 CodeDirectory 已签名特殊槽，并返回仍持有的
+最终 Archive App Root 的 Device/Inode，使 Fastlane 能把最终 Evidence 与发布复核
+绑定到 Helper 实际测量的精确目录，而不是可替换的 Pathname。
 
 ## 固定安全边界
 
@@ -163,3 +184,90 @@ Held-path 身份复核。
 64-hex Binding 和非弱公钥；随后再次验证受评审 Helper、所选 Xcode/XcodeGen 和所持
 目录。只有这些闭合值才会注入仓库自有构建。本切片尚不声明 Archive/IPA Oracle，
 也不会启用 Upload；二者分别继续被 3B.2 与 3B.3 阻塞。
+
+## 3B.2 实现边界
+
+同一个 `ios demolab_archive` Lane 现在会在 Export 后自动调用受评审私有 Helper；
+操作员不需要手工复制 Archive、解包 IPA 或上传 Oracle。Fastlane 通过固定继承
+Descriptor 传入已持有的 Archive 与 Run Directory；Helper 从已持有 Staging Root
+打开导出的 IPA，验证精确且有界的 ZIP 清单，再复制到 Owner-only 私有工作区中测量。
+Helper 会在测量前递归枚举已持有的 Archive App，只接受三个 Allowlist
+可执行路径，并保留枚举过程中取得、参与测量的六个 Executable/Info.plist
+Descriptor。最终闭合先执行一次精确 Executable 清单，再从已持有 App Root
+重新打开并重新 Hash 每个保留路径，要求仍指向同一身份和摘要，随后再次执行
+精确清单。因此无论替换发生在清单与路径复核之间，还是路径复核后新增可执行文件，
+都会失败关闭。所有 IPA Entry 读取完成后还会重新 Hash 整个已持有 IPA，并要求与
+解析前记录的摘要完全一致。
+
+对于固定的主 App、Framework 与 Share Extension 三个 Role，Helper 要求 Archive 与
+IPA 的精确可执行路径以及每个 Mach-O Slice 在 Architecture、CPU Subtype、UUID、
+Slice 范围、签名身份、固定区间坐标与字节、加密状态，以及已接受 Classic 或
+Chained Fixup Layout 的域分离摘要上全部一致。它会分别解析两份固定 Bundle
+`Info.plist`，从 Artifact 本身绑定 Bundle Identifier、Version/Build 与 Executable
+Name，而不借用授权请求里的值。闭合 CodeDirectory Parser 要求索引 Blob 精确消费
+声明的完整 SuperBlob，拒绝 Scatter Table，只接受完整 SHA-256 Page 覆盖，并校验
+已签名 Entitlements Special Slot。Xcode 的未签名 Simulator Fixture 可能带有精确的
+`0x20400` Ad-hoc/Linker-signed CodeDirectory Profile，且没有 Team、Entitlements
+或 CMS Slot；Parser 只接受这一精确缺省，并仍要求闭合的 Identifier Grammar。
+该产物始终归类为 Ad-hoc，因此不能通过正式的签名 Archive/IPA Oracle 路径。
+CMS 验证前，选定 Entitlement 只通过有明确
+Event、Depth、Collection、Key 与累计 Scalar-byte 预算的 XML/Binary 流读取，
+Binary 输入还会在库 Reader 构造引用向量前，预检 Trailer、Object Count、Offset、
+Scalar Extent、Reference 与 Collection Length；重复 Root Key 或过大的未知结构
+都会失败关闭；随后 Helper
+验证精确 CodeDirectory 的 Detached CMS，要求 Signer 通过 macOS 本地 `codeSign`
+信任策略（使用有界的 CMS 内嵌证书链与本地 Apple Trust Root），且 Signer
+Certificate Team ID 必须等于已签名 CodeDirectory Team ID；验证只显式使用
+Root-owned Apple System Root Keychain，并禁用默认/用户 Keychain 搜索列表。
+未知 Load Command、Classic/Chained Fixup 混用、可执行文件缺失或多出、签名畸形或
+不受信、区间漂移或任何字节不一致都会失败关闭。
+Classic Rebase 与普通/Weak Bind Stream 必须包含终止 DONE，之后只允许 Linker
+零填充；Lazy Bind Stream 则允许由多个分别以 DONE 终止的 Record 组成，但最后一个
+Record 仍不得缺少 DONE。
+
+发布前的最后一步，Helper 会从当前已持有的 Run Directory 路径重新打开固定 Archive
+App 与 IPA，要求 Archive App Directory 保持原 Device/Inode，并从该重新打开的 Root
+再次验证精确可执行清单以及六个保留文件的身份与完整摘要；同时两次重新打开当前 IPA，
+要求其保持原身份、完整摘要和已验证 ZIP 清单。因此 Archive App 或 IPA 被改名/替换时，
+Oracle 不会继续描述旧 Descriptor，而让紧随其后的 Evidence 步骤读取另一份当前路径。
+
+Helper 还会返回最终 IPA 的 Size/Digest、Archive 六个保留文件按固定顺序排列的
+Size/Digest Tuple，以及完成这些测量时仍持有的 Archive App Directory Device/Inode。
+Fastlane 在写入 Pre-upload Evidence 前，会绑定该精确目录并独立 Snapshot 相同的三个
+Mach-O 与三个 Info.plist，要求逐项完全相同。因此 Evidence 边界会同时拒绝 Helper
+发布前后发生的 Source 或整个 Archive Root 替换，不再信任单纯的 Pathname 交接。
+
+外层 Lane 会把 Gym Log、Result Bundle、dSYM ZIP 及其他 Export 辅助产物全部留在
+一次性私有 Scratch Directory，只把返回的 IPA 移入最终 Staging。最终 Publisher
+要求顶层清单精确只有 Archive、IPA、Oracle 与 Evidence，并持续持有 Oracle 绑定的
+Archive App、IPA、六个 Archive Source、Oracle 和序列化 Evidence 的只读 Descriptor。
+同一个函数会再次验证完整摘要与当前路径身份，执行排他的 Staging Directory Rename，
+再从发布后的新路径逐个复核所有已持有 Descriptor，成功后才返回。纯设备无关回归会
+发布一份合法 Fixture，并拒绝 IPA、Archive Source、整个 Archive App Root、Oracle、
+Evidence 的替换以及额外顶层 Entry 注入。它还会在目录重命名后替换 IPA，并要求生成
+一个仅所有者可读写的 `.demolab-staging-published-indeterminate-*.json` 同级 Gate，
+其中绑定预期发布目录的 Device/Inode。该 Gate 必须在目录重命名前排他创建；创建失败
+会阻止发布，只有全部重命名后 Descriptor 复核通过才会删除。现有 Retained-staging
+扫描会识别遗留 Gate，因此最终复核失败会进入明确的人工核对路径，不会静默遗留未经
+验证的最终 Run Directory。
+
+只有三个 Role 全部通过后，Helper 才会编码规范
+`orchardprobe.lab002.oracle.v1` 记录，将其绑定到已认证 Source、Version/Build、
+Authorization-manifest 摘要、Target-identity Set 与 Build Binding，并以 Mode `0400`
+在锁定的私有 Run Directory 下原子发布。完整 Oracle 与私有 Target 标识始终留在
+Git 和日志之外。发布过程保持 Staging Descriptor，并使用验证文件的同一次 Metadata
+读取返回精确 Device/Inode。由于 Darwin 没有按 Descriptor 身份绑定的 Unlink 原语，
+Staging 创建后的任何失败都不再执行 Pathname 删除。Helper 会同步锁定目录，明确报告
+发布状态不确定，并保留 Owner-only 的 Staging 或已发布现场，要求重试前显式协调。
+Fastlane 在尝试启动 Oracle Helper 之前立即启用外层 Staging 保留，并贯穿 Result、
+Oracle 身份、Helper、Toolchain、XcodeGen 与 Evidence 验证；只有 Staging Directory
+原子发布为最终 Run 后才解除。Helper 的固定“不确定”标记只用于补充报告保留路径；
+即使 Spawn 失败、无 Marker 的终止、Panic、断管、畸形结果或后续发布前失败，
+Staging Tree 也会保留。此后的每次 Archive 尝试都会在创建新 Staging 前枚举已持有的
+Output Directory；只要仍有 `.demolab-staging-*` 遗留项就拒绝继续，因此必须由操作者
+显式协调现场，不能静默累积私有 Artifact。这会同时保留
+预期字节及任何并发替代名称，避免误删同一用户放入的无关文件。本实现不会
+上传 TestFlight、观察设备、重建 IPA，也尚未提供未来“只交给工具一个 IPA、输出砸壳后
+IPA”的用户命令。在 3B.3 把 Oracle 与 Authorization Manifest 身份持久绑定进
+Pre-upload Evidence 之前，现有 Upload Lane 会明确拒绝精确的 LAB-002 `1.0 (3)`
+Tuple，因此 Archive 阶段的临时比较不能绕过尚未完成的 Upload Gate。

@@ -115,12 +115,12 @@ struct InfoPlistFields {
     executable_name: Option<String>,
 }
 
-#[derive(Debug)]
-pub(crate) struct ParsedInfoPlist {
-    pub(crate) bundle_identifier: String,
-    pub(crate) bundle_version: String,
-    pub(crate) short_version: Option<String>,
-    pub(crate) executable_name: String,
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedInfoPlist {
+    pub bundle_identifier: String,
+    pub bundle_version: String,
+    pub short_version: Option<String>,
+    pub executable_name: String,
 }
 
 /// Parse the root iOS app's bounded identity metadata from an IPA.
@@ -202,7 +202,7 @@ pub(crate) fn inspect_ipa_app_metadata_with_inventory<R: Read + Seek>(
     ))
 }
 
-pub(crate) fn parse_info_plist(bytes: &[u8]) -> Result<ParsedInfoPlist, IpaAppMetadataError> {
+pub fn parse_info_plist(bytes: &[u8]) -> Result<ParsedInfoPlist, IpaAppMetadataError> {
     let parsed = if bytes.starts_with(b"bplist00") {
         parse_info_events(BinaryReader::new(Cursor::new(bytes)))
     } else if looks_like_xml(bytes) {

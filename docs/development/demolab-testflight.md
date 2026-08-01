@@ -241,22 +241,44 @@ random mode-`0700` temporary root beneath that locked staging directory, so its
 export plist, intermediate IPA, and other export scratch cannot be left in the
 system temporary directory. The lane verifies Gym's actual export directory is
 a direct child of that root, removes the root after a successful export, and
-removes all unpublished staging output on failure. It revalidates output and
+removes ordinary unpublished staging output on failures before the private
+oracle helper is launched. Immediately before that launch it switches to
+fail-safe retention: any spawn, helper, evidence, or later pre-publication
+failure preserves the owner-only staging tree, and the next archive attempt
+refuses to proceed until the retained `.demolab-staging-*` entry is explicitly
+reconciled. It revalidates output and
 staging filesystem identity and mode before and after the build, creates the
 evidence inside staging, validates that the completed evidence satisfies the
-same strict schema consumed by Stage 2, and only then publishes the completed
-directory with Darwin's exclusive, no-follow rename. Concurrent controlled
+same strict schema consumed by Stage 2, and then binds the exact Archive App
+directory identity returned by the private oracle helper. Its final publisher
+keeps read-only descriptors open for the IPA, six Archive sources, oracle, and
+evidence while it rehashes them, performs Darwin's exclusive no-follow
+directory rename, and revalidates every descriptor through the published path
+before returning success. Immediately before the rename, the lane atomically
+reserves an owner-only
+`.demolab-staging-published-indeterminate-*.json` sibling gate bound to the
+expected run device/inode. The gate is removed only after all descriptor-bound
+post-rename checks pass. A gate reservation failure therefore prevents the
+rename, while any later failure leaves a durable retry block for the normal
+retained-staging scan until the operator reconciles that exact published run.
+Concurrent controlled
 invocations therefore cannot share, mix, or overwrite build output; an
 existing final directory is never reused. A replaced or permission-weakened
-directory is rejected, malformed evidence prevents publication, and a failed
-build removes unpublished staging output. The lane refuses a missing output
+directory is rejected and malformed evidence prevents publication without
+deleting indeterminate private state. The lane refuses a missing output
 root instead of creating it beneath a caller-controlled parent.
+
+The existing upload lane explicitly rejects the LAB-002 checkpoint candidate
+`1.0 (3)` while 3B.3 is incomplete. It cannot be uploaded merely because the
+Archive, IPA, and oracle were generated together; 3B.3 must first persist the
+manifest/oracle identities in evidence and enforce them at upload time.
 
 The run directory contains local sensitive research artifacts:
 
 ```text
 DemoLab.xcarchive
 DemoLab-<build>.ipa
+lab-002-oracle-v1.json
 demolab-pre-upload-evidence.json
 ```
 

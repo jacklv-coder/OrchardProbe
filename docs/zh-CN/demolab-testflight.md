@@ -28,8 +28,10 @@ App/Framework/Extension 清点。受控 TestFlight 实验要进一步确认：Ap
   Inode、权限和解析路径。证据生成完成后，再使用 Darwin 排他且拒绝符号链接的 Rename
   一次发布最终目录，已有目标不会被覆盖。Gym 的导出 Plist、中间 IPA 和其他 Scratch
   只能写入受锁暂存目录下另一个随机 `0700` 临时根；Lane 会确认 Gym 实际导出目录是
-  该临时根的直接子目录，成功后删除临时根，失败时则连同全部未发布暂存产物一起清理，
-  不会把签名产物遗留在系统临时目录。
+  该临时根的直接子目录，成功后删除临时根。私有 Oracle Helper 启动前的普通失败会
+  清理未发布暂存产物；尝试启动 Helper 前则切换为失败安全保留，任何 Spawn、Helper、
+  Evidence 或后续发布前失败都会保留 Owner-only 暂存现场，下一次 Archive 会在
+  `.demolab-staging-*` 被显式协调前拒绝继续。签名产物不会遗留在系统临时目录。
 - `demolab_upload_testflight` 只接受仓库外、权限受限的 App Store Connect API
   Key；上传前强制复核源码 Commit、证据类型、IPA 大小与 SHA-256、包内 Bundle
   ID、版本/Build 号、可执行文件路径及三个二进制哈希，再生成只读的私有临时副本、

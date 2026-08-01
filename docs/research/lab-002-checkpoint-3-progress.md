@@ -18,7 +18,7 @@ preceding row is complete.
 | Order | Substep | Status | Completion gate |
 |---:|---|---|---|
 | 3A | Private pre-build input generator | `complete; PR #62 merged` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests, Codex CR, and CI passed; [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) merged as `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
-| 3B | Archive/oracle/evidence closure | `in progress; 3B.1 implemented, PR review/merge pending` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
+| 3B | Archive/oracle/evidence closure | `in progress; 3B.1 complete, 3B.2 final CR/CI pending` | Make the hardened archive flow consume and revalidate the exact 3A artifacts, build only the three allowlisted roles, compare Archive and IPA slice identity plus `__TEXT,__oprobe`, publish the canonical frozen oracle, and bind its external SHA-256 into pre-upload evidence; the upload lane must reject absent or mismatched manifest/oracle evidence |
 | 3C | Device-free tests, Codex CR, CI, and implementation merge | `blocked` | Use only temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures; cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection; merge the reviewed implementation before any signed candidate is built |
 | 3D | Exact signed DemoLab `1.0 (3)` candidate | `blocked` | From the clean merged 3C commit, recover only validated first-party signing identifiers from private local configuration, create fresh 3A inputs, archive/export `1.0 (3)`, and freeze the 3B oracle/evidence in a new owner-only run directory; do not upload, install, or observe a device |
 | 3E | Sanitized completion record | `blocked` | Independently rehash and verify the local candidate, manifest, oracle, and evidence bindings; record only non-secret hashes/toolchain/build facts in Issue #55 and bilingual docs, run final Codex CR/CI/review, and merge the checkpoint-3 result |
@@ -27,9 +27,32 @@ preceding row is complete.
 
 | Order | Slice | Status | Completion gate |
 |---:|---|---|---|
-| 3B.1 | Secure 3A consumption | `implemented; PR review/merge pending` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper must descriptor-relatively read exactly the three mode-`0400` owner files, rederive the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and return only a bounded private IPC envelope. Fastlane must inject the closed values without caller-supplied nonce, public-key, or Build-Binding variables |
-| 3B.2 | Archive/IPA oracle closure | `blocked by 3B.1` | Measure the three allowlisted Archive and IPA executables, close slice/UUID/range/fixup identity, compare `__TEXT,__oprobe`, and atomically publish one canonical owner-only oracle |
-| 3B.3 | Evidence and upload gate | `blocked by 3B.2` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
+| 3B.1 | Secure 3A consumption | `complete; PR #63 merged` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper descriptor-relatively reads exactly the three mode-`0400` owner files, rederives the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and returns only a bounded private IPC envelope. Fastlane injects the closed values without caller-supplied nonce, public-key, or Build-Binding variables. Device-free regressions, Codex CR, GitHub Codex review, and CI passed; [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) merged as `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
+| 3B.2 | Archive/IPA oracle closure | `P1 special-slot and P2 zero-fill/per-entry rehash fixes validated locally; final CR/CI/merge pending` | Measure the three allowlisted Archive and IPA executables, close slice/UUID/range/fixup identity, compare `__TEXT,__oprobe`, and atomically publish one canonical owner-only oracle |
+| 3B.3 | Evidence and upload gate | `blocked until 3B.2 merges` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
+
+### 3B.2 ordered execution gates
+
+| Order | Gate | Status | Completion criterion |
+|---:|---|---|---|
+| 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
+| 3B.2.2 | Archive/IPA parity | `complete` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, slice extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree; no role or slice may be skipped |
+| 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
+| 3B.2.4 | Device-free closure tests | `local tests and helper reproduction complete; P1 and both P2 regressions passed; final CR/CI pending` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, signed-special-slot, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and CI must pass before 3B.3 is activated |
+
+The final P1/P2-fixed 3B.2 helper was independently built twice from the
+read-only source snapshot at commit
+`7db46b22e409ec635b015091f1eff0b3e6f8287a`; both products were
+byte-identical. The registered tuple is Rust `1.85.0-aarch64-apple-darwin`, source
+snapshot SHA-256
+`ac687ac04a25cad4d57dc7de6f503081e4ee038cf55f7eb1a1924cf44bdeffbf`,
+size `1884528`, SHA-256
+`d4f2b1c089371d91eda6363e9df9c9efcd0ed284305b948db4dca20a7883d971`,
+and CDHash `cadae3e5ba93f22c82aa811d7fb35c15dae16696`. This helper verifies every
+present signed CodeDirectory special slot before accepting signing metadata and returns
+the device/inode of the still-held final Archive App root, allowing Fastlane to
+bind final evidence and publication validation to the exact helper-measured
+directory rather than a replaceable pathname.
 
 ## Fixed safety boundaries
 
@@ -210,3 +233,124 @@ checks the held directory identity, source/version/build/toolchain, every
 helper, selected Xcode/XcodeGen, and held directory. Only those closed values
 are injected into the repository-owned build. This slice does not yet claim
 an Archive/IPA oracle or enable upload; those remain blocked on 3B.2 and 3B.3.
+
+## 3B.2 implementation boundary
+
+The same `ios demolab_archive` lane now invokes the reviewed private helper
+after export; the operator does not manually copy an Archive, unpack an IPA,
+or upload an oracle. Fastlane passes held Archive and run-directory
+descriptors on fixed inherited file descriptors, while the helper opens the
+exported IPA from the held staging root, validates the exact bounded ZIP
+inventory, and copies it into an owner-only private workspace before
+measurement. It recursively enumerates the held Archive app before
+measurement, accepts exactly the three allowlisted executable paths, and
+retains the six enumerated executable/Info.plist descriptors used for
+measurement. The final closure performs an exact executable inventory, reopens
+and rehashes every retained path against its held identity and digest, then
+performs the exact inventory again. A replacement between either inventory and
+the path checks, or a newly introduced executable after the path checks,
+therefore fails closed. The helper also rehashes the complete held IPA after
+every entry read and requires that digest to equal the one captured before
+parsing.
+
+For each of the fixed main-app, framework, and share-extension roles, the
+helper requires the exact Archive and IPA executable paths and every Mach-O
+slice to agree on architecture, CPU subtype, UUID, slice extent, signing
+identity, fixed-range coordinates and bytes, encryption state, and a
+domain-separated digest of the accepted classic or chained-fixup layout.
+It separately parses both fixed bundle `Info.plist` files and binds their
+bundle identifier, version/build, and executable name instead of borrowing
+those values from the authorization request. The closed CodeDirectory parser
+requires indexed blobs to consume the declared SuperBlob exactly, rejects
+scatter tables, accepts only complete SHA-256 page coverage, and checks the
+signed entitlements special slot. Xcode's unsigned Simulator fixture may carry
+the exact `0x20400` ad-hoc/linker-signed CodeDirectory profile with no team,
+entitlements, or CMS slots; the parser accepts only that exact omission and
+still requires the closed identifier grammar. It remains classified ad hoc and
+therefore cannot pass the signed Archive/IPA oracle path. Before CMS
+verification, selected
+entitlements are read through a bounded XML/binary event stream with explicit
+event, depth, collection, key, and cumulative scalar-byte budgets. Binary
+inputs additionally receive a pre-allocation trailer, object-count, offset,
+scalar-extent, reference, and collection-length preflight before the library
+reader can construct reference vectors; duplicate root keys and oversized
+unknown structures fail closed. The helper then verifies the
+detached CMS over that exact CodeDirectory, requires its signer to pass
+macOS's local `codeSign` trust policy using the bounded embedded certificate
+chain plus the explicit root-owned Apple system-root keychain while disabling
+the default/user keychain search list, and requires the signer-certificate
+Team ID to equal the signed CodeDirectory Team ID. Unknown load commands,
+mixed classic/chained fixups, omitted or extra executables, malformed or
+untrusted signatures, range drift, or any byte mismatch fail closed.
+Classic rebase and ordinary/weak-bind streams must contain a terminal DONE
+opcode followed only by linker zero padding; lazy-bind streams instead accept
+their required sequence of individually DONE-terminated records and still
+reject a final unterminated record.
+
+Immediately before publication, the helper reopens the fixed Archive app and
+IPA from the current held run-directory path. It requires the Archive app
+directory to retain its original device/inode, repeats the exact executable
+inventory plus all six retained-file identity/digest checks from that reopened
+root, and requires two current IPA opens to retain the original identity,
+complete digest, and validated ZIP inventory. A renamed/replaced Archive app
+or IPA therefore cannot make the oracle describe stale descriptors while the
+following evidence step reads different current paths.
+
+The helper returns the final IPA size/digest, the ordered size/digest tuple for
+all six retained Archive files, and the device/inode of the still-held Archive
+App directory from which those measurements were closed. Fastlane
+independently binds that exact directory and snapshots the same three Mach-O
+files and three Info.plists immediately before writing pre-upload evidence,
+requiring an exact match. The evidence boundary therefore rejects a source or
+Archive-root replacement both before and after helper publication instead of
+trusting a pathname handoff.
+
+The outer lane keeps Gym logs, result bundles, dSYM ZIPs, and other export
+auxiliaries in a disposable private scratch directory and moves only the
+returned IPA into final staging. The final publisher requires the top-level
+inventory to contain exactly the Archive, IPA, oracle, and evidence; it then
+keeps read-only descriptors open for the oracle-bound Archive App, IPA, all six
+Archive sources, oracle, and serialized evidence. The same function repeats
+their complete digests and current path identities, performs the exclusive
+staging-directory rename, and revalidates every held descriptor through its
+new published path before returning success. Device-free regressions publish a
+valid fixture and reject replacements of the IPA, an Archive source, the whole
+Archive App root, oracle, or evidence plus an injected top-level entry. They
+also require an owner-only
+`.demolab-staging-published-indeterminate-*.json` sibling gate containing the
+expected published device/inode to be reserved before the directory rename,
+reject publication if that exclusive reservation fails, and remove the gate
+only after every post-rename descriptor check passes. Replacing the IPA after
+the rename therefore retains the gate. Because the existing retained-staging
+scan recognizes it, a failed final validation has an explicit reconciliation
+path and cannot silently strand an unverified final run.
+
+Only after all three roles pass does the helper encode the canonical
+`orchardprobe.lab002.oracle.v1` record, bind it to the authenticated source,
+version/build, authorization-manifest digest, target-identity set, and Build
+Binding, and publish it atomically with mode `0400` below the locked private
+run directory. The full oracle and its target identifiers remain outside
+Git and logs. Publication retains the staging descriptor and exact
+device/inode returned by the same metadata read that validates the file.
+Because Darwin has no identity-bound unlink-by-descriptor primitive, any
+failure after staging creation performs no pathname deletion. The helper
+syncs the locked directory, reports publication as indeterminate, and retains
+the owner-only staging or published state for explicit reconciliation before
+retry. Fastlane arms outer staging retention immediately before attempting to
+spawn the oracle helper and keeps it armed through result, oracle identity,
+helper, toolchain, XcodeGen, and evidence validation. It disarms only after
+the staging directory is atomically published as the final run. The helper's fixed
+indeterminate marker adds the retained-path diagnostic, but spawn failure,
+markerless termination, panic, broken output, malformed results, and any
+downstream pre-publication failure retain the staging tree. Every later archive attempt enumerates
+the held output directory before creating new staging and refuses to proceed
+while any retained `.demolab-staging-*` entry remains, so retry requires
+explicit operator reconciliation rather than silently accumulating private
+artifacts. This deliberately preserves both the expected bytes and any
+concurrently substituted name instead of risking deletion of an unrelated
+same-user file. This implementation does not upload to TestFlight, inspect a
+device, reconstruct an IPA, or provide the future one-file end-user
+decryption command. Until 3B.3 binds this oracle and the authorization manifest
+into pre-upload evidence, the existing upload lane explicitly rejects the
+exact LAB-002 `1.0 (3)` tuple, so transient archive-time comparison cannot be
+used to bypass the pending upload gate.
