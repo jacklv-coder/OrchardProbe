@@ -262,7 +262,7 @@ Host 完成时间加完整 120 秒设备时钟偏差，才允许发布；否则�
 之后重新运行同一 Lane，不能修改时间戳，也不能让 Helper 内部等待。
 开始、关闭或最终验证任何 Run 前，Helper
 都会重新打开原始 Prebuild 与冻结 Candidate，要求保留的 Manifest、Oracle 和预上传证据
-逐字节不变。完整链验证还会在两轮链闭合后、返回处置结果前再次执行全部冻结源复核，因此并发的源变更不能让基于过期内存数据的结果成功返回。关闭 Run 会验证设备签名 Export、逐 Role/Slice 对照冻结 Oracle 的身份、初始
+逐字节不变。完整链验证还会在两轮链闭合后、返回处置结果前再次执行全部冻结源复核，因此并发的源变更不能让基于过期内存数据的结果成功返回。第二轮关闭在返回闭合处置前执行同样的最终源复核，并在接受两轮链前重新核对第一轮保留 Intent 与冻结预上传证据。关闭 Run 会验证设备签名 Export、逐 Role/Slice 对照冻结 Oracle 的身份、初始
 加密覆盖和预期映射明文摘要，再派生 Binding；第二轮还要求有序两轮的规范化观察完全一致。
 当前 iOS Observer 会如实把有界签名解析记录为 `not_checked`；Host 只允许精确的
 `inconclusive`/`signature_invalid_or_unchecked` Tuple 作为可复现 No-Go 证据关闭，绝不会

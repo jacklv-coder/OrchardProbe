@@ -338,3 +338,14 @@ the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
 all 278 Workspace tests, Ruby syntax, the diff check, and the explicit
 no-measurement-hook check also pass. A fresh clean Codex CR remains required
 before the 4B PR.
+
+That fresh complete-diff CR found two further P2 close-path gaps. The run-2
+close reverified run 1 without separately rebinding its retained Intent to the
+frozen pre-upload evidence, and it returned the closed disposition without the
+same post-chain source revalidation used by the final verifier. The remediation
+now rechecks run 1's retained Intent before accepting the two-run chain and
+reopens the complete frozen prebuild/candidate tuple after the chain closes and
+before returning from every close. Because this changes the Rust Helper, two
+new independent reproducibility measurements, a replacement sole allowlist
+tuple, the normal gate, all local gates, and a fresh clean CR remain required
+before the 4B PR.

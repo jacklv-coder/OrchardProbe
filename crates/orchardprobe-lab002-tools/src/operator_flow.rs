@@ -1675,6 +1675,7 @@ fn close_run_phase(
     )?;
     let evidence_disposition = if ordinal == 2 {
         let run_one = run_files(&root, 1)?;
+        verify_intent_source(&root, &run_one.intent)?;
         let verified_one = verify_run_chain(
             &enrollment,
             RunArtifactBytes {
@@ -1696,6 +1697,13 @@ fn close_run_phase(
     } else {
         None
     };
+    let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    require_retained_source_match(
+        &final_source,
+        &source.manifest,
+        &source.oracle,
+        &source.evidence,
+    )?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: if ordinal == 2 {

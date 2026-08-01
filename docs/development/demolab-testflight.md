@@ -286,6 +286,9 @@ manifest, Oracle, and pre-upload evidence to remain byte-identical. A complete
 chain verification repeats that full frozen-source revalidation after the
 two-run chain closes and before returning a disposition, so a concurrent
 source change cannot leave a successful result based on stale in-memory data.
+The second close applies the same final source revalidation before returning
+its closed disposition and rechecks run 1's retained Intent against the frozen
+pre-upload evidence before accepting the two-run chain.
 Every
 signed role report must then match the Oracle's exact role/slice identity,
 initial encryption coverage, and expected mapped plaintext digest. The second
