@@ -173,9 +173,13 @@ signature start after zeroing only the parsed `__LINKEDIT.filesize` and
 `LC_CODE_SIGNATURE.datasize` fields. Those normalized prefix hashes must match;
 an adjacent-byte or any other code/load-command difference therefore fails
 closed even when both binaries are independently validly signed. The oracle
-records the IPA slice size used by the installed-build verifier. Fat or
-multi-slice size changes, a moved signature start, growth outside the closed
-signature tail, or any existing identity/range change still fails closed.
+also normalizes that same parsed `__LINKEDIT.filesize` only while hashing the
+fixup-layout identity; its actual value is still used to validate segment and
+fixup bounds. Every other segment extent and the complete fixup payload remain
+bound. The oracle records the IPA slice size used by the installed-build
+verifier. Fat or multi-slice size changes, a moved signature start, growth
+outside the closed signature tail, or any existing identity/range change still
+fails closed.
 
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload

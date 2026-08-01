@@ -2654,6 +2654,7 @@ struct FixupSegment {
     vmsize: u64,
     filesize: u64,
     is_text: bool,
+    is_linkedit: bool,
 }
 
 fn reject_overlapping_segment_vm_ranges(segments: &[FixupSegment]) -> Result<(), Lab002Error> {
@@ -3307,8 +3308,15 @@ fn measure_fixup_layout<R: Read + Seek>(
     for segment in layout.segments {
         digest.update(segment.vmaddr.to_be_bytes());
         digest.update(segment.vmsize.to_be_bytes());
-        digest.update(segment.filesize.to_be_bytes());
-        digest.update([u8::from(segment.is_text)]);
+        digest.update(
+            if segment.is_linkedit {
+                0
+            } else {
+                segment.filesize
+            }
+            .to_be_bytes(),
+        );
+        digest.update([u8::from(segment.is_text), u8::from(segment.is_linkedit)]);
     }
 
     match (layout.classic, layout.chained) {
@@ -3638,6 +3646,7 @@ pub fn parse_fixed_sections<R: Read + Seek>(
                     vmsize,
                     filesize,
                     is_text: segment_name == "__TEXT",
+                    is_linkedit: segment_name == "__LINKEDIT",
                 });
                 for section_index in 0..nsects as usize {
                     let section_start = segment_header_size + section_index * section_size;
@@ -5206,12 +5215,14 @@ mod tests {
                 vmsize: 0x1000,
                 filesize: 0x1000,
                 is_text: true,
+                is_linkedit: false,
             },
             FixupSegment {
                 vmaddr: image_vmaddr + 0x1000,
                 vmsize: 0x1000,
                 filesize: 0x1000,
                 is_text: false,
+                is_linkedit: false,
             },
         ];
         let mut payload = Vec::new();
@@ -5248,6 +5259,7 @@ mod tests {
             vmsize: 0x3000,
             filesize: 0x1000 * file_backed_page_count as u64,
             is_text: false,
+            is_linkedit: false,
         }];
         let mut payload = Vec::new();
         for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 24] {
@@ -5271,6 +5283,7 @@ mod tests {
             vmsize: 0x2000,
             filesize: 0x1800,
             is_text: false,
+            is_linkedit: false,
         }];
         let mut outside_file = Vec::new();
         for value in [0, 28, 0, 0, 0, 1, 0, 1, 8, 26] {
@@ -5500,6 +5513,54 @@ mod tests {
         );
         assert!(normalized_macho_prefix_sha256(original.clone(), vec![(12, 4), (15, 4)]).is_err());
         assert!(normalized_macho_prefix_sha256(original, vec![(60, 8)]).is_err());
+    }
+
+    #[test]
+    fn fixup_identity_normalizes_only_linkedit_filesize() {
+        let digest = |segments: &[FixupSegment]| {
+            measure_fixup_layout(
+                &mut Cursor::new(Vec::<u8>::new()),
+                FixupLayout {
+                    slice_offset: 0,
+                    slice_size: 0,
+                    endianness: Endianness::Little,
+                    is_64_bit: true,
+                    segments,
+                    classic: None,
+                    chained: None,
+                    saw_dynamic_symbol_table: false,
+                    image_text_vmaddr: 0x1_0000_0000,
+                },
+            )
+            .unwrap()
+        };
+        let base = [
+            FixupSegment {
+                vmaddr: 0x1_0000_0000,
+                vmsize: 0x4000,
+                filesize: 0x4000,
+                is_text: true,
+                is_linkedit: false,
+            },
+            FixupSegment {
+                vmaddr: 0x1_0000_4000,
+                vmsize: 0x2000,
+                filesize: 0x1000,
+                is_text: false,
+                is_linkedit: true,
+            },
+        ];
+        let mut resized_linkedit = base.clone();
+        resized_linkedit[1].filesize += 64;
+        assert_eq!(digest(&base), digest(&resized_linkedit));
+
+        let mut resized_text = base.clone();
+        resized_text[0].filesize -= 64;
+        assert_ne!(digest(&base), digest(&resized_text));
+
+        let mut relabeled_segment = base.clone();
+        relabeled_segment[1].is_linkedit = false;
+        assert_ne!(digest(&base), digest(&relabeled_segment));
     }
 
     #[test]
