@@ -109,7 +109,7 @@ containing PR is on `main`.
 |---:|---|---|---|
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
 | 2 | Device-free implementation and synthetic/Simulator verification | `done` | Merged [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; all required CI, review threads, and pre-merge Codex CR were clean |
-| 3 | Exact signed DemoLab build and pre-upload oracle | `active` | Activation [PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 2 is complete, and the 2026-07-31 authorization is limited to DemoLab `1.0 (3)`, its signed candidate, and frozen pre-upload oracle, with no upload, installation, or device observation |
+| 3 | Exact signed DemoLab build and pre-upload oracle | `active; 3D complete, 3E record pending` | From clean merged PR #71 source, exactly one verified local DemoLab `1.0 (3)` signed candidate/frozen-oracle pair has been published. The [checkpoint-3 progress ledger](docs/research/lab-002-checkpoint-3-progress.md) records its non-secret hashes and the remaining review/merge gate. The authorization still excludes upload, installation, and device observation |
 | 4 | Installation enrollment and two clean device observations | `blocked` | Requires checkpoint 3, fresh per-operation authorization, the selected owned iPhone, and the reviewed two-run procedure |
 | 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
 

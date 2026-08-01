@@ -89,7 +89,7 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 |---:|---|---|---|
 | 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
 | 2 | 无设备实现与合成/Simulator 验证 | `done` | 已合并的 [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59)实现闭合协议、Host 链、固定设备状态/Observer/Export 流程、生产授权验证及合成/Simulator 门禁；全部必需 CI、Review Thread 与合并前 Codex CR 均已清零 |
-| 3 | 精确签名 DemoLab Build 与上传前 Oracle | `active` | 激活 [PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61)；检查点 2 已完成，2026-07-31 授权仅限 DemoLab `1.0 (3)` 签名候选与冻结上传前 Oracle，不含上传、安装或设备观察 |
+| 3 | 精确签名 DemoLab Build 与上传前 Oracle | `active；3D 完成，3E 记录待合并` | 已从 PR #71 合并后的干净源码发布恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选/冻结 Oracle Pair。[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)记录其非秘密 Hash 与剩余 Review/Merge 门禁；授权仍不包含上传、安装或设备观察 |
 | 4 | 安装 Enrollment 与两次干净真机观察 | `blocked` | 需要检查点 3、每次操作的全新授权、所选自有 iPhone 和已评审两轮流程 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 

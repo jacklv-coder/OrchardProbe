@@ -194,8 +194,9 @@ Version、可执行文件清单、架构与 Slice、Mach-O UUID 和代码签名�
 
 项目目前没有已批准后端。LAB-001 已对公开、非越狱的内部 TestFlight 精确组合得到
 有界 No-Go：在批准边界内无法独立观察精确已安装 Lineage、初始保护和明文范围。
-LAB-002 已通过 PR #59 完成无设备设计与实现检查点。检查点 3 只为明确授权的
-DemoLab `1.0 (3)` 候选与冻结上传前 Oracle 激活；上传、安装与设备观察仍未授权。
+LAB-002 已通过 PR #59 完成无设备设计与实现检查点。检查点 3 已从 PR #71 合并后的
+干净源码生成恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选与冻结上传前
+Oracle，其脱敏完成记录仍在合并中；上传、安装与设备观察仍未授权。
 它用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；
 设备观察前，已评审的设计/构建清单必须冻结精确 DemoLab 源码 Commit/Build 身份、
@@ -345,7 +346,7 @@ Rust Host 负责政策、解析、资源记账、重建、验证、打包、脱�
 | 版本化 Manifest/Capability/Error Schema | 已实现 |
 | 首方 DemoLab Simulator Fixture | 已实现 |
 | 有界协议规范 | 设计已接受；未实现 |
-| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现，检查点 3 仍仅为 DemoLab `1.0 (3)` 候选/Oracle 激活。私有 3A 生成和完整 3B Archive/IPA/Oracle/Evidence/Upload-gate 闭环已依次随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62)、[#63](https://github.com/jacklv-coder/OrchardProbe/pull/63)、[#64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 与 [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 合并；3C 无设备验证与实现合并已完成，并由 [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 记录闭环和 3D 转换。尚无签名 `1.0 (3)` 候选、上传、真机验证或 Go 结果 |
+| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现。私有 3A 生成和完整 3B Archive/IPA/Oracle/Evidence/Upload-gate 闭环已依次随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62)、[#63](https://github.com/jacklv-coder/OrchardProbe/pull/63)、[#64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 与 [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 合并；3C 无设备验证与实现合并已通过 [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 完成。PR #71 合并了最终重签名身份修复，现已存在恰好一个通过验证的本地签名 DemoLab `1.0 (3)` 候选/冻结 Oracle Pair；脱敏记录见[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)。尚无上传、安装、真机验证、明文结果或 Go 结果 |
 | 设备发现与 Transport | 未实现 |
 | 设备 Helper 与 Backend | 未实现 |
 | 确定性未签名分析 IPA 打包 | Unix 库内已从保留的私有工作树实现；尚无 CLI 或产物发布 |
