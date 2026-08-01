@@ -1,7 +1,7 @@
 # LAB-002 checkpoint 3 progress ledger
 
-Status when activation [PR #61](https://github.com/jacklv-coder/OrchardProbe/pull/61)
-is on `main`: **active for DemoLab `1.0 (3)`**
+Status when completion-record [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)
+is on `main`: **complete for the local DemoLab `1.0 (3)` candidate/oracle pair**
 
 Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
@@ -11,7 +11,7 @@ and frozen pre-upload oracle. This authorization excludes TestFlight upload,
 installation, physical-device observation, and device-backend work. Those
 operations remain separately gated.
 
-This ledger becomes authoritative only when its activation PR is merged into
+This completion record becomes authoritative only when PR #72 is merged into
 `main`. Work must proceed in order, and each row remains blocked until the
 preceding row is complete.
 
@@ -20,8 +20,8 @@ preceding row is complete.
 | 3A | Private pre-build input generator | `complete; PR #62 merged` | The local-only `ios demolab_prepare_lab002` lane builds the repository-internal `oprobe-lab002` helper from the pinned Rust toolchain and checksum-authenticated isolated Cargo sources, creates a fresh raw Ed25519 seed, public key/key ID, identity nonce, canonical authorized-target manifest, target-identity set, and domain-separated Build Binding from a clean commit already present in the authenticated live GitHub `main` history and a pinned build toolchain, then exclusively publishes the three private records outside Git with owner-only permissions and durability checks. Device-free unit/workspace tests, Codex CR, and CI passed; [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) merged as `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
 | 3B | Archive/oracle/evidence closure | `complete; PRs #63-#65 merged` | The hardened archive flow consumes and revalidates the exact 3A artifacts, builds only the three allowlisted roles, compares Archive and IPA slice identity plus `__TEXT,__oprobe`, publishes the canonical frozen oracle, binds its external SHA-256 into pre-upload evidence, and rejects upload when the closed manifest/oracle tuple is absent or mismatched. [PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) merged the final gate as `ca19db07a8badc5d7ce55cc556ab9205181056a5` |
 | 3C | Device-free tests, Codex CR, CI, and implementation merge | `complete; PR #66 merged` | Temporary synthetic keys, unsigned Simulator products, and repository-owned fixtures cover weak keys, malformed/private paths, symlink/race/permission failures, target drift, slice/range/fixup mismatch, canonicalization, atomic publication, and upload-gate rejection. All P1/P2 findings were resolved, the full local verification set and required CI passed, and the reviewed implementation merged through PRs #62-#65 before any signed `1.0 (3)` candidate was built. [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) merged the closure and 3D transition as `e973f6057f5d03e3bab4f5857fdb47ed7699574a` |
-| 3D | Exact signed DemoLab `1.0 (3)` candidate | `active; PR #71 P1 follow-up re-review/CI pending` | The first-party App IDs and dedicated App Group are privately configured and an independent temporary signing preflight passed. PRs #67-#70 closed the post-export XcodeGen check, export-only `Symbols/` sidecar, rollback classification, reproducible private-helper allowlist, signature-tail extent, and normalized complete pre-signature image. The first fresh run from merged PR #70 again completed signed Archive/export and passed the new prefix gate, then safely rejected because the existing fixup-layout identity also hashed the permitted 64-byte `__LINKEDIT.filesize` growth. No oracle/evidence or candidate was published; cleanup proof removed staging, and no upload, installation, or device observation occurred |
-| 3E | Sanitized completion record | `blocked` | Independently rehash and verify the local candidate, manifest, oracle, and evidence bindings; record only non-secret hashes/toolchain/build facts in Issue #55 and bilingual docs, run final Codex CR/CI/review, and merge the checkpoint-3 result |
+| 3D | Exact signed DemoLab `1.0 (3)` candidate | `complete locally; PR #71 merged` | PR #71 closed the remaining re-signing fixup identity gap and merged as `319ba9480fa3d8051869a48cdd78c54e66f8edd2` after the P1 was fixed, all CI passed, and the exact-head Codex re-review found no major issue. A fresh source-bound 3A tuple from that clean merged commit then drove exactly one signed Archive/export run, which published the verified owner-only Archive, IPA, frozen oracle, and evidence tuple. No TestFlight upload, installation, or device observation occurred |
+| 3E | Sanitized completion record | `complete; PR #72 completion gate` | The local candidate, manifest, oracle, and evidence bindings were independently rehashed and verified. Only the non-secret hashes/toolchain/build facts were recorded in [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527) and these bilingual docs. [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) is the final Codex CR/CI/review and merge gate whose merge makes this completion authoritative |
 
 ### 3D ordered execution gates
 
@@ -32,10 +32,10 @@ preceding row is complete.
 | 3D.3 | Closed Xcode export policy and proven pre-publication rollback | `complete; PR #68 merged` | Set `uploadSymbols=false` so the controlled IPA remains the single `Payload/*.app` tree while retaining the Archive dSYM separately. Retention is disarmed only when the verified helper proves through the held directory descriptor that the exact Archive/IPA pair exists with no oracle state and emits an explicit cleanup-safe marker; crashes, signals, markerless failures, failed proof, and indeterminate publication all remain retained |
 | 3D.4 | Reproducible private-helper product review | `complete; PR #69 merged` | The helper changed in PR #68, so the old product allowlist correctly blocked 3A preparation. Two independent builds from merged source `091be371...`, the pinned Rust 1.85.0 toolchain, verified offline dependencies, and the reviewed sandbox produced the same size, full SHA-256, and CodeDirectory CDHash; PR #69 admitted only that exact tuple and merged as `7c058004c3b002f0a20e4f29b777d18bf5e9fd08` |
 | 3D.5 | Closed App Store re-signing extent and prefix | `complete; PR #70 merged` | The fresh `7c058004...` run proved that current Xcode keeps the same thin container, architecture, CPU subtype, UUID, fixed range, and signature start while growing only the trailing Code Signature/`__LINKEDIT` extent by 64 bytes for the main app and share extension. The implementation accepts only one-slice thin binaries whose Archive/IPA signature tails start together and each end exactly at its own EOF. It compares the complete pre-signature bytes after normalizing only the parsed `__LINKEDIT.filesize` and `LC_CODE_SIGNATURE.datasize` fields, retains all existing identity/range/fixup/encryption/signing checks, and records the final IPA slice size. Any adjacent or otherwise unlisted prefix-byte change fails closed. Two independent sandboxed builds of exact P1-fix commit `512d359...` produced identical private-helper size, full SHA-256, and CodeDirectory CDHash; the exact tuple was admitted, a third normal allowlist build passed, all CI passed, the P1 was resolved, and PR #70 merged as `b601a4b2599f4da9f2ed11869525d245b079ae0c` |
-| 3D.6 | Closed fixup identity across re-signing | `P1 follow-up implemented; PR #71 re-review/CI pending` | The one authorized run from merged `b601a4b...` used a fresh verified owner-only 3A tuple, completed signed Archive/export, and passed the closed extent plus normalized-prefix checks. It then safely rejected before oracle publication because `fixup_layout_sha256` also bound the permitted `__LINKEDIT.filesize` growth. The first PR #71 implementation continued using the actual filesize for segment/fixup bounds and normalized the parsed `__LINKEDIT` filesize in the fixup identity; two independent builds of `d737ce2...` matched, its exact tuple was admitted, the normal allowlist build and initial CI passed. Codex Review then found a P1 equal-size case in which an open or independently changed `__LINKEDIT` extent could also be normalized. Follow-up commit `34ef08b...` now permits normalization in both the complete pre-signature and fixup identities only when the parsed Code Signature is contained in `__LINKEDIT` and both ranges end exactly at slice EOF; otherwise the actual filesize remains bound. Every boundary check still uses the actual value, every other segment extent and the complete fixup payload remain bound, and regressions cover non-tail signatures, open extents, same-size changes, relabeling, and overflow. Two independent sandboxed builds of exact follow-up source produced the same size, full SHA-256, and CodeDirectory CDHash, only that new tuple was admitted, and a third normal allowlist build passed. Full CI, Codex re-review, P1 resolution, and merge remain required before another run |
-| 3D.7 | Fresh exact candidate | `blocked by 3D.6 merge` | From the clean merged fixup-identity commit, create a new source-bound 3A tuple and publish exactly one verified owner-only `1.0 (3)` Archive/IPA/oracle/evidence run; do not reuse any failed-run tuple and do not upload, install, or observe a device |
+| 3D.6 | Closed fixup identity across re-signing | `complete; PR #71 merged` | The one authorized run from merged `b601a4b...` used a fresh verified owner-only 3A tuple, completed signed Archive/export, and passed the closed extent plus normalized-prefix checks. It then safely rejected before oracle publication because `fixup_layout_sha256` also bound the permitted `__LINKEDIT.filesize` growth. The first PR #71 implementation continued using the actual filesize for segment/fixup bounds and normalized the parsed `__LINKEDIT` filesize in the fixup identity; two independent builds of `d737ce2...` matched, its exact tuple was admitted, the normal allowlist build and initial CI passed. Codex Review then found a P1 equal-size case in which an open or independently changed `__LINKEDIT` extent could also be normalized. Follow-up commit `34ef08b...` permits normalization in both the complete pre-signature and fixup identities only when the parsed Code Signature is contained in `__LINKEDIT` and both ranges end exactly at slice EOF; otherwise the actual filesize remains bound. Every boundary check still uses the actual value, every other segment extent and the complete fixup payload remain bound, and regressions cover non-tail signatures, open extents, same-size changes, relabeling, and overflow. Two independent sandboxed builds of exact follow-up source produced the same size, full SHA-256, and CodeDirectory CDHash; only that tuple was admitted and a third normal allowlist build passed. The P1 was resolved, the exact head passed all three required CI jobs, the final Codex re-review found no major issue, and PR #71 merged as `319ba9480fa3d8051869a48cdd78c54e66f8edd2` |
+| 3D.7 | Fresh exact candidate | `complete locally; recorded in Issue #55 and PR #72` | From clean merged commit `319ba9480fa3d8051869a48cdd78c54e66f8edd2`, a fresh owner-only 3A tuple drove exactly one signed `demolab_archive` run. The run published the Archive, IPA, frozen oracle, and pre-upload evidence; independent post-publication checks confirmed the exact source/version/build, clean-tree flag, manifest/oracle/IPA digest cross-bindings, Build Binding, Target Identity Set, signing-identity validation, and export-compliance validation. The evidence remains `pending_controlled_device_observation` with both upload and installation lineage false |
 
-None of the four signed runs is a candidate: every Archive/export operation
+The first four signed runs were not candidates: every Archive/export operation
 completed, but none published the closed oracle/evidence tuple. The first unpublished
 staging was removed by rollback. The second deterministic failure retained one
 private staging tree under the conservative pre-helper gate; it was verified to
@@ -44,8 +44,36 @@ non-candidate diagnostic name. The third deterministic signature-tail mismatch
 proved no oracle state and was durably cleaned. The fourth passed the normalized
 prefix gate but exposed the contradictory `__LINKEDIT.filesize` binding in the
 fixup identity; it likewise proved no oracle state and was durably cleaned. All
-source-bound pre-build tuples remain private historical diagnostics and cannot
-be reused after a fix changes `main`.
+four source-bound pre-build tuples remain private historical diagnostics and
+cannot be reused after a fix changes `main`. The fifth signed run, from the fresh
+merged-source tuple below, is the first and only published checkpoint-3 candidate.
+
+### 3D.7 sanitized local completion evidence
+
+- Source: clean authenticated GitHub `main` merge commit
+  `319ba9480fa3d8051869a48cdd78c54e66f8edd2`; DemoLab `1.0 (3)`, Release,
+  App Store distribution.
+- Execution: one fresh 3A preparation followed by exactly one signed
+  `ios demolab_archive` invocation. The prebuild and candidate directories are
+  owner-only mode `0700`; the private manifest and oracle are mode `0400`, and
+  the evidence and retained command logs are mode `0600`.
+- Toolchain: Fastlane `2.237.0`, XcodeGen `2.45.4`, Xcode `26.1.1`
+  (`17B100`), iPhoneOS SDK `26.1` (`23B77`).
+- IPA: `DemoLab-3.ipa`, 1,127,518 bytes, SHA-256
+  `d713eb7faf494005abf95a021ad998a99bee1520c9ecfaf68a63da0c19f6b836`.
+- Frozen oracle SHA-256:
+  `326d7a3260600f13dd65c518fdbeafebbfb119deb31dced15eb4745ced5f9472`.
+  Authorized-target manifest SHA-256:
+  `81eb3ec5b8aab36ac0a73187e0dbdce3f3296a2231c5de8fe66cb3f6d641342d`.
+- Independent post-publication validation rehashed all three records and proved
+  the evidence-to-oracle, oracle-to-IPA, and manifest-to-oracle/evidence
+  bindings, plus matching Build Binding and Target Identity Set. It also found
+  no symlink and no foreign-owned entry beneath the private candidate root.
+- The evidence explicitly records `uploaded_ipa_bound=false`,
+  `installed_artifact_bound=false`, and
+  `decision=pending_controlled_device_observation`. No Apple upload request,
+  installation, physical-device observation, or device-backend operation was
+  performed.
 
 ### 3B ordered implementation slices
 
@@ -79,7 +107,7 @@ and CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`.
 | Order | Gate | Status | Completion criterion |
 |---:|---|---|---|
 | 3B.2.1 | Closed measurement contract | `complete` | Reuse the accepted LAB-002 canonical oracle model and fixed three-role order; derive every executable path from the held Archive/IPA roots, enforce bounded regular-file reads, and reject unknown roles, slices, ranges, load commands, or fixup layouts |
-| 3B.2.2 | Archive/IPA parity | `complete; 3D.5 refinement active` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, non-signature extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree. Current Xcode's bounded App Store re-signing extent is handled only by the closed 3D.5 signature-tail rule; no role or slice may be skipped |
+| 3B.2.2 | Archive/IPA parity | `complete; 3D.5 refinement merged` | Independently parse each fixed Archive/IPA `Info.plist`; require its bundle/version/executable tuple plus every architecture, CPU subtype, Mach-O UUID, trusted CMS/CodeDirectory identity, non-signature extent, `__TEXT,__oprobe` coordinate/content, and accepted fixup layout to agree. Current Xcode's bounded App Store re-signing extent is handled only by the closed 3D.5 signature-tail rule; no role or slice may be skipped |
 | 3B.2.3 | Canonical private publication | `complete` | Encode one canonical oracle bound to the authenticated source/version/build, 3A manifest and Build Binding, then exclusively and durably publish it with mode `0400` beneath the identity-held owner-only run directory without printing its content |
 | 3B.2.4 | Device-free closure tests | `complete; PR #64 merged` | Synthetic fixture tests cover parity success plus target, slice, UUID, range, fixup, signed-special-slot, plaintext, canonicalization, permission, substitution, per-entry IPA mutation, and atomic-publication failures; documentation, Codex CR, and all required CI passed before 3B.3 started |
 
