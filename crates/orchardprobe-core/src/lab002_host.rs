@@ -10,17 +10,18 @@ use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use serde::Serialize;
 
 use super::{
-    AUTHORIZED_OPERATION_DOMAIN, Lab002Error,
+    AUTHORIZED_OPERATION_DOMAIN, AppGroups, EntitlementValue, Lab002Error, TargetIdentityInput,
     artifacts::{
         AuthorizationAcknowledgement, AuthorizedOperationEnvelope, AuthorizedTargetManifest,
         ClosedArtifact, CollectionBinding, CollectionChallengeCore, CollectionIntent,
         ContainerKind, DeviceEnrollmentBinding, DeviceSelectionConfirmation, ExportEntry,
-        InstallationEnrollmentCore, LabOracle, LogicalFilename, Outcome, RoleReport, SessionReport,
-        SessionState, SignatureKind, SignaturePresence, SignatureValidation,
+        InstallationEnrollmentCore, LabOracle, LogicalFilename, Outcome, Presence, RoleReport,
+        SessionReport, SessionState, SignatureKind, SignaturePresence, SignatureValidation,
         SignedEnrollmentReceipt, SignedSessionExport, UnsignedEnrollmentReceipt,
         UnsignedSessionExport,
     },
-    canonical_json, decode_hex, lower_hex, sha256_hex,
+    canonical_json, decode_hex, lower_hex, sha256_hex, target_identity_binding_sha256,
+    target_identity_set_sha256,
 };
 
 const ENROLLMENT_RECEIPT_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.enrollment-receipt.v1\0";
@@ -311,6 +312,8 @@ pub struct EnrollmentArtifactBytes<'a> {
 #[non_exhaustive]
 pub struct VerifiedEnrollment {
     pub(crate) authorized_target_manifest_sha256: String,
+    pub(crate) target_identity_set_sha256: String,
+    pub(crate) target_identity_bindings: Vec<(super::LabRole, String)>,
     pub(crate) installation_acknowledgement_sha256: String,
     pub(crate) authorization_envelope_sha256: String,
     pub(crate) signed_enrollment_receipt_sha256: String,
@@ -327,6 +330,46 @@ pub struct VerifiedEnrollment {
     pub(crate) completed_at: i64,
 }
 
+fn manifest_target_identity_bindings(
+    manifest: &AuthorizedTargetManifest,
+) -> Result<(String, Vec<(super::LabRole, String)>), Lab002Error> {
+    let mut bindings = Vec::with_capacity(manifest.targets.len());
+    for target in &manifest.targets {
+        let entitlement = |presence, value: &Option<String>| match (presence, value) {
+            (Presence::RequiredAbsent, None) => Ok(EntitlementValue::RequiredAbsent),
+            (Presence::Present, Some(value)) => Ok(EntitlementValue::Present(value.clone())),
+            _ => Err(Lab002Error::InvalidTargetIdentitySet),
+        };
+        let app_groups = match (
+            target.application_groups.presence,
+            &target.application_groups.values,
+        ) {
+            (Presence::RequiredAbsent, None) => AppGroups::RequiredAbsent,
+            (Presence::Present, Some(values)) => AppGroups::Present(values.clone()),
+            _ => return Err(Lab002Error::InvalidTargetIdentitySet),
+        };
+        let digest = target_identity_binding_sha256(&TargetIdentityInput {
+            identity_nonce_hex: manifest.identity_nonce.clone(),
+            role: target.role,
+            bundle_id: target.bundle_id.clone(),
+            code_directory_identifier: target.code_directory_identifier.clone(),
+            code_directory_team_identifier: target.code_directory_team_identifier.clone(),
+            application_identifier: entitlement(
+                target.application_identifier.presence,
+                &target.application_identifier.value,
+            )?,
+            developer_team_identifier: entitlement(
+                target.developer_team_identifier.presence,
+                &target.developer_team_identifier.value,
+            )?,
+            app_groups,
+        })?;
+        bindings.push((target.role, digest));
+    }
+    let identity_set = target_identity_set_sha256(&bindings)?;
+    Ok((identity_set, bindings))
+}
+
 /// Verify the complete manifest-to-binding enrollment chain without device I/O.
 pub fn verify_enrollment_chain(
     files: EnrollmentArtifactBytes<'_>,
@@ -341,6 +384,8 @@ pub fn verify_enrollment_chain(
     if manifest.authorization_key_id != sha256_hex(&authorization_public_key) {
         return Err(Lab002Error::AuthorizationKeyIdMismatch);
     }
+    let (target_identity_set_sha256, target_identity_bindings) =
+        manifest_target_identity_bindings(&manifest)?;
 
     let (acknowledgement, acknowledgement_sha256) = verified_artifact_sha256::<
         AuthorizationAcknowledgement,
@@ -446,6 +491,8 @@ pub fn verify_enrollment_chain(
 
     Ok(VerifiedEnrollment {
         authorized_target_manifest_sha256: manifest_sha256,
+        target_identity_set_sha256,
+        target_identity_bindings,
         installation_acknowledgement_sha256: acknowledgement_sha256,
         authorization_envelope_sha256: envelope_sha256,
         signed_enrollment_receipt_sha256: signed_receipt_sha256,
@@ -665,12 +712,35 @@ fn verified_export_entry<T: ClosedArtifact>(
     Ok((T::from_canonical_bytes(canonical)?, sha256))
 }
 
+fn verify_oracle_target_bindings(
+    enrollment: &VerifiedEnrollment,
+    oracle: &LabOracle,
+) -> Result<(), Lab002Error> {
+    if oracle.target_identity_set_sha256 != enrollment.target_identity_set_sha256
+        || oracle.roles.len() != enrollment.target_identity_bindings.len()
+        || oracle
+            .roles
+            .iter()
+            .zip(&enrollment.target_identity_bindings)
+            .any(|(role, (expected_role, expected_binding))| {
+                role.role != *expected_role
+                    || role.target_identity_binding_sha256 != *expected_binding
+            })
+    {
+        return Err(Lab002Error::InvalidEvidence(
+            "oracle target identities do not derive from the enrolled manifest",
+        ));
+    }
+    Ok(())
+}
+
 /// Verify one acknowledgement-to-binding collection chain without device I/O.
 pub fn verify_run_chain(
     enrollment: &VerifiedEnrollment,
     files: RunArtifactBytes<'_>,
 ) -> Result<VerifiedRun, Lab002Error> {
     let (oracle, oracle_sha256) = verified_artifact_sha256::<LabOracle>(files.frozen_oracle)?;
+    verify_oracle_target_bindings(enrollment, &oracle)?;
     let (acknowledgement, acknowledgement_sha256) =
         verified_artifact_sha256::<AuthorizationAcknowledgement>(files.run_acknowledgement)?;
     if acknowledgement.experiment_id != enrollment.experiment_id
@@ -1425,6 +1495,7 @@ mod tests {
         session: &SessionReport,
         role: LabRole,
         target_byte: u8,
+        target_identity_binding_sha256: &str,
         phase_offset: i64,
     ) -> RoleReport {
         RoleReport {
@@ -1450,7 +1521,7 @@ mod tests {
             build_binding_sha256: session.build_binding_sha256.clone(),
             role,
             fixture_relative_path: role.fixture_relative_path().into(),
-            target_identity_binding_sha256: digest(target_byte),
+            target_identity_binding_sha256: target_identity_binding_sha256.into(),
             installed_file_size: 4_096,
             container_kind: ContainerKind::Thin,
             active_slice_ordinal: 0,
@@ -1518,7 +1589,7 @@ mod tests {
             authorized_target_manifest_sha256: enrollment.authorized_target_manifest_sha256.clone(),
             authorization_public_key: public_key_hex(host_key),
             authorization_key_id: sha256_hex(host_key.verifying_key().as_bytes()),
-            target_identity_set_sha256: digest(0xa6),
+            target_identity_set_sha256: enrollment.target_identity_set_sha256.clone(),
             toolchain: toolchain(),
             ipa_size: 4_096,
             ipa_sha256: digest(0xa8),
@@ -1528,10 +1599,13 @@ mod tests {
                 .map(|(index, role)| {
                     let target_byte = 0xb0 + index as u8;
                     let plaintext = digest(target_byte.wrapping_add(3));
+                    let (expected_role, target_identity_binding_sha256) =
+                        &enrollment.target_identity_bindings[index];
+                    assert_eq!(role, *expected_role);
                     OracleRole {
                         role,
                         fixture_relative_path: role.fixture_relative_path().into(),
-                        target_identity_binding_sha256: digest(target_byte),
+                        target_identity_binding_sha256: target_identity_binding_sha256.clone(),
                         slices: vec![OracleSlice {
                             ordinal: 0,
                             cpu_type: 16_777_228,
@@ -1635,7 +1709,7 @@ mod tests {
             authorization_envelope_signature: envelope_value.signature.clone(),
             authorization_envelope_sha256: envelope_sha256.clone(),
             authorized_target_manifest_sha256: enrollment.authorized_target_manifest_sha256.clone(),
-            expected_target_identity_set_sha256: digest(0xa6),
+            expected_target_identity_set_sha256: enrollment.target_identity_set_sha256.clone(),
             enrollment_public_key: enrollment.enrollment_public_key.clone(),
             expected_device_installation_binding_sha256: enrollment
                 .device_installation_binding_sha256
@@ -1650,9 +1724,27 @@ mod tests {
         let intent_sha256 = sha256_hex(&intent);
 
         let session = session_report(enrollment, spec, &acknowledgement_sha256, &envelope_sha256);
-        let main_app = role_report(&session, LabRole::MainApp, 0xb0, 0);
-        let framework = role_report(&session, LabRole::Framework, 0xb1, 110);
-        let share_extension = role_report(&session, LabRole::ShareExtension, 0xb2, 220);
+        let main_app = role_report(
+            &session,
+            LabRole::MainApp,
+            0xb0,
+            &enrollment.target_identity_bindings[0].1,
+            0,
+        );
+        let framework = role_report(
+            &session,
+            LabRole::Framework,
+            0xb1,
+            &enrollment.target_identity_bindings[1].1,
+            110,
+        );
+        let share_extension = role_report(
+            &session,
+            LabRole::ShareExtension,
+            0xb2,
+            &enrollment.target_identity_bindings[2].1,
+            220,
+        );
         let documents = [
             session.to_canonical_bytes().unwrap(),
             main_app.to_canonical_bytes().unwrap(),
@@ -1871,6 +1963,23 @@ mod tests {
     fn enrollment_fixture() -> VerifiedEnrollment {
         let chain = owned_enrollment_chain();
         verify_enrollment_chain(chain.files()).unwrap()
+    }
+
+    #[test]
+    fn run_oracle_targets_must_derive_from_the_enrolled_manifest() {
+        let enrollment = enrollment_fixture();
+        let host_key = SigningKey::from_bytes(&[0x81; 32]);
+        let mut oracle = run_oracle(&enrollment, &host_key);
+        assert!(verify_oracle_target_bindings(&enrollment, &oracle).is_ok());
+
+        oracle.roles[0].target_identity_binding_sha256 = digest(0xee);
+        let altered = oracle
+            .roles
+            .iter()
+            .map(|role| (role.role, role.target_identity_binding_sha256.clone()))
+            .collect::<Vec<_>>();
+        oracle.target_identity_set_sha256 = target_identity_set_sha256(&altered).unwrap();
+        assert!(verify_oracle_target_bindings(&enrollment, &oracle).is_err());
     }
 
     #[test]

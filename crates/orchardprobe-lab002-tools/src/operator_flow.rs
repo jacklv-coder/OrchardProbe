@@ -243,9 +243,13 @@ struct EvidenceLineage {
 
 struct FrozenEvidenceInputs<'a> {
     record: &'a super::PrebuildRecord,
+    manifest_device: u64,
+    manifest_inode: u64,
     manifest_size: u64,
     manifest_sha256: &'a str,
     oracle: &'a LabOracle,
+    oracle_device: u64,
+    oracle_inode: u64,
     oracle_size: u64,
     oracle_sha256: &'a str,
     ipa_size: u64,
@@ -425,12 +429,6 @@ fn open_owner_directory(parent: &File, name: &str) -> Result<File, String> {
     Ok(directory)
 }
 
-fn is_decimal_identity(value: &str) -> bool {
-    !value.is_empty()
-        && value.bytes().all(|byte| byte.is_ascii_digit())
-        && (value == "0" || !value.starts_with('0'))
-}
-
 fn is_simple_version(value: &str, maximum_components: usize) -> bool {
     let components = value.split('.').collect::<Vec<_>>();
     !components.is_empty()
@@ -521,12 +519,14 @@ fn validate_evidence_binary(
 fn validate_evidence_artifact(
     artifact: &EvidenceArtifactIdentity,
     expected_name: &str,
+    expected_device: u64,
+    expected_inode: u64,
     expected_size: u64,
     expected_sha256: &str,
 ) -> Result<(), String> {
     if artifact.name != expected_name
-        || !is_decimal_identity(&artifact.device)
-        || !is_decimal_identity(&artifact.inode)
+        || artifact.device != expected_device.to_string()
+        || artifact.inode != expected_inode.to_string()
         || artifact.mode != 0o400
         || artifact.size != expected_size
         || artifact.sha256 != expected_sha256
@@ -612,12 +612,16 @@ fn validate_complete_evidence(
     validate_evidence_artifact(
         &evidence.lab002.authorized_target_manifest,
         MANIFEST_NAME,
+        inputs.manifest_device,
+        inputs.manifest_inode,
         inputs.manifest_size,
         inputs.manifest_sha256,
     )?;
     validate_evidence_artifact(
         &evidence.lab002.oracle,
         ORACLE_NAME,
+        inputs.oracle_device,
+        inputs.oracle_inode,
         inputs.oracle_size,
         inputs.oracle_sha256,
     )
@@ -685,7 +689,14 @@ fn has_exact_derived_prebuild_bindings(
 
 fn private_seed_and_record(
     prebuild: &PrivateOutputRoot,
-) -> Result<(SigningKey, Vec<u8>, super::PrebuildRecord), String> {
+) -> Result<
+    (
+        SigningKey,
+        super::ReadPrivateArtifact,
+        super::PrebuildRecord,
+    ),
+    String,
+> {
     verify_private_artifact_inventory(&prebuild.directory)?;
     let seed = read_private_artifact(&prebuild.directory, PRIVATE_SEED_NAME, 32)?;
     let manifest = read_private_artifact(
@@ -733,7 +744,7 @@ fn private_seed_and_record(
     {
         return Err("private prebuild tuple is inconsistent".into());
     }
-    Ok((signing_key, manifest.bytes, record_value))
+    Ok((signing_key, manifest, record_value))
 }
 
 fn candidate_inventory(directory: &File) -> Result<(), String> {
@@ -867,16 +878,20 @@ fn load_source_bundle(
                     && prepared.target_identity_binding_sha256
                         == oracle_role.target_identity_binding_sha256
             });
-    let manifest_sha256 = sha256_hex(&manifest);
+    let manifest_sha256 = sha256_hex(&manifest.bytes);
     let oracle_sha256 = sha256_hex(&oracle.bytes);
     let ipa_sha256 = sha256_hex(&ipa.bytes);
     validate_complete_evidence(
         &evidence_value,
         &FrozenEvidenceInputs {
             record: &record,
-            manifest_size: manifest.len() as u64,
+            manifest_device: manifest.device,
+            manifest_inode: manifest.inode,
+            manifest_size: manifest.size,
             manifest_sha256: &manifest_sha256,
             oracle: &oracle_value,
+            oracle_device: oracle.device,
+            oracle_inode: oracle.inode,
             oracle_size: oracle.size,
             oracle_sha256: &oracle_sha256,
             ipa_size: ipa.size,
@@ -918,7 +933,7 @@ fn load_source_bundle(
     }
     Ok(SourceBundle {
         signing_key,
-        manifest,
+        manifest: manifest.bytes,
         oracle: oracle.bytes,
         evidence: evidence.bytes,
         build_binding_sha256: record.build_binding_sha256,
@@ -1579,10 +1594,10 @@ mod tests {
     use tempfile::tempdir;
 
     use super::{
-        PreuploadEvidence, SourceBundle, UploadResult, derive_prebuild_bindings,
-        has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
-        require_retained_source_match, split_fingerprint_and_receipt, valid_upload_result,
-        verify_frozen_archive,
+        EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, SourceBundle, UploadResult,
+        derive_prebuild_bindings, has_exact_derived_prebuild_bindings, next_run_ordinal,
+        open_run_ordinal, require_retained_source_match, split_fingerprint_and_receipt,
+        valid_upload_result, validate_evidence_artifact, verify_frozen_archive,
     };
 
     fn complete_evidence_json() -> Value {
@@ -1810,6 +1825,26 @@ mod tests {
         let mut unknown = complete;
         unknown["source"]["replacement"] = json!(true);
         assert!(serde_json::from_value::<PreuploadEvidence>(unknown).is_err());
+    }
+
+    #[test]
+    fn preupload_evidence_artifact_identity_must_match_the_held_descriptor() {
+        let digest = "ab".repeat(32);
+        let artifact = EvidenceArtifactIdentity {
+            name: MANIFEST_NAME.into(),
+            device: "17".into(),
+            inode: "29".into(),
+            mode: 0o400,
+            size: 512,
+            sha256: digest.clone(),
+        };
+        assert!(validate_evidence_artifact(&artifact, MANIFEST_NAME, 17, 29, 512, &digest).is_ok());
+        assert!(
+            validate_evidence_artifact(&artifact, MANIFEST_NAME, 18, 29, 512, &digest).is_err()
+        );
+        assert!(
+            validate_evidence_artifact(&artifact, MANIFEST_NAME, 17, 30, 512, &digest).is_err()
+        );
     }
 
     #[test]

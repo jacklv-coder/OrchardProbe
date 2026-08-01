@@ -157,3 +157,17 @@ with the pinned toolchain and offline verified dependencies. All reproduced
 size `3,062,032`, SHA-256
 `5d4e47c52967331af2ea7d066d6cd9c6c443d837fb88c0a94860c743f1a1d29e`,
 and CodeDirectory CDHash `42bd1c5f3d0e1c3841c5ef80216a21744529d37b`; only that tuple is admitted.
+
+The next complete-diff Codex CR found two P2 provenance gaps. Pre-upload
+evidence carried manifest and Oracle device/inode identities but the operator
+compared only their syntax, name, mode, size, and digest; and the reusable Host
+run verifier did not independently retain the target bindings derived from the
+enrolled manifest. The remediation now compares both evidence identities with
+the actual held file descriptors, derives and retains the ordered three-role
+target bindings plus their set digest while closing enrollment, and requires
+every run Oracle role and set digest to match those retained manifest-derived
+values. Regressions reject substituted descriptor identities and a
+self-consistent Oracle target set derived from a different target. Because
+this changes the Rust Helper, two new independent reproducibility measurements,
+an updated single-tuple allowlist, the normal gate, full local tests, and a
+fresh clean Codex CR are required before the 4B PR can open.

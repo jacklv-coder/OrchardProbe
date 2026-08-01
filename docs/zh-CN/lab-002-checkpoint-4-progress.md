@@ -116,3 +116,12 @@ Rust 验证器修复提交后，两次独立完整 Fastlane 门禁以 Source Sna
 离线已验证依赖重新构建私有 Helper。所有构建都得到 Size `3,062,032`、SHA-256
 `5d4e47c52967331af2ea7d066d6cd9c6c443d837fb88c0a94860c743f1a1d29e` 与 CodeDirectory
 CDHash `42bd1c5f3d0e1c3841c5ef80216a21744529d37b`；Allowlist 只接受这个精确 Tuple。
+
+下一轮完整 Diff Codex CR 又发现两个 P2 来源缺口。上传前 Evidence 虽记录 Manifest 与
+Oracle 的 Device/Inode 身份，Operator 却只比较其格式、名称、Mode、Size 和摘要；可复用
+Host Run 验证器也没有独立保留由已 Enrollment Manifest 推导的 Target Binding。修复后，
+两份 Evidence 身份必须分别与实际持有的文件描述符一致；关闭 Enrollment 时会推导并保留
+按固定三 Role 排序的 Target Binding 与集合摘要；每轮 Oracle 的全部 Role 和集合摘要必须
+与这些 Manifest 派生值一致。新增回归会拒绝替换过的描述符身份，以及从另一 Target 派生、
+内部仍自洽的 Oracle Target 集合。由于此次修改 Rust Helper，4B PR 打开前必须重新完成两次
+独立可复现测量、只保留新 Tuple 的 Allowlist、正常门禁、完整本地测试和全新无问题 Codex CR。
