@@ -195,3 +195,16 @@ and run verification. Regressions reject both an unaccounted control entry and
 a syntactically valid Oracle attributed to a different generator revision.
 Because this changes the Rust Helper, a new two-build reproducibility
 measurement, allowlist tuple, complete gate, and fresh clean CR are required.
+
+After committing that remediation, two independent complete Fastlane gates
+each rebuilt three Helpers from source snapshot
+`87142c73a633b88df721cef1b008e53b76d455707870bc24a849da0debd93968`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,181,376`, SHA-256
+`df9e5f1bc60ee537930c51f6875e964660056040c78ee22ab73fb797a63abeab`,
+and CodeDirectory CDHash `c8206133f0885ab4e3b2d46179d71478f1e2912c`.
+The temporary measurement hook was removed completely before that exact tuple
+was added to the reviewed allowlist. The normal non-measurement gate rebuilt
+and admitted it and passed the unsigned Simulator fixture; formatting, locked
+Clippy with warnings denied, all 273 Workspace tests, Ruby syntax, and the diff
+check also pass. A fresh clean Codex CR remains required before the 4B PR.

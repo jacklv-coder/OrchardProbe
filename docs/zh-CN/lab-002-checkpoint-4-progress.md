@@ -142,3 +142,12 @@ Generator/Source Revision 相等纳入 `LabOracle` 验证，使 Control 创作�
 约束。新增回归分别拒绝未计入的 Control 条目和由另一 Generator Revision 归因、格式仍合法
 的 Oracle。由于该修复改变 Rust Helper，仍需新的两次独立可复现测量、Allowlist Tuple、
 完整门禁和全新无问题 CR。
+
+提交该修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot 为
+`87142c73a633b88df721cef1b008e53b76d455707870bc24a849da0debd93968`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,181,376`、
+SHA-256 `df9e5f1bc60ee537930c51f6875e964660056040c78ee22ab73fb797a63abeab`、
+CodeDirectory CDHash `c8206133f0885ab4e3b2d46179d71478f1e2912c`。临时测量 Hook 已在
+把该精确 Tuple 加入已评审 Allowlist 前完整移除。正常非测量门禁已重新构建并接受它，且
+无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 273 项
+Workspace 测试、Ruby 语法和 Diff 检查也均通过。4B PR 前只剩全新无问题 Codex CR。
