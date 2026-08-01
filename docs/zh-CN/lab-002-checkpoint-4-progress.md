@@ -71,3 +71,9 @@ Review 或 App Store 提交。
 矛盾、以安装文件大小约束每个观察 Slice，并由 Fastlane 通过排他工作流根锁串行化完整调用。
 这四个 P2 必须具备回归覆盖，并重新通过完整本地门禁、全新无问题 CR、CI 与合并，之后才可
 开始 4C。
+
+Rust 验证器修复提交后，两次独立完整 Fastlane 门禁以 Source Snapshot
+`252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9`、固定工具链和
+离线已验证依赖重新构建私有 Helper。所有构建都得到 Size `3,062,032`、SHA-256
+`5d4e47c52967331af2ea7d066d6cd9c6c443d837fb88c0a94860c743f1a1d29e` 与 CodeDirectory
+CDHash `42bd1c5f3d0e1c3841c5ef80216a21744529d37b`；Allowlist 只接受这个精确 Tuple。

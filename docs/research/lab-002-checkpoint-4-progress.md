@@ -94,3 +94,11 @@ reports, bounded every observed slice by the installed file size, and Fastlane
 serialized a complete invocation with an exclusive workflow-root lock. Those
 four P2 findings require regression coverage, the complete local gate, a fresh
 clean CR, CI, and merge before 4C may start.
+
+After the Rust verifier fix was committed, two independent complete Fastlane
+gates rebuilt the private Helper from source snapshot
+`252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9`
+with the pinned toolchain and offline verified dependencies. All reproduced
+size `3,062,032`, SHA-256
+`5d4e47c52967331af2ea7d066d6cd9c6c443d837fb88c0a94860c743f1a1d29e`,
+and CodeDirectory CDHash `42bd1c5f3d0e1c3841c5ef80216a21744529d37b`; only that tuple is admitted.
