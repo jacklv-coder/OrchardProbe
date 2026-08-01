@@ -89,6 +89,14 @@ Binding 的摘要，没有先完整验证保留的第 1 轮链。修复后会严
 之前完成第 1 轮来源和完整链验证。回归覆盖两种上传形态、非法时间戳/状态组合，以及跨
 Oracle 两轮拒绝。实现 PR 打开或合并前仍必须通过完整本地门禁与全新的无问题 CR。
 
+该修复提交后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot 为
+`8f468ee4a076008520070110dcafc9dc76e43208adaf568a61cab91c13c90207`，工具链为
+`1.85.0-aarch64-apple-darwin`。六份产物的 Size 均为 `3,179,024`，SHA-256 为
+`5789f1726bec7aa1f7df93adc131ff103608fc625a06ecac13275bc0ffcb0413`，
+CodeDirectory CDHash 为 `59bafcc5867af9864bbf1b10d17d8ea375b2607a`。临时测量分支随后被
+完整删除，才把这一个精确 Tuple 加入已评审 Allowlist；正常非测量门禁再次重新构建并接受
+该 Tuple，且无签名 Simulator Fixture 通过。
+
 提交该修复后，两次独立完整 Fastlane 门禁各自产生三份完全一致的 Helper Build；Source
 Snapshot 为 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`。
 全部六份产物的 Size 均为 `3,179,072`，SHA-256 为

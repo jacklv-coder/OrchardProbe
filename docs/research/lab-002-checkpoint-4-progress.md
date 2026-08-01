@@ -120,6 +120,17 @@ upload shapes and rejected timestamp/state combinations plus cross-Oracle
 two-run rejection. The full local gate and a fresh clean CR remain required
 before the implementation PR may be opened or merged.
 
+After that remediation was committed, two independent complete Fastlane gates
+each rebuilt three Helpers from source snapshot
+`8f468ee4a076008520070110dcafc9dc76e43208adaf568a61cab91c13c90207`
+with toolchain `1.85.0-aarch64-apple-darwin`. All six products had size
+`3,179,024`, SHA-256
+`5789f1726bec7aa1f7df93adc131ff103608fc625a06ecac13275bc0ffcb0413`,
+and CodeDirectory CDHash `59bafcc5867af9864bbf1b10d17d8ea375b2607a`.
+The temporary measurement branch was removed completely before this exact
+tuple was added to the reviewed allowlist. A normal non-measurement gate then
+rebuilt and admitted it and passed the unsigned Simulator fixture.
+
 After committing that remediation, two independent complete Fastlane gates
 each produced three identical Helper builds from source snapshot
 `0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`.
