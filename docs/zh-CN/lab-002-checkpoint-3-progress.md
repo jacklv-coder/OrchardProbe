@@ -26,8 +26,9 @@
 |---:|---|---|---|
 | 3D.1 | 首方签名 Capability | `本机完成` | 专用 App Group 已同时关联现有首方主 App ID 与 Share Extension App ID；Xcode 已重新生成受影响 Profile，临时 Release 签名预检通过，且没有保留产物或公开私有标识 |
 | 3D.2 | 导出后固定 XcodeGen 复核 | `完成；PR #67 已合并` | 进入固定 Xcode 环境前捕获 Allowlist 内 XcodeGen 的绝对 Path/Version/文件身份；生成 Oracle 时直接复核同一文件；恢复调用方 PATH 后，再以 PATH 选择复核一次才允许发布 |
-| 3D.3 | 关闭的 Xcode 导出策略与已证明的发布前 Rollback | `实现中；已补 P1 修复` | 设置 `uploadSymbols=false`，使受控 IPA 保持单一 `Payload/*.app` Tree，同时单独保留 Archive dSYM。只有已验证 Helper 通过持有的目录描述符证明精确 Archive/IPA Pair 存在且没有 Oracle 状态，并发出显式 Cleanup-safe 标记时才解除保留；崩溃、Signal、无标记失败、证明失败与不确定发布均继续保留 |
-| 3D.4 | 全新精确候选 | `被 3D.3 合并阻塞` | 从干净的已合并修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用两次失败运行的 Tuple，不得上传、安装或观察设备 |
+| 3D.3 | 关闭的 Xcode 导出策略与已证明的发布前 Rollback | `完成；PR #68 已合并` | 设置 `uploadSymbols=false`，使受控 IPA 保持单一 `Payload/*.app` Tree，同时单独保留 Archive dSYM。只有已验证 Helper 通过持有的目录描述符证明精确 Archive/IPA Pair 存在且没有 Oracle 状态，并发出显式 Cleanup-safe 标记时才解除保留；崩溃、Signal、无标记失败、证明失败与不确定发布均继续保留 |
+| 3D.4 | 可复现私有 Helper 产品复核 | `实现中` | PR #68 修改了 Helper，因此旧产品 Allowlist 正确阻止了 3A 准备。使用合并源 `091be371...`、固定 Rust 1.85.0 工具链、已验证离线依赖与受审沙箱独立构建两次，所得 Size、完整 SHA-256 与 CodeDirectory CDHash 完全一致；只允许该精确 Tuple 通过评审与 CI |
+| 3D.5 | 全新精确候选 | `被 3D.4 合并阻塞` | 从干净的已合并 Allowlist Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用两次失败运行的 Tuple，不得上传、安装或观察设备 |
 
 两次失败运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
 Tuple。第一次未发布 Staging 已由 Rollback 清理；第二次确定性失败在保守的 Helper 前
