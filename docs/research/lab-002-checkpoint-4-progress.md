@@ -223,3 +223,17 @@ other special external inputs. Because the source revalidation changes the
 Rust Helper, two new independent reproducibility measurements, a new sole
 allowlist tuple, the normal gate, all local gates, and a fresh clean CR remain
 required before the 4B PR can open.
+
+After committing that boundary remediation, two independent complete Fastlane
+gates each rebuilt three Helpers from source snapshot
+`6dc02974b685a970d1e32b874142f6d26de92dab78605460a9ff82781a17502b`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,181,712`, SHA-256
+`911ba178be1c0b20234ae72adeabe04c8c9ebbafe874c2cbdf9cdd5853e63c20`,
+and CodeDirectory CDHash `8285d08248480782cf362abb0136a1b37b1a8b91`.
+The temporary measurement hook was removed completely before that exact tuple
+was added to the reviewed allowlist. The normal non-measurement gate rebuilt
+and admitted it and passed the unsigned Simulator fixture; formatting, locked
+Clippy with warnings denied, all 274 Workspace tests, Ruby syntax, the diff
+check, and the explicit no-measurement-hook check also pass. A fresh clean
+Codex CR remains required before the 4B PR.

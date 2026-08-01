@@ -160,3 +160,12 @@ Workspace 测试、Ruby 语法和 Diff 检查也均通过。4B PR 前只剩全�
 且非阻塞的快照边界。负向回归会拒绝别名 Binding、替换后的字节/身份、FIFO 与其他特殊外部
 输入。由于来源重验证会改变 Rust Helper，4B PR 打开前仍需两次新的独立可复现测量、只保留
 新 Tuple 的 Allowlist、正常门禁、全部本地门禁和全新无问题 CR。
+
+提交该边界修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot
+为 `6dc02974b685a970d1e32b874142f6d26de92dab78605460a9ff82781a17502b`。全部六份产物
+完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,181,712`、SHA-256
+`911ba178be1c0b20234ae72adeabe04c8c9ebbafe874c2cbdf9cdd5853e63c20`、CodeDirectory
+CDHash `8285d08248480782cf362abb0136a1b37b1a8b91`。临时测量 Hook 已在把该精确 Tuple
+加入已评审 Allowlist 前完整删除。正常非测量门禁已重新构建并接受它，且无签名 Simulator
+Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 274 项 Workspace 测试、Ruby
+语法、Diff 检查和明确的无测量 Hook 检查也均通过。4B PR 前只剩全新无问题 Codex CR。
