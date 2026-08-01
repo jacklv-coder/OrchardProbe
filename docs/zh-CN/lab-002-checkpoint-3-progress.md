@@ -26,16 +26,25 @@
 |---:|---|---|---|
 | 3B.1 | 安全消费 3A 工件 | `完成；PR #63 已合并` | Archive Lane 根据已锁定输出根及认证后的 `source/version/build` Tuple 推导唯一预构建目录。受评审 Helper 以 Descriptor-relative 方式读取精确三个 Mode `0400`、Owner-only 文件，重新推导非弱 Key、规范 Manifest、Build Binding、三个 Target Binding、Target-identity Set 与固定 Toolchain，并只返回有界私有 IPC Envelope。Fastlane 不再从调用方接收 Nonce、公钥或 Build Binding 变量。纯设备无关回归、Codex CR、GitHub Codex Review 与 CI 已通过；[PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) 已合并为 `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
 | 3B.2 | Archive/IPA Oracle 闭合 | `完成；PR #64 已合并` | Helper 与 Fastlane 在发布前后持有并重验最终 Archive App、IPA、六个 Archive Source、Oracle 与 Evidence；签名特殊槽、Zero-fill、逐 Entry IPA 变化、替换及不确定发布回归通过 Codex CR 和全部必需 CI。[PR #64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 以 `5bf31bf305e30abb0121a0bcb76e5fcdf48eb3bc` 合并 |
-| 3B.3 | Evidence 与 Upload Gate | `进行中` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
+| 3B.3 | Evidence 与 Upload Gate | `实现与本地验证完成；最终 CR/CI/合并进行中` | 把 Manifest/Oracle 身份及外部 Oracle SHA-256 绑定进上传前 Evidence；精确闭合 Tuple 缺失、变化或不一致时拒绝上传 |
 
 ### 3B.3 顺序执行门禁
 
 | 顺序 | 门禁 | 状态 | 完成标准 |
 |---:|---|---|---|
-| 3B.3.1 | 闭合 Evidence 绑定 | `进行中` | 在 Prebuild 目录仍被锁定时，把精确 Owner-only Manifest/Oracle 文件身份、外部 Oracle SHA-256、Build Binding、Target Identity Set 及 IPA Size/SHA-256 持久化进上传前记录 |
-| 3B.3.2 | 上传时私有 Tuple 验证 | `等待 3B.3.1` | 只从 Evidence 的 Source/Version/Build 推导固定同级 Prebuild/Run 目录，把持有的目录 Descriptor 交给受审 Helper，并在上传前重新解析规范 Manifest、Prebuild 与 Oracle |
-| 3B.3.3 | Fail-closed 回归 | `等待 3B.3.2` | 覆盖缺失 LAB-002 Binding、Manifest/Oracle 身份或摘要变化、Build Binding/Target Set/IPA Tuple 不一致、非规范私有工件、不安全权限、目录替换及 Run 条目增删，且不产生网络操作 |
-| 3B.3.4 | 文档、Codex CR、CI 与合并 | `等待 3B.3.3` | 更新中英文用户/技术文档，通过 Workspace/Fastlane 与 Helper 可复现验证，解决全部 P1/P2 审查问题，合并 PR 后再激活 3C |
+| 3B.3.1 | 闭合 Evidence 绑定 | `完成` | 在 Prebuild 目录仍被锁定时，把精确 Owner-only Manifest/Oracle 文件身份、外部 Oracle SHA-256、Build Binding、Target Identity Set 及 IPA Size/SHA-256 持久化进上传前记录 |
+| 3B.3.2 | 上传时私有 Tuple 验证 | `完成` | 只从 Evidence 的 Source/Version/Build 推导固定同级 Prebuild/Run 目录，把持有的目录 Descriptor 交给受审 Helper，并在上传前重新解析规范 Manifest、Prebuild 与 Oracle |
+| 3B.3.3 | Fail-closed 回归 | `本地完成` | 覆盖缺失 LAB-002 Binding、Manifest/Oracle 身份或摘要变化、Build Binding/Target Set/IPA Tuple 不一致、非规范私有工件、不安全权限、目录替换、Run 条目增删，以及严格绑定的协调重试审计记录，且不产生网络操作 |
+| 3B.3.4 | 文档、Codex CR、CI 与合并 | `进行中` | 更新中英文用户/技术文档，通过 Workspace/Fastlane 与 Helper 可复现验证，解决全部 P1/P2 审查问题，合并 PR 后再激活 3C |
+
+3B.3 Helper 已从实现 Commit
+`da758e9614402184833ab1ad7faeb4cc2860836c` 的只读源码快照独立构建两次，
+产物字节完全一致。登记 Tuple 为 Rust `1.85.0-aarch64-apple-darwin`，
+Source Snapshot SHA-256
+`4e59c359dcfa514ebfe1d22fcfa403f24b75fb2fb072aa46b12b339e2ea94116`，
+Size `2019584`，SHA-256
+`d150dd40834f0578024e7949d4a736eae3dbc9078264850714af49e70a3ccb55`，
+CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`。
 
 ### 3B.2 顺序执行门禁
 

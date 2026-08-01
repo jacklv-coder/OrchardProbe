@@ -29,16 +29,26 @@ preceding row is complete.
 |---:|---|---|---|
 | 3B.1 | Secure 3A consumption | `complete; PR #63 merged` | The archive lane derives the one expected pre-build directory from the locked output root and authenticated `source/version/build` tuple. The reviewed helper descriptor-relatively reads exactly the three mode-`0400` owner files, rederives the non-weak key, canonical manifest, Build Binding, three target bindings, target-identity set, and pinned toolchain, and returns only a bounded private IPC envelope. Fastlane injects the closed values without caller-supplied nonce, public-key, or Build-Binding variables. Device-free regressions, Codex CR, GitHub Codex review, and CI passed; [PR #63](https://github.com/jacklv-coder/OrchardProbe/pull/63) merged as `8d623d8e2391e4e110ff222c87fa3fc25aa2a23c` |
 | 3B.2 | Archive/IPA oracle closure | `complete; PR #64 merged` | The helper and Fastlane hold and revalidate the final Archive App, IPA, all six Archive sources, oracle, and evidence across publication; signed special slots, zero-fill rules, per-entry IPA mutation, replacement, and indeterminate publication regressions passed Codex CR and all required CI. [PR #64](https://github.com/jacklv-coder/OrchardProbe/pull/64) merged as `5bf31bf305e30abb0121a0bcb76e5fcdf48eb3bc` |
-| 3B.3 | Evidence and upload gate | `in progress` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
+| 3B.3 | Evidence and upload gate | `implementation and local verification complete; final CR/CI/merge in progress` | Bind the manifest/oracle identities and external oracle SHA-256 into pre-upload evidence; reject upload when the exact closed tuple is absent, changed, or inconsistent |
 
 ### 3B.3 ordered execution gates
 
 | Order | Gate | Status | Completion criterion |
 |---:|---|---|---|
-| 3B.3.1 | Closed Evidence binding | `in progress` | Persist the exact owner-only manifest and oracle file identities, external oracle SHA-256, Build Binding, Target Identity Set, and IPA size/SHA-256 in the pre-upload record while the prebuild directory remains locked |
-| 3B.3.2 | Upload-time private tuple verification | `pending` | Derive only the fixed sibling prebuild/run directories from the evidence source/version/build, pass their held descriptors to the reviewed helper, and reparse canonical Manifest, Prebuild, and Oracle artifacts before upload |
-| 3B.3.3 | Fail-closed regressions | `pending` | Cover missing LAB-002 binding, changed manifest/oracle identity or digest, inconsistent Build Binding/Target Set/IPA tuple, noncanonical private artifacts, unsafe permissions, directory substitution, and extra/missing run entries without any network action |
-| 3B.3.4 | Documentation, Codex CR, CI, and merge | `pending` | Update bilingual operator/technical documentation, pass workspace/Fastlane checks and reproducible Helper verification, resolve every P1/P2 review finding, merge the PR, then activate 3C |
+| 3B.3.1 | Closed Evidence binding | `complete` | Persist the exact owner-only manifest and oracle file identities, external oracle SHA-256, Build Binding, Target Identity Set, and IPA size/SHA-256 in the pre-upload record while the prebuild directory remains locked |
+| 3B.3.2 | Upload-time private tuple verification | `complete` | Derive only the fixed sibling prebuild/run directories from the evidence source/version/build, pass their held descriptors to the reviewed helper, and reparse canonical Manifest, Prebuild, and Oracle artifacts before upload |
+| 3B.3.3 | Fail-closed regressions | `complete locally` | Cover missing LAB-002 binding, changed manifest/oracle identity or digest, inconsistent Build Binding/Target Set/IPA tuple, noncanonical private artifacts, unsafe permissions, directory substitution, extra/missing run entries, and strictly bound reconciled-retry audit records without any network action |
+| 3B.3.4 | Documentation, Codex CR, CI, and merge | `in progress` | Update bilingual operator/technical documentation, pass workspace/Fastlane checks and reproducible Helper verification, resolve every P1/P2 review finding, merge the PR, then activate 3C |
+
+The 3B.3 helper was independently built twice from the read-only source
+snapshot at implementation commit
+`da758e9614402184833ab1ad7faeb4cc2860836c`; both products were
+byte-identical. The registered tuple is Rust
+`1.85.0-aarch64-apple-darwin`, source snapshot SHA-256
+`4e59c359dcfa514ebfe1d22fcfa403f24b75fb2fb072aa46b12b339e2ea94116`,
+size `2019584`, SHA-256
+`d150dd40834f0578024e7949d4a736eae3dbc9078264850714af49e70a3ccb55`,
+and CDHash `0382cc8dd78c61d6b0116f34f8ec81bb2002f7ed`.
 
 ### 3B.2 ordered execution gates
 
