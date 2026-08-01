@@ -141,6 +141,15 @@ the archive and evidence passes. The regression lane prepends shadow
 `xcodebuild`/`xcrun`/`plutil`/`dwarfdump`/`lipo`/`otool` files and proves none
 can be selected.
 
+Before the archive enters that minimal Xcode-only environment, it captures the
+allowlisted XcodeGen absolute path, version, and file identity used to generate
+the project. Oracle generation revalidates that exact non-writable executable
+directly, without trying to discover XcodeGen through the deliberately reduced
+`PATH`. After the caller's environment is restored, the lane repeats the normal
+PATH-selected XcodeGen verification before it can publish the final candidate.
+The regression lane proves that a missing version or mismatched file identity is
+rejected even while the reduced environment is active.
+
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload
 uses an App Store Connect API key rather than a local Apple ID/password

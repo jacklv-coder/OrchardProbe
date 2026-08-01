@@ -2150,7 +2150,11 @@ rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ESRCH
   UI.user_error!("Unable to bind the running LAB-002 helper safely.")
 end
 
-def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
+def lab002_toolchain_record(
+  xcode_toolchain,
+  gemfile_lock_sha256:,
+  xcodegen_selection: nil
+)
   unless /\A[0-9a-f]{64}\z/.match?(gemfile_lock_sha256)
     UI.user_error!("Reviewed Gemfile.lock digest is invalid for LAB-002.")
   end
@@ -2161,7 +2165,16 @@ def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
          /\A[0-9]+[A-Z][A-Za-z0-9]+\z/.match?(xcode_build.to_s)
     UI.user_error!("Selected Xcode version metadata is invalid for LAB-002.")
   end
-  xcodegen_path, xcodegen_version, xcodegen_identity = selected_xcodegen
+  path_bound_xcodegen = !xcodegen_selection.nil?
+  xcodegen_path, xcodegen_version, xcodegen_identity =
+    path_bound_xcodegen ? xcodegen_selection : selected_xcodegen
+  if path_bound_xcodegen
+    verify_pinned_xcodegen!(
+      xcodegen_path,
+      xcodegen_version,
+      xcodegen_identity
+    )
+  end
   record = {
     "xcode_version" => xcode_version,
     "xcode_build" => xcode_build,
@@ -2175,13 +2188,17 @@ def lab002_toolchain_record(xcode_toolchain, gemfile_lock_sha256:)
     "fastlane_version" => Fastlane::VERSION,
     "gemfile_lock_sha256" => gemfile_lock_sha256,
   }
-  xcodegen_selection = [
+  verified_xcodegen_selection = [
     xcodegen_path,
     xcodegen_version,
     xcodegen_identity,
   ]
-  verify_selected_xcodegen!(*xcodegen_selection)
-  [record, xcodegen_selection]
+  if path_bound_xcodegen
+    verify_pinned_xcodegen!(*verified_xcodegen_selection)
+  else
+    verify_selected_xcodegen!(*verified_xcodegen_selection)
+  end
+  [record, verified_xcodegen_selection]
 end
 
 def lab002_entitlement(presence, value = nil)
@@ -2628,6 +2645,7 @@ def create_lab002_private_oracle!(
   app_group_identifier:,
   team_identifier:,
   xcode_toolchain:,
+  xcodegen_selection:,
   on_retention_change: ->(_retain) {}
 )
   verify_held_lab002_directory!(
@@ -2655,9 +2673,10 @@ def create_lab002_private_oracle!(
   begin
     binary, tool_workspace, tool_identity, gemfile_lock_sha256 =
       build_lab002_private_tool(source_commit)
-    toolchain, xcodegen_selection = lab002_toolchain_record(
+    toolchain, verified_xcodegen_selection = lab002_toolchain_record(
       xcode_toolchain,
-      gemfile_lock_sha256: gemfile_lock_sha256
+      gemfile_lock_sha256: gemfile_lock_sha256,
+      xcodegen_selection: xcodegen_selection
     )
     request = {
       "schema" => DEMO_LAB_LAB002_ORACLE_REQUEST_SCHEMA,
@@ -2818,7 +2837,7 @@ def create_lab002_private_oracle!(
     )
     verify_selected_xcode_toolchain!(xcode_toolchain)
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
-    verify_selected_xcodegen!(*xcodegen_selection)
+    verify_pinned_xcodegen!(*verified_xcodegen_selection)
     result
   rescue JSON::ParserError
     UI.user_error!("LAB-002 private oracle helper returned invalid JSON.")
@@ -3355,6 +3374,53 @@ def selected_xcodegen
   ]
 rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
   UI.user_error!("Unable to resolve the selected XcodeGen safely.")
+end
+
+def verify_pinned_xcodegen!(path, version, identity)
+  unless Pathname.new(path.to_s).absolute? &&
+         version.is_a?(String) &&
+         !version.empty? &&
+         identity.is_a?(Array) &&
+         identity.length == 5
+    UI.user_error!("The pinned XcodeGen selection is invalid.")
+  end
+  resolved = File.realpath(path)
+  before = File.stat(resolved)
+  architecture = command_output("/usr/bin/uname", "-m")
+  trusted_binaries = DEMO_LAB_TRUSTED_XCODEGEN_BINARIES[architecture]
+  unless trusted_binaries
+    UI.user_error!("This architecture has no trusted XcodeGen binary.")
+  end
+  observed_sha256 = Digest::SHA256.file(resolved).hexdigest
+  expected_version = trusted_binaries[observed_sha256]
+  after_path = File.realpath(path)
+  after = File.stat(resolved)
+  after_sha256 = Digest::SHA256.file(resolved).hexdigest
+  observed_identity = [
+    before.dev,
+    before.ino,
+    before.size,
+    before.mtime.to_i,
+    observed_sha256,
+  ]
+  unless resolved == path &&
+         before.file? &&
+         File.executable?(resolved) &&
+         (before.mode & 0o222).zero? &&
+         expected_version &&
+         expected_version == version &&
+         observed_identity == identity &&
+         after_path == resolved &&
+         after.file? &&
+         File.executable?(resolved) &&
+         (after.mode & 0o222).zero? &&
+         [after.dev, after.ino, after.size, after.mtime.to_i, after_sha256] ==
+           identity
+    UI.user_error!("The pinned XcodeGen changed during use.")
+  end
+  true
+rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT
+  UI.user_error!("Unable to revalidate the pinned XcodeGen safely.")
 end
 
 def verify_selected_xcodegen!(path, version, identity)
@@ -4207,6 +4273,7 @@ def prepare_demolab_project(source_commit: nil)
       fixture,
       File.join(fixture, "DemoLab.xcodeproj"),
       xcodegen_version,
+      [xcodegen_path, xcodegen_version, xcodegen_identity],
     ]
   rescue
     if xcodegen_snapshot
@@ -7013,6 +7080,7 @@ platform :ios do
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
+    xcodegen_selection = selected_xcodegen
     parser_commit = git_command_output("rev-parse", "HEAD")
     [parser_commit, "a" * 40, "b" * 64].uniq.each do |candidate_oid|
       parsed_reviewed_main = parse_reviewed_github_main_ref!(
@@ -8598,6 +8666,42 @@ platform :ios do
             if ENV.key?("XCODE_XCCONFIG_FILE")
               UI.user_error!("Pinned Xcode environment retained an xcconfig override.")
             end
+            pinned_record, pinned_selection = lab002_toolchain_record(
+              xcode_toolchain,
+              gemfile_lock_sha256: sha256(
+                File.join(repository_root, "Gemfile.lock")
+              ),
+              xcodegen_selection: xcodegen_selection
+            )
+            unless pinned_selection == xcodegen_selection &&
+                   pinned_record.fetch("xcodegen_version") ==
+                     xcodegen_selection.fetch(1)
+              UI.user_error!(
+                "Pinned Xcode environment changed the XcodeGen selection."
+              )
+            end
+            mismatched_identity = xcodegen_selection.fetch(2).dup
+            mismatched_identity[2] += 1
+            [
+              [xcodegen_selection.fetch(0), nil, xcodegen_selection.fetch(2)],
+              [
+                xcodegen_selection.fetch(0),
+                xcodegen_selection.fetch(1),
+                mismatched_identity,
+              ],
+            ].each do |invalid_selection|
+              invalid_selection_rejected = false
+              begin
+                verify_pinned_xcodegen!(*invalid_selection)
+              rescue FastlaneCore::Interface::FastlaneError
+                invalid_selection_rejected = true
+              end
+              unless invalid_selection_rejected
+                UI.user_error!(
+                  "An invalid pinned XcodeGen selection was accepted."
+                )
+              end
+            end
           end
           unless ENV["XCODE_XCCONFIG_FILE"] ==
                  File.join(workspace, "untrusted.xcconfig")
@@ -8613,6 +8717,7 @@ platform :ios do
       ensure
         previous_path ? ENV["PATH"] = previous_path : ENV.delete("PATH")
       end
+      verify_selected_xcodegen!(*xcodegen_selection)
       verify_selected_xcode_toolchain!(xcode_toolchain)
 
       shared_output = File.join(workspace, "shared-output")
@@ -10083,7 +10188,8 @@ platform :ios do
       "#{marketing_version}-#{build_number}-#{source_commit[0, 12]}"
     )
 
-    workspace, _, project, project_xcodegen_version =
+    workspace, _, project, project_xcodegen_version,
+      project_xcodegen_selection =
       prepare_demolab_project(source_commit: source_commit)
     staging_directory = nil
     gym_scratch_root = nil
@@ -10286,6 +10392,7 @@ platform :ios do
                 app_group_identifier: app_group_identifier,
                 team_identifier: team_identifier,
                 xcode_toolchain: xcode_toolchain,
+                xcodegen_selection: project_xcodegen_selection,
                 on_retention_change: ->(retain) { retain_staging = retain }
               )
               manifest_identity = lab002_published_artifact_identity!(
@@ -10310,6 +10417,7 @@ platform :ios do
             end
             verify_selected_xcode_toolchain!(xcode_toolchain)
           end
+          verify_selected_xcodegen!(*project_xcodegen_selection)
           publish_verified_lab002_staged_run!(
             output_handle: output_handle,
             output_root: output_root,
