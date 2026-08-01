@@ -107,6 +107,15 @@ unknown fields, and an empty owned Archive. A temporary, uncommitted read-only
 probe confirmed that the retained real candidate passes this stricter source-
 bundle validation; it did not upload, install, enroll, or touch the device.
 
+After committing that remediation, two independent complete Fastlane gates
+each produced three identical Helper builds from source snapshot
+`0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281`.
+All six products had size `3,179,072`, SHA-256
+`0019b20af4d176fa62afe012fbf57cceac89009ffa2db47bdd1b54c2f3b4808f`,
+and CodeDirectory CDHash `b0e3663ee3475784d787239f6ff9fdd7c3ff824c`.
+The temporary measurement hook was removed before this tuple alone was added
+to the reviewed allowlist; the normal non-measurement gate must pass next.
+
 After the Rust verifier fix was committed, two independent complete Fastlane
 gates rebuilt the private Helper from source snapshot
 `252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9`
