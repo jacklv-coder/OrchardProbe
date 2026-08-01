@@ -220,6 +220,17 @@ Archive 与 IPA、没有 Oracle 或临时 Oracle，再同步并复核目录；�
 “发布前可清理”标记才会解除保留。崩溃、Signal、无标记失败、证明失败或“不确定发布”
 标记都会继续保留私有 Staging 等待调和。
 
+App Store 导出还会重新签名可执行文件。当前 Xcode 可能只改变末尾 Code Signature/
+`__LINKEDIT` Extent，同时保持架构、CPU Subtype、Mach-O UUID、固定区间坐标与字节、
+Fixup Layout、Encryption Command 及授权签名身份不变。只有单 Slice Thin Mach-O、
+Archive/IPA Code Signature 起点相同，且两侧签名区都精确结束于各自 Slice EOF 时，
+Oracle 才接受 Size 差异。它还会对共同签名起点之前的全部字节计算 Hash，且只把解析出的
+`__LINKEDIT.filesize` 与 `LC_CODE_SIGNATURE.datasize` 字段归零；两个归一化前缀 Hash
+必须一致。因此即使两份 Binary 都有独立有效签名，相邻字节或任何其他代码/Load-command
+变化也会失败关闭。Oracle 会记录供已安装 Build Verifier 使用的 IPA Slice Size。Fat 或
+多 Slice Size 变化、签名起点移动、闭合签名尾之外的增长，或任何既有身份/区间变化仍会
+失败关闭。
+
 ## 安全边界
 
 - 只能使用首方 DemoLab、自有 Apple 账号和自有且获授权的 iPhone。

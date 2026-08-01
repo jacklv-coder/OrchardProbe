@@ -162,6 +162,21 @@ pre-publication cleanup marker that disarms retention. A crash, signal,
 markerless failure, failed proof, or indeterminate-publication marker keeps the
 private staging for reconciliation.
 
+App Store export also re-signs the executable. Current Xcode can therefore
+change only the trailing Code Signature/`__LINKEDIT` extent while preserving
+the architecture, CPU subtype, Mach-O UUID, fixed-section coordinates and
+bytes, fixup layout, encryption command, and authorized signing identity. The
+oracle accepts a size difference only for one-slice thin Mach-O files when the
+Archive and IPA have the same Code Signature start and each signature extent
+ends exactly at its own slice EOF. It also hashes every byte before that shared
+signature start after zeroing only the parsed `__LINKEDIT.filesize` and
+`LC_CODE_SIGNATURE.datasize` fields. Those normalized prefix hashes must match;
+an adjacent-byte or any other code/load-command difference therefore fails
+closed even when both binaries are independently validly signed. The oracle
+records the IPA slice size used by the installed-build verifier. Fat or
+multi-slice size changes, a moved signature start, growth outside the closed
+signature tail, or any existing identity/range change still fails closed.
+
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload
 uses an App Store Connect API key rather than a local Apple ID/password
