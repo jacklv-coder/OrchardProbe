@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ed25519_dalek::SigningKey;
+use orchardprobe_core::lab002::LAB002_PROFILE;
 use orchardprobe_core::lab002::artifacts::{
     AuthorizationAcknowledgement, AuthorizedTargetManifest, ClosedArtifact,
     DeviceEnrollmentBinding, Environment, LabOracle,
@@ -320,13 +321,20 @@ fn private_seed_and_record(
         .map_err(|error| format!("prebuild record is invalid: {error}"))?;
     if canonical_json(&record_value).map_err(|error| error.to_string())? != record.bytes
         || record_value.schema != PREBUILD_SCHEMA
+        || record_value.profile != LAB002_PROFILE
+        || record_value.fixture_source_root != "fixtures/DemoLab"
+        || !is_lower_hex(&record_value.source_commit, 40)
         || record_value.marketing_version != CHECKPOINT_MARKETING_VERSION
         || record_value.build_number != CHECKPOINT_BUILD_NUMBER
         || record_value.configuration != "Release"
         || record_value.observer_revision != "lab002-observer-v1"
+        || record_value.generator_revision != record_value.source_commit
+        || record_value.identity_nonce != manifest_value.identity_nonce
         || record_value.authorized_target_manifest_sha256 != sha256_hex(&manifest.bytes)
         || record_value.authorization_public_key != manifest_value.authorization_public_key
         || record_value.authorization_key_id != manifest_value.authorization_key_id
+        || !is_lower_hex(&record_value.build_binding_sha256, 64)
+        || !is_lower_hex(&record_value.target_identity_set_sha256, 64)
         || manifest_value.authorization_public_key
             != lower_hex(signing_key.verifying_key().as_bytes())
     {
@@ -395,6 +403,16 @@ fn load_source_bundle(
     let evidence_oracle_sha = value_string(&evidence_value, "/lab002/oracle/sha256")?;
     let evidence_manifest_sha =
         value_string(&evidence_value, "/lab002/authorized_target_manifest/sha256")?;
+    let oracle_targets_match = record.targets.len() == oracle_value.roles.len()
+        && record
+            .targets
+            .iter()
+            .zip(&oracle_value.roles)
+            .all(|(prepared, oracle_role)| {
+                prepared.role == oracle_role.role
+                    && prepared.target_identity_binding_sha256
+                        == oracle_role.target_identity_binding_sha256
+            });
     if evidence_value.get("schema_version").and_then(Value::as_u64) != Some(1)
         || value_string(&evidence_value, "/profile")?
             != "orchardprobe.demolab.testflight-preupload.v1"
@@ -406,10 +424,12 @@ fn load_source_bundle(
             .and_then(Value::as_bool)
             != Some(true)
         || value_string(&evidence_value, "/source/commit")? != record.source_commit
+        || value_string(&evidence_value, "/source/fixture")? != record.fixture_source_root
         || value_string(&evidence_value, "/build/marketing_version")?
             != CHECKPOINT_MARKETING_VERSION
         || value_string(&evidence_value, "/build/build_number")? != CHECKPOINT_BUILD_NUMBER
         || value_string(&evidence_value, "/build/configuration")? != "Release"
+        || value_string(&evidence_value, "/build/distribution")? != "app-store"
         || value_string(&evidence_value, "/toolchain/fastlane_version")?
             != record.toolchain.fastlane_version
         || value_string(&evidence_value, "/toolchain/xcodegen_version")?
@@ -425,6 +445,7 @@ fn load_source_bundle(
             != record.target_identity_set_sha256
         || evidence_manifest_sha != sha256_hex(&manifest)
         || evidence_oracle_sha != sha256_hex(&oracle.bytes)
+        || value_string(&evidence_value, "/artifacts/ipa/filename")? != "DemoLab-3.ipa"
         || value_string(&evidence_value, "/artifacts/ipa/sha256")? != sha256_hex(&ipa.bytes)
         || value_u64(&evidence_value, "/artifacts/ipa/size")? != ipa.size
         || oracle_value.profile != record.profile
@@ -442,6 +463,7 @@ fn load_source_bundle(
         || oracle_value.authorization_public_key
             != lower_hex(signing_key.verifying_key().as_bytes())
         || oracle_value.target_identity_set_sha256 != record.target_identity_set_sha256
+        || !oracle_targets_match
         || oracle_value.toolchain != record.toolchain
         || oracle_value.ipa_size != ipa.size
         || oracle_value.ipa_sha256 != sha256_hex(&ipa.bytes)

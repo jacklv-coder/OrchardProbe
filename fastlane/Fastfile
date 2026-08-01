@@ -227,6 +227,14 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6d5b865692e1f2ff7931bc2d5726ba20e18afe6c",
       }.freeze,
     ].freeze,
+    "bfb942ef779468447fe1393835f772db43fe6b9b96557004ba2012b0f5050a1a" => [
+      {
+        "size" => 2_981_344,
+        "sha256" =>
+          "ef036aadf774ad2dff392b3890e72c42eeaebc303a5c929526730fcf58baffca",
+        "cdhash" => "1a380a3e44e33ea028dab1e029ce6fa4caf8e735",
+      }.freeze,
+    ].freeze,
   }.freeze,
 }.freeze
 DEMO_LAB_CRATES_IO_SOURCE =
@@ -7921,6 +7929,18 @@ platform :ios do
       UI.user_error!(
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
+    end
+    current_helper_workspace = nil
+    begin
+      current_helper, current_helper_workspace, current_helper_identity, =
+        build_lab002_private_tool(git_command_output("rev-parse", "HEAD"))
+      verify_lab002_private_tool!(
+        current_helper,
+        current_helper_workspace,
+        current_helper_identity
+      )
+    ensure
+      FileUtils.rm_rf(current_helper_workspace) if current_helper_workspace
     end
     oracle_source_fixture = {
       "ipa_size" => 4096,
