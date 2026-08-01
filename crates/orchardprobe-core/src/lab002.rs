@@ -1563,6 +1563,10 @@ pub struct FixedSectionSlice {
     pub section_sha256: String,
     pub fixup_layout_sha256: String,
     pub encryption: Option<EncryptionInfo>,
+    #[serde(skip)]
+    pub code_signature_slice_offset: Option<u64>,
+    #[serde(skip)]
+    pub code_signature_size: Option<u64>,
     pub signing: Option<PreuploadSigningMetadata>,
 }
 
@@ -3758,31 +3762,36 @@ pub fn parse_fixed_sections<R: Read + Seek>(
         reader
             .read_exact(&mut section_bytes)
             .map_err(|error| Lab002Error::Io(error.to_string()))?;
-        let signing = if let Some((data_offset, data_size)) = code_signature {
-            if !(12..=MAX_FIXUP_PAYLOAD_BYTES).contains(&data_size)
-                || u64::from(data_offset) < fixed_end
-            {
-                return Err(Lab002Error::InvalidMachO(
-                    "code-signature range is invalid or overlaps the fixed section".into(),
-                ));
-            }
-            let signature = read_slice_payload(
-                reader,
-                slice.offset,
-                slice.size,
-                data_offset,
-                data_size,
-                "code-signature SuperBlob",
-            )?;
-            Some(parse_preupload_code_signature(
-                &signature,
-                u64::from(data_offset),
-                reader,
-                slice.offset,
-            )?)
-        } else {
-            None
-        };
+        let (signing, code_signature_slice_offset, code_signature_size) =
+            if let Some((data_offset, data_size)) = code_signature {
+                if !(12..=MAX_FIXUP_PAYLOAD_BYTES).contains(&data_size)
+                    || u64::from(data_offset) < fixed_end
+                {
+                    return Err(Lab002Error::InvalidMachO(
+                        "code-signature range is invalid or overlaps the fixed section".into(),
+                    ));
+                }
+                let signature = read_slice_payload(
+                    reader,
+                    slice.offset,
+                    slice.size,
+                    data_offset,
+                    data_size,
+                    "code-signature SuperBlob",
+                )?;
+                (
+                    Some(parse_preupload_code_signature(
+                        &signature,
+                        u64::from(data_offset),
+                        reader,
+                        slice.offset,
+                    )?),
+                    Some(u64::from(data_offset)),
+                    Some(u64::from(data_size)),
+                )
+            } else {
+                (None, None, None)
+            };
         fixed_slices.push(FixedSectionSlice {
             ordinal: u8::try_from(ordinal).map_err(|_| {
                 Lab002Error::InvalidMachO("slice ordinal exceeds the LAB-002 limit".into())
@@ -3799,6 +3808,8 @@ pub fn parse_fixed_sections<R: Read + Seek>(
             section_sha256: sha256_hex(&section_bytes),
             fixup_layout_sha256,
             encryption: slice.encryption.clone(),
+            code_signature_slice_offset,
+            code_signature_size,
             signing,
         });
     }
@@ -5346,8 +5357,10 @@ mod tests {
     #[test]
     fn fixed_section_parser_closes_preupload_code_signature_identity() {
         let bytes = add_code_signature(synthetic_fixed_macho(1, false, 0, true));
+        let executable_size = bytes.len() as u64;
         let report = parse_fixed_sections(&mut Cursor::new(bytes)).unwrap();
-        let signing = report.slices[0].signing.as_ref().unwrap();
+        let slice = &report.slices[0];
+        let signing = slice.signing.as_ref().unwrap();
         assert_eq!(signing.code_directory_identifier, "com.example.demolab");
         assert_eq!(signing.code_directory_team_identifier, "TEAM123456");
         assert_eq!(
@@ -5367,7 +5380,16 @@ mod tests {
         assert!(!signing.code_directory.is_empty());
         assert!(!signing.cms_signature.is_empty());
         assert_eq!(signing.superblob_sha256.len(), 64);
-        assert_eq!(report.slices[0].fixup_layout_sha256.len(), 64);
+        assert_eq!(slice.fixup_layout_sha256.len(), 64);
+        assert_eq!(slice.slice_file_size, executable_size);
+        let signature_offset = slice.code_signature_slice_offset.unwrap();
+        let signature_size = slice.code_signature_size.unwrap();
+        assert!(signature_size > 0);
+        assert!(
+            signature_offset
+                .checked_add(signature_size)
+                .is_some_and(|end| end <= slice.slice_file_size)
+        );
     }
 
     #[test]

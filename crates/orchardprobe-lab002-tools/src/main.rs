@@ -2388,7 +2388,6 @@ fn close_oracle_role(
     ipa: &FixedSectionReport,
 ) -> Result<OracleRole, String> {
     if archive.container != ipa.container
-        || archive.file_size != ipa.file_size
         || archive.slices.len() != ipa.slices.len()
         || archive.slices.is_empty()
         || archive.slices.len() > 4
@@ -2400,6 +2399,12 @@ fn close_oracle_role(
     }
     let mut slices = Vec::with_capacity(archive.slices.len());
     for (archive_slice, ipa_slice) in archive.slices.iter().zip(&ipa.slices) {
+        if !closed_archive_ipa_export_extents(archive, ipa, archive_slice, ipa_slice) {
+            return Err(format!(
+                "Archive/IPA {} executable extent differs outside a closed export signature tail",
+                role.fixture_relative_path()
+            ));
+        }
         let archive_encryption = archive_slice.encryption.as_ref().ok_or_else(|| {
             format!(
                 "Archive {} slice has no encryption command",
@@ -2423,7 +2428,6 @@ fn close_oracle_role(
             || archive_slice.cpu_subtype != ipa_slice.cpu_subtype
             || archive_slice.macho_uuid != ipa_slice.macho_uuid
             || archive_slice.slice_file_offset != ipa_slice.slice_file_offset
-            || archive_slice.slice_file_size != ipa_slice.slice_file_size
             || archive_slice.section_slice_offset != ipa_slice.section_slice_offset
             || archive_slice.section_file_offset != ipa_slice.section_file_offset
             || archive_slice.section_vm_offset != ipa_slice.section_vm_offset
@@ -2446,7 +2450,7 @@ fn close_oracle_role(
             macho_uuid: archive_slice.macho_uuid.clone(),
             code_signature_sha256: ipa_signing.superblob_sha256.clone(),
             slice_file_offset: archive_slice.slice_file_offset,
-            slice_file_size: archive_slice.slice_file_size,
+            slice_file_size: ipa_slice.slice_file_size,
             archive_cryptid: archive_encryption.cryptid,
             ipa_cryptid: ipa_encryption.cryptid,
             section_slice_offset: archive_slice.section_slice_offset,
@@ -2463,6 +2467,45 @@ fn close_oracle_role(
         target_identity_binding_sha256,
         slices,
     })
+}
+
+fn closed_archive_ipa_export_extents(
+    archive: &FixedSectionReport,
+    ipa: &FixedSectionReport,
+    archive_slice: &orchardprobe_core::lab002::FixedSectionSlice,
+    ipa_slice: &orchardprobe_core::lab002::FixedSectionSlice,
+) -> bool {
+    if archive.file_size == ipa.file_size
+        && archive_slice.slice_file_size == ipa_slice.slice_file_size
+    {
+        return true;
+    }
+    if archive.container != orchardprobe_core::macho::MachOContainer::Thin
+        || archive.slices.len() != 1
+        || ipa.slices.len() != 1
+        || archive_slice.slice_file_offset != 0
+        || ipa_slice.slice_file_offset != 0
+        || archive.file_size != archive_slice.slice_file_size
+        || ipa.file_size != ipa_slice.slice_file_size
+    {
+        return false;
+    }
+    let Some(archive_signature_offset) = archive_slice.code_signature_slice_offset else {
+        return false;
+    };
+    let Some(archive_signature_size) = archive_slice.code_signature_size else {
+        return false;
+    };
+    let Some(ipa_signature_offset) = ipa_slice.code_signature_slice_offset else {
+        return false;
+    };
+    let Some(ipa_signature_size) = ipa_slice.code_signature_size else {
+        return false;
+    };
+    archive_signature_offset == ipa_signature_offset
+        && archive_signature_offset.checked_add(archive_signature_size)
+            == Some(archive_slice.slice_file_size)
+        && ipa_signature_offset.checked_add(ipa_signature_size) == Some(ipa_slice.slice_file_size)
 }
 
 fn publish_oracle(
@@ -4441,6 +4484,8 @@ mod tests {
                     cryptsize: 2048,
                     cryptid: 0,
                 }),
+                code_signature_slice_offset: Some(3584),
+                code_signature_size: Some(512),
                 signing: Some(PreuploadSigningMetadata {
                     superblob_sha256: format!("{signature_byte:02x}").repeat(32),
                     code_directory_identifier: "com.example.orchardprobe.demolab".into(),
@@ -4512,13 +4557,44 @@ mod tests {
     }
 
     #[test]
-    fn oracle_role_closure_requires_exact_archive_ipa_parity() {
+    fn oracle_role_closure_accepts_only_closed_export_resigning_extent() {
         let archive = fixed_report(0x44, 0x55);
-        let ipa = fixed_report(0x44, 0x66);
+        let mut ipa = fixed_report(0x44, 0x66);
+        ipa.file_size += 64;
+        ipa.slices[0].slice_file_size += 64;
+        ipa.slices[0].code_signature_size = Some(576);
         let role = close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &ipa).unwrap();
         assert_eq!(role.slices[0].expected_plaintext_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].ipa_section_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].code_signature_sha256, "66".repeat(32));
+        assert_eq!(role.slices[0].slice_file_size, 4160);
+
+        let mut unbound_growth = ipa.clone();
+        unbound_growth.slices[0].code_signature_size = Some(512);
+        assert!(
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &unbound_growth,)
+                .is_err()
+        );
+        let mut moved_signature = ipa.clone();
+        moved_signature.slices[0].code_signature_slice_offset = Some(3520);
+        moved_signature.slices[0].code_signature_size = Some(640);
+        assert!(
+            close_oracle_role(
+                LabRole::MainApp,
+                "77".repeat(32),
+                &archive,
+                &moved_signature,
+            )
+            .is_err()
+        );
+        let mut fat_growth = ipa.clone();
+        fat_growth.container = MachOContainer::Fat32;
+        let mut fat_archive = archive.clone();
+        fat_archive.container = MachOContainer::Fat32;
+        assert!(
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &fat_archive, &fat_growth,)
+                .is_err()
+        );
 
         let mut changed_uuid = ipa.clone();
         changed_uuid.slices[0].macho_uuid = "88".repeat(16);
@@ -4531,7 +4607,7 @@ mod tests {
             close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &changed_range,)
                 .is_err()
         );
-        let mut changed_plaintext = ipa;
+        let mut changed_plaintext = ipa.clone();
         changed_plaintext.slices[0].section_sha256 = "99".repeat(32);
         assert!(
             close_oracle_role(
@@ -4546,13 +4622,7 @@ mod tests {
         let mut changed_fixups = archive.clone();
         changed_fixups.slices[0].fixup_layout_sha256 = "aa".repeat(32);
         assert!(
-            close_oracle_role(
-                LabRole::MainApp,
-                "77".repeat(32),
-                &changed_fixups,
-                &fixed_report(0x44, 0x66),
-            )
-            .is_err()
+            close_oracle_role(LabRole::MainApp, "77".repeat(32), &changed_fixups, &ipa,).is_err()
         );
     }
 
