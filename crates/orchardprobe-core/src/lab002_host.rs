@@ -27,6 +27,7 @@ const ENROLLMENT_RECEIPT_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.enrollmen
 const SESSION_EXPORT_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.session-export.v1\0";
 const DEVICE_SELECTION_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.device-selection.v1\0";
 const EXPECTED_INVENTORY_DOMAIN: &[u8] = b"orchardprobe.demolab.lab002.expected-inventory.v1\0";
+const APPROVED_SIGNATURE_VALIDATOR_ID: &str = "security-framework";
 
 fn framed_message(domain: &[u8], canonical: &[u8]) -> Result<Vec<u8>, Lab002Error> {
     let size =
@@ -517,8 +518,12 @@ fn verify_report_against_oracle(
         || report.signature.kind != SignatureKind::Cms
         || report.signature.validation != SignatureValidation::Valid
         || report.signature.superblob_sha256.is_none()
+        || report.signature.validator_id != APPROVED_SIGNATURE_VALIDATOR_ID
         || report.signature.validator_revision != report.observer_revision
-        || (oracle_role.slices.len() == 1 && report.container_kind != ContainerKind::Thin)
+        || match oracle_role.slices.len() {
+            1 => report.container_kind != ContainerKind::Thin,
+            _ => report.container_kind == ContainerKind::Thin,
+        }
     {
         return Err(Lab002Error::InvalidEvidence(
             "role identity, signature, outcome, or complete slice inventory does not match the oracle",
@@ -534,6 +539,12 @@ fn verify_report_against_oracle(
             .section_slice_offset
             .checked_add(observed.section_length)
             .ok_or(Lab002Error::InvalidEvidence("section range overflows"))?;
+        let slice_file_end = observed
+            .slice_file_offset
+            .checked_add(observed.slice_file_size)
+            .ok_or(Lab002Error::InvalidEvidence(
+                "installed slice range overflows",
+            ))?;
         if expected.ipa_section_sha256 != expected.expected_plaintext_sha256
             || observed.ordinal != expected.ordinal
             || observed.cpu_type != expected.cpu_type
@@ -547,6 +558,7 @@ fn verify_report_against_oracle(
             || observed.section_length != expected.section_length
             || observed.cryptid != 1
             || observed.cryptsize == 0
+            || slice_file_end > report.installed_file_size
             || crypt_end > observed.slice_file_size
             || !observed.encryption_covers_section
             || observed.cryptoff > observed.section_slice_offset
@@ -1913,6 +1925,39 @@ mod tests {
         let mut ciphertext_only = report;
         ciphertext_only.slices[0].mapped_sha256 = digest(0xee);
         assert!(verify_report_against_oracle(&ciphertext_only, &oracle.roles[0]).is_err());
+    }
+
+    #[test]
+    fn oracle_comparison_pins_validator_container_and_installed_extents() {
+        let enrollment = enrollment_fixture();
+        let chain = owned_run_chain(&enrollment);
+        let oracle = LabOracle::from_canonical_bytes(&chain.oracle).unwrap();
+        let signed = SignedSessionExport::from_canonical_bytes(&chain.export).unwrap();
+        let export = UnsignedSessionExport::from_canonical_bytes(
+            signed.unsigned_export_canonical.as_bytes(),
+        )
+        .unwrap();
+        let report =
+            RoleReport::from_canonical_bytes(export.entries[1].canonical_document.as_bytes())
+                .unwrap();
+
+        let mut unreviewed_validator = report.clone();
+        unreviewed_validator.signature.validator_id = "unreviewed-validator".into();
+        assert!(verify_report_against_oracle(&unreviewed_validator, &oracle.roles[0]).is_err());
+
+        let mut truncated_file = report.clone();
+        truncated_file.installed_file_size = truncated_file.slices[0].slice_file_size - 1;
+        assert!(verify_report_against_oracle(&truncated_file, &oracle.roles[0]).is_err());
+
+        let mut multi_slice_oracle = oracle.roles[0].clone();
+        let mut second_expected = multi_slice_oracle.slices[0].clone();
+        second_expected.ordinal = 1;
+        multi_slice_oracle.slices.push(second_expected);
+        let mut contradictory_thin = report;
+        let mut second_observed = contradictory_thin.slices[0].clone();
+        second_observed.ordinal = 1;
+        contradictory_thin.slices.push(second_observed);
+        assert!(verify_report_against_oracle(&contradictory_thin, &multi_slice_oracle).is_err());
     }
 
     fn verified_two_run_fixture() -> (VerifiedEnrollment, VerifiedRun, VerifiedRun) {

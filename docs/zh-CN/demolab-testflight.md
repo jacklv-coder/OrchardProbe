@@ -264,6 +264,8 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
 和精确阶段清单；已有或不完整阶段会失败关闭，不能覆盖或静默重试。授权 Seed 只留在
 冻结 Prebuild，设备 Enrollment 私钥永不离开设备。
+创建 Enrollment 时，Fastlane 会在完整 Helper 调用期间对绑定输出根持有非阻塞排他锁；
+后续每个操作则锁定绑定实验根。针对同一工作流的并发 Lane 会在读取或发布状态前失败。
 
 所有 Lane 都要求
 `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI`，拒绝 CI、

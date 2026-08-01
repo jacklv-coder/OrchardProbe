@@ -7198,6 +7198,28 @@ def lab002_operator_bound_directory!(environment_name, label)
   [path, handle, identity]
 end
 
+def lock_lab002_operator_root!(bindings)
+  primary = bindings.first
+  unless primary.is_a?(Hash) &&
+         primary[:descriptor] == 4 &&
+         %w[--output-root --experiment-directory].include?(primary[:option])
+    UI.user_error!("The LAB-002 operator root binding is invalid.")
+  end
+  verify_held_lab002_directory!(
+    primary.fetch(:path),
+    primary.fetch(:handle),
+    primary.fetch(:identity),
+    primary.fetch(:label),
+    required_mode: 0o700
+  )
+  unless primary.fetch(:handle).flock(File::LOCK_EX | File::LOCK_NB)
+    UI.user_error!(
+      "Another LAB-002 operator invocation already holds this workflow root."
+    )
+  end
+  primary.fetch(:handle)
+end
+
 def run_lab002_operator_helper!(
   operation:,
   bindings:,
@@ -7207,9 +7229,11 @@ def run_lab002_operator_helper!(
   source_commit = reviewed_main_source_commit
   binary = nil
   tool_workspace = nil
+  operator_root_lock = nil
   acknowledgement_reader = nil
   acknowledgement_writer = nil
   begin
+    operator_root_lock = lock_lab002_operator_root!(bindings)
     binary, tool_workspace, tool_identity, =
       build_lab002_private_tool(source_commit)
     verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
@@ -7318,6 +7342,7 @@ def run_lab002_operator_helper!(
     acknowledgement_reader&.close unless acknowledgement_reader&.closed?
     acknowledgement_writer&.close unless acknowledgement_writer&.closed?
     FileUtils.rm_rf(tool_workspace) if tool_workspace
+    operator_root_lock&.flock(File::LOCK_UN) rescue nil
   end
 end
 
@@ -7644,6 +7669,71 @@ platform :ios do
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     xcodegen_selection = selected_xcodegen
+    Dir.mktmpdir(
+      "orchardprobe-lab002-operator-lock-check-",
+      external_temporary_base
+    ) do |operator_root|
+      File.chmod(0o700, operator_root)
+      first_handle, first_identity = lab002_open_bound_directory!(
+        operator_root,
+        "LAB-002 operator lock regression",
+        required_mode: 0o700
+      )
+      second_handle, second_identity = lab002_open_bound_directory!(
+        operator_root,
+        "LAB-002 operator lock regression",
+        required_mode: 0o700
+      )
+      first_lock = nil
+      second_lock = nil
+      begin
+        first_lock = lock_lab002_operator_root!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: first_handle,
+            identity: first_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+        ])
+        competing_lock_rejected = false
+        begin
+          lock_lab002_operator_root!([
+            {
+              option: "--output-root",
+              path: operator_root,
+              handle: second_handle,
+              identity: second_identity,
+              descriptor: 4,
+              label: "LAB-002 operator lock regression",
+            },
+          ])
+        rescue FastlaneCore::Interface::FastlaneError
+          competing_lock_rejected = true
+        end
+        unless competing_lock_rejected
+          UI.user_error!("Concurrent LAB-002 operator roots were not rejected.")
+        end
+        first_lock.flock(File::LOCK_UN)
+        first_lock = nil
+        second_lock = lock_lab002_operator_root!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: second_handle,
+            identity: second_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+        ])
+      ensure
+        first_lock&.flock(File::LOCK_UN) rescue nil
+        second_lock&.flock(File::LOCK_UN) rescue nil
+        first_handle.close unless first_handle.closed?
+        second_handle.close unless second_handle.closed?
+      end
+    end
     export_options = demolab_export_options("A" * 10)
     unless export_options == {
       method: "app-store",

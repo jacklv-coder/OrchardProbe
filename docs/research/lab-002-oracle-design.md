@@ -428,9 +428,11 @@ The closed signature values reuse the export-manifest vocabulary: presence is
 role. Validation must come from an explicit, reviewed validator operating on
 that role's stable descriptor and signature structure; successful launch,
 entitlements, a digest, UUID, or `cryptid` cannot be inferred as validation.
-The report records a fixed validator ID/revision. If no public platform API or
-bounded independently tested implementation can perform the validation, the
-observer records `not_checked` and LAB-002 is No-Go. An absent, ad-hoc,
+The report records the fixed validator ID `security-framework` and the exact
+frozen observer revision as its validator revision; the Host rejects every
+other ID or revision. If no public platform API or bounded independently tested
+implementation can perform the validation, the observer records `not_checked`
+and LAB-002 is No-Go. An absent, ad-hoc,
 unknown, invalid, inconsistent, or unchecked signature is never accepted.
 
 Initial protection is Pass only when:

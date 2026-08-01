@@ -289,6 +289,10 @@ filenames, exclusive rename, directory fsync, and exact phase inventory. It
 refuses an existing/incomplete phase rather than overwriting or silently
 retrying it. The authorization seed remains only in the frozen prebuild; the
 device enrollment private key never leaves the device.
+Fastlane also holds a non-blocking exclusive lock on the bound output root for
+enrollment creation, or on the bound experiment root for every later operation,
+for the complete Helper invocation. A competing lane against the same workflow
+fails before reading or publishing its state.
 
 The operator lanes use these additional private environment values:
 

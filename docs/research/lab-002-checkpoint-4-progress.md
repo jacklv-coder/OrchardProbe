@@ -6,7 +6,8 @@ Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
 Activation PR: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-Status when the activation PR is on `main`: **checkpoint 4 active; 4A complete**
+Current branch status: **checkpoint 4 active; 4A complete; 4B implementation
+under Codex CR remediation**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -86,3 +87,10 @@ staging directory, exclusive rename, parent-directory sync, fixed filenames,
 and exact phase inventory. The authorization seed remains only in the frozen
 prebuild directory; device-created private keys remain only on the device.
 Hand-authored JSON and filling records after an operation remain forbidden.
+
+The 4B Codex CR rejected the initial implementation until the Host pinned the
+reviewed signature-validator ID, rejected contradictory Thin/multi-slice
+reports, bounded every observed slice by the installed file size, and Fastlane
+serialized a complete invocation with an exclusive workflow-root lock. Those
+four P2 findings require regression coverage, the complete local gate, a fresh
+clean CR, CI, and merge before 4C may start.

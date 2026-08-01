@@ -6,7 +6,7 @@
 
 激活 PR：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-激活 PR 进入 `main` 后的状态：**检查点 4 active；4A 完成**
+当前分支状态：**检查点 4 active；4A 完成；4B 实现正在进行 Codex CR 修复**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -66,3 +66,8 @@ Review 或 App Store 提交。
 下一轮，以及验证完整保留链。每个发布动作使用随机 Owner-only Staging、排他 Rename、父目录
 同步、固定文件名和精确阶段清单。授权 Seed 只留在冻结 Prebuild 目录；设备私钥只留在设备。
 仍禁止手写 JSON、借用测试 Fixture 或操作后补填记录。
+
+4B Codex CR 拒绝了初始实现，直到 Host 固定已评审签名验证器 ID、拒绝 Thin/多 Slice
+矛盾、以安装文件大小约束每个观察 Slice，并由 Fastlane 通过排他工作流根锁串行化完整调用。
+这四个 P2 必须具备回归覆盖，并重新通过完整本地门禁、全新无问题 CR、CI 与合并，之后才可
+开始 4C。
