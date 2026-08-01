@@ -221,3 +221,5 @@ Format、锁定依赖且拒绝警告的 Clippy、全部 278 项 Workspace 测试
 明确的无测量 Hook 检查也均通过。4B PR 前只剩一轮全新无问题 Codex CR。
 
 该次最终完整 Diff CR 又发现一个 P2 源生命期缺口：完整 Operator 验证器在检查两轮保留结果前已加载并验证冻结 Prebuild/Candidate 元组，但链验证后未再次打开它们。并发替换源文件因此可能让结果继续基于过期的内存 Oracle 字节。修复在两轮链闭合后、返回处置结果前，重复完整的冻结源与保留源匹配。这一 Rust Helper 变更要求两次新的独立可复现性测量、替换唯一 Allowlist 元组、正常门禁、全部本地门禁和一次新的干净 CR，才能打开 4B PR。
+
+提交该源生命期修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot 为 `e7edd34197e5b4aade1c74431dbe632eb7e46470f2ec412046b45d42b47a5299`。全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,270,944`、SHA-256 `1a173e6189cead86850e52332c6f6aadcddfc8f148698f4b7d8ca6777a91aa47`、CodeDirectory CDHash `71fb6ba2b6ed95c64d3d206d0913f9b0e4413347`。临时缺失 Tuple 测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审 Allowlist。两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。全部本地门禁、明确的无测量 Hook 检查与新的干净 Codex CR 仍需在 4B PR 前完成。

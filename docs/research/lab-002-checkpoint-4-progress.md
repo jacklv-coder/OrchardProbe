@@ -322,3 +322,18 @@ frozen-source and retained-source match after the two-run chain closes and
 before returning its disposition. This Rust Helper change requires two new
 independent reproducibility measurements, a replacement sole allowlist tuple,
 the normal gate, all local gates, and a fresh clean CR before the 4B PR.
+
+After committing that source-lifetime remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`e7edd34197e5b4aade1c74431dbe632eb7e46470f2ec412046b45d42b47a5299`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,270,944`, SHA-256
+`1a173e6189cead86850e52332c6f6aadcddfc8f148698f4b7d8ca6777a91aa47`,
+and CodeDirectory CDHash `71fb6ba2b6ed95c64d3d206d0913f9b0e4413347`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate then rebuilt and admitted the allowlisted Helper and passed
+the unsigned Simulator fixture. All local gates, the explicit
+no-measurement-hook check, and a fresh clean Codex CR remain required before
+the 4B PR.
