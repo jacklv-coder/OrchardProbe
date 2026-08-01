@@ -75,8 +75,14 @@ Enrollment Key/Receipt 会把两份签名 Run Export 绑定到同一台物理设
 进行。已完成的检查点 3 只建立精确本地签名 Candidate 与冻结上传前 Oracle，
 不建立受保护 Oracle，也不授权 TestFlight 上传、安装、设备观察或设备 Backend 工作。
 任何不同 Source、Version/Build、Manifest、签名 Tuple、上传、安装或观察都须另行
-明确授权；因此检查点 4 保持 `blocked`，任何另行授权的观察前仍须冻结已评审的
-设计/构建清单。在 LAB-002 取得 Go 结果前，
+明确授权。2026-08-01，操作员已另行授权精确 Build 的有界检查点 4 流程；恰好一次内部
+TestFlight 上传已对账为 Apple 接受并处理完成，未启用外部测试或提交审核。该外部操作
+和对账发生在本激活 PR 进入 `main` 之前，违反上面的“先激活、后执行”串行门禁。这个
+不可逆事实作为治理偏差保留，不能改写成合规操作或重试；此后没有安装或设备观察，且
+本 PR 进入 `main` 前所有剩余检查点工作继续阻塞。检查点 4
+在激活 PR 进入 `main` 后变为 `active`；其[顺序进度台账](lab-002-checkpoint-4-progress.md)
+要求先合并已评审 Host 操作工件链，再进行安装 Enrollment，并在安装与每轮前保留全新
+RFC-0001 确认。在 LAB-002 取得 Go 结果前，
 `DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
 明确 Go/No-Go、文档和收窄声明标准。
@@ -90,7 +96,7 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 | 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
 | 2 | 无设备实现与合成/Simulator 验证 | `done` | 已合并的 [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59)实现闭合协议、Host 链、固定设备状态/Observer/Export 流程、生产授权验证及合成/Simulator 门禁；全部必需 CI、Review Thread 与合并前 Codex CR 均已清零 |
 | 3 | 精确签名 DemoLab Build 与上传前 Oracle | `done` | 已从 PR #71 合并后的干净源码发布恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选/冻结 Oracle Pair。[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)与 [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527)记录其非秘密证据；[PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)是完成记录 Implementation PR，其合并使本行状态生效。授权仍不包含上传、安装或设备观察 |
-| 4 | 安装 Enrollment 与两次干净真机观察 | `blocked` | 需要检查点 3、每次操作的全新授权、所选自有 iPhone 和已评审两轮流程 |
+| 4 | 安装 Enrollment 与两次干净真机观察 | `active` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账。按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)先合并闭合 Host 操作流程，再为 Enrollment 与每次干净运行分别保留全新确认/信封 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 
 检查点 2 的完成证据保留在
@@ -195,7 +201,7 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 | 10 | `HOST-009` | `done` | 使用未改变的 Fixture 字节重建确定性、未签名、仅供分析的 IPA；保留必要元数据且绝不宣称已经解密。 | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | 记录当前内部 TestFlight 精确组合的有界 No-Go：无法在批准边界内独立观察精确已安装 Lineage、初始保护和明文范围。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `blocked` | 评估仅限 DemoLab 的受保护到明文自观测 Oracle。无设备检查点 2 已通过 PR #59 完成；检查点 3 已通过 PR #72 完成精确本地 DemoLab `1.0 (3)` 签名候选与冻结上传前 Oracle，且未上传、安装或进行设备观察。检查点 4 正等待逐次全新授权，以便在选定的自有 iPhone 上执行安装 Enrollment 和两次干净观察。完整清单固定为主程序、DemoFramework、DemoShareExtension 三个可执行文件及记录安装 Build 中它们的每个架构/Slice。设备观察前，冻结精确 DemoLab 源码 Commit/Build 身份、每个清单 Slice 的非空精确映射代码区间集合，以及每个区间的独立预期明文 Oracle 产物/Hash，并全部绑定到同一 Commit/Build。把每个已安装清单项/Slice 独立绑定到该 Build，证明其初始已安装状态受保护，再证明同一映射区间已成为明文并匹配冻结 Oracle；观察后不得删减或重新分类，否则记录有界 No-Go。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 初始：[#57](https://github.com/jacklv-coder/OrchardProbe/pull/57)；检查点 3：[#61](https://github.com/jacklv-coder/OrchardProbe/pull/61) | 检查点 2：[#59](https://github.com/jacklv-coder/OrchardProbe/pull/59)；检查点 3：[#72](https://github.com/jacklv-coder/OrchardProbe/pull/72)；最终：— |
+| 13 | `LAB-002` | `active` | 评估仅限 DemoLab 的受保护到明文自观测 Oracle。无设备检查点 2 已通过 PR #59 完成；检查点 3 已通过 PR #72 完成精确本地 DemoLab `1.0 (3)` 签名候选与冻结上传前 Oracle。精确检查点 4 流程现已获授权，恰好一次内部 TestFlight 上传已对账为 Apple 接受；[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)要求在所选自有 iPhone 安装 Enrollment 和两次干净观察前先关闭 Host 操作链。完整清单固定为主程序、DemoFramework、DemoShareExtension 三个可执行文件及记录安装 Build 中它们的每个架构/Slice。设备观察前，冻结精确 DemoLab 源码 Commit/Build 身份、每个清单 Slice 的非空精确映射代码区间集合，以及每个区间的独立预期明文 Oracle 产物/Hash，并全部绑定到同一 Commit/Build。把每个已安装清单项/Slice 独立绑定到该 Build，证明其初始已安装状态受保护，再证明同一映射区间已成为明文并匹配冻结 Oracle；观察后不得删减或重新分类，否则记录有界 No-Go。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 初始：[#57](https://github.com/jacklv-coder/OrchardProbe/pull/57)；检查点 3：[#61](https://github.com/jacklv-coder/OrchardProbe/pull/61)；检查点 4：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | 检查点 2：[#59](https://github.com/jacklv-coder/OrchardProbe/pull/59)；检查点 3：[#72](https://github.com/jacklv-coder/OrchardProbe/pull/72)；最终：— |
 | 14 | `DEVICE-001` | `blocked` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | `LAB-002` Go 结果 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
 | 15 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
 | 16 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |

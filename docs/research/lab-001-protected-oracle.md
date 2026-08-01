@@ -201,9 +201,11 @@ through a separate reviewed plan change. That requirement is now represented by
 `LAB-002` and Issue #55 in the authoritative execution ledger. Its device-free
 checkpoint 2 and exact local DemoLab `1.0 (3)` candidate/frozen-oracle
 checkpoint 3 are complete. This local pair does not establish an independently
-observed protected oracle; checkpoint 4 remains blocked and LAB-002 still must
-complete with a Go result for an independent protected oracle before any
-device-backend work starts. The replacement method must:
+observed protected oracle. Checkpoint 4 is active under its separate exact-build
+authorization, while installation and observation remain blocked until the
+reviewed Host operator artifact workflow is merged. LAB-002 still must complete
+with a Go result for an independent protected oracle before any device-backend
+work starts. The replacement method must:
 
 - remain limited to project-owned DemoLab;
 - avoid a reusable arbitrary process, filesystem, or memory API;
