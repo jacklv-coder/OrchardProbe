@@ -349,3 +349,16 @@ before returning from every close. Because this changes the Rust Helper, two
 new independent reproducibility measurements, a replacement sole allowlist
 tuple, the normal gate, all local gates, and a fresh clean CR remain required
 before the 4B PR.
+
+After committing that close-path remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`c454b2084ce5abbe2f677e91fbc4423fed9a852d0c167c7f82200543f427de3f`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,270,944`, SHA-256
+`fb57184babc4d7e6ba3bf2970ca2089ea345b0726c85b337f2c8d9ec4e405cf0`,
+and CodeDirectory CDHash `5ffdb86cb678ac6ab670bccb811a28edbfb12a3e`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate, all local gates, and a fresh clean CR remain required
+before the 4B PR.
