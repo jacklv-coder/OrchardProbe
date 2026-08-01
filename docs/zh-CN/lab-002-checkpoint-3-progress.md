@@ -17,7 +17,7 @@
 | 3A | 私有预构建输入生成器 | `完成；PR #62 已合并` | 仅本机 `ios demolab_prepare_lab002` Lane 使用固定 Rust 工具链与通过 Checksum 认证的隔离 Cargo Source 构建仓库内部 `oprobe-lab002` Helper，只从已进入经 SSH 实时认证的 GitHub `main` 历史的干净 Commit 与固定构建工具链创建全新 Ed25519 原始 Seed、公钥/Key ID、Identity Nonce、规范 Authorized-target Manifest、Target-identity Set 和域分离 Build Binding，再把三个私有记录以 Owner-only 权限和持久化检查排他发布到 Git 外。纯设备无关单元/Workspace 测试、Codex CR 与 CI 已通过；[PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62) 已合并为 `0df9ee42fe5ac4de71ca9ae32a657b5f8f18deb6` |
 | 3B | Archive/Oracle/证据闭合 | `完成；PR #63-#65 已合并` | 加固 Archive 流程消费并重新验证精确 3A 工件，只构建三个 Allowlist Role；比较 Archive/IPA Slice 身份与 `__TEXT,__oprobe`，发布规范冻结 Oracle，把其外部 SHA-256 绑定进上传前证据，并在闭合 Manifest/Oracle Tuple 缺失或不匹配时拒绝上传。[PR #65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 以 `ca19db07a8badc5d7ce55cc556ab9205181056a5` 合并最终 Gate |
 | 3C | 无设备测试、Codex CR、CI 与实现合并 | `完成；PR #66 已合并` | 临时合成 Key、未签名 Simulator 产物和仓库自有 Fixture 已覆盖弱 Key、畸形/私有路径、Symlink/Race/权限失败、Target 漂移、Slice/Range/Fixup 不匹配、规范化、原子发布与 Upload-gate 拒绝。全部 P1/P2 已解决，完整本地验证与必需 CI 已通过，评审后的实现已按 PR #62-#65 合并，且此前没有构建签名 `1.0 (3)` 候选。[PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 以 `e973f6057f5d03e3bab4f5857fdb47ed7699574a` 合并闭环和 3D 转换 |
-| 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `进行中；导出后修复评审中` | 首方 App ID 与专用 App Group 已在私有环境完成配置，独立临时签名预检通过。首次受控 Archive 已完成签名 Archive/Export，但导出后 Helper 在故意只含 Xcode 工具的 PATH 中重新选择 XcodeGen，Oracle 发布前按设计失败关闭。没有发布 Candidate Run，也没有上传、安装或设备观察。须先合并 XcodeGen 绝对文件身份复核修复，再从新的实时 `main` Commit 创建全新 3A 输入并重跑精确候选 |
+| 3D | 精确签名 DemoLab `1.0 (3)` 候选 | `进行中；Xcode 导出策略修复实现中` | 首方 App ID 与专用 App Group 已在私有环境完成配置，独立临时签名预检通过。[PR #67](https://github.com/jacklv-coder/OrchardProbe/pull/67) 已修复第一次导出后 XcodeGen 失败，并以 `c6e9bd8d6620564017bcce2e81a8dfc3fc41e72f` 合并。随后全新 Source-bound Run 已完成签名 Archive/Export 并通过修复后的复核，但当前 Xcode 默认 `uploadSymbols=YES`，在严格关闭的 IPA App Root 外加入顶层 `Symbols/` Sidecar，流程再次安全失败关闭。没有发布 Candidate，也没有上传、安装或设备观察 |
 | 3E | 脱敏完成记录 | `blocked` | 独立重新 Hash 并验证本地 Candidate、Manifest、Oracle 与 Evidence 绑定；只在 Issue #55 和中英文文档记录非秘密 Hash/工具链/Build 事实，执行最终 Codex CR/CI/Review 并合并检查点 3 结果 |
 
 ### 3D 顺序执行门禁
@@ -25,12 +25,15 @@
 | 顺序 | 门禁 | 状态 | 完成标准 |
 |---:|---|---|---|
 | 3D.1 | 首方签名 Capability | `本机完成` | 专用 App Group 已同时关联现有首方主 App ID 与 Share Extension App ID；Xcode 已重新生成受影响 Profile，临时 Release 签名预检通过，且没有保留产物或公开私有标识 |
-| 3D.2 | 导出后固定 XcodeGen 复核 | `实现中` | 进入固定 Xcode 环境前捕获 Allowlist 内 XcodeGen 的绝对 Path/Version/文件身份；生成 Oracle 时不查询只含 Xcode 工具的 PATH，而是重验同一绝对文件；恢复调用方 PATH 后，再以 PATH 选择复核一次才允许最终发布 |
-| 3D.3 | 全新精确候选 | `被 3D.2 合并阻塞` | 从干净的已合并修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用修复前 Tuple，不得上传、安装或观察设备 |
+| 3D.2 | 导出后固定 XcodeGen 复核 | `完成；PR #67 已合并` | 进入固定 Xcode 环境前捕获 Allowlist 内 XcodeGen 的绝对 Path/Version/文件身份；生成 Oracle 时直接复核同一文件；恢复调用方 PATH 后，再以 PATH 选择复核一次才允许发布 |
+| 3D.3 | 关闭的 Xcode 导出策略与确定性 Rollback | `实现中` | 设置 `uploadSymbols=false`，使受控 IPA 保持单一 `Payload/*.app` Tree，同时单独保留 Archive dSYM；仅当 Helper 返回精确“不确定发布”标记时保留 Staging，确定性发布前失败须清理 |
+| 3D.4 | 全新精确候选 | `被 3D.3 合并阻塞` | 从干净的已合并修复 Commit 创建新的 Source-bound 3A Tuple，发布唯一一个通过验证的 Owner-only `1.0 (3)` Archive/IPA/Oracle/Evidence Run；不得复用两次失败运行的 Tuple，不得上传、安装或观察设备 |
 
-修复前失败运行不是候选：Archive 与 Export 已完成，但闭合 Oracle/Evidence 没有发布；
-其未发布 Staging 已由受评审 Rollback 路径清理。与旧 Source 绑定的 Prebuild 输入只作为
-私有历史诊断保留，修复改变 `main` 后不得复用。
+两次失败运行都不是候选：Archive/Export 均已完成，但均未发布闭合 Oracle/Evidence
+Tuple。第一次未发布 Staging 已由 Rollback 清理；第二次确定性失败在保守的 Helper 前
+门禁下保留了一个私有 Staging；经确认其中只有 Archive/IPA、没有 Oracle/Evidence 后，
+已原子移动到非候选诊断名称。两份 Source-bound Prebuild Tuple 只作为私有历史诊断
+保留，修复改变 `main` 后不得复用。
 
 ### 3B 顺序实现切片
 

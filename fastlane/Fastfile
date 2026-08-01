@@ -2740,6 +2740,8 @@ def create_lab002_private_oracle!(
           "Retained private DemoLab staging for reconciliation: " \
           "#{run_directory}"
         )
+      else
+        on_retention_change.call(false)
       end
       UI.user_error!(
         "LAB-002 private oracle generation failed: " \
@@ -4143,6 +4145,19 @@ def demolab_bundle_identifiers
   end
 
   [app_identifier, share_identifier]
+end
+
+def demolab_export_options(team_identifier)
+  unless /\A[A-Z0-9]{10}\z/.match?(team_identifier.to_s)
+    UI.user_error!("DemoLab export team identifier is invalid.")
+  end
+  {
+    method: "app-store",
+    signingStyle: "automatic",
+    teamID: team_identifier,
+    manageAppVersionAndBuildNumber: false,
+    uploadSymbols: false,
+  }
 end
 
 def copy_tracked_demolab_fixture(workspace)
@@ -7081,6 +7096,16 @@ platform :ios do
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     xcodegen_selection = selected_xcodegen
+    export_options = demolab_export_options("A" * 10)
+    unless export_options == {
+      method: "app-store",
+      signingStyle: "automatic",
+      teamID: "A" * 10,
+      manageAppVersionAndBuildNumber: false,
+      uploadSymbols: false,
+    }
+      UI.user_error!("Controlled DemoLab export options changed.")
+    end
     parser_commit = git_command_output("rev-parse", "HEAD")
     [parser_commit, "a" * 40, "b" * 64].uniq.each do |candidate_oid|
       parsed_reviewed_main = parse_reviewed_github_main_ref!(
@@ -10307,12 +10332,7 @@ platform :ios do
                 output_name: "DemoLab-#{build_number}.ipa",
                 buildlog_path: gym_scratch_root,
                 export_method: "app-store",
-                export_options: {
-                  method: "app-store",
-                  signingStyle: "automatic",
-                  teamID: team_identifier,
-                  manageAppVersionAndBuildNumber: false,
-                },
+                export_options: demolab_export_options(team_identifier),
                 xcargs: xcargs,
                 export_xcargs: "-allowProvisioningUpdates",
                 result_bundle: true,

@@ -150,6 +150,15 @@ PATH-selected XcodeGen verification before it can publish the final candidate.
 The regression lane proves that a missing version or mismatched file identity is
 rejected even while the reduced environment is active.
 
+The controlled App Store export explicitly sets `uploadSymbols` to `false`.
+Current Xcode otherwise defaults that option to `true` and may add a top-level
+`Symbols/` tree beside `Payload/`; LAB-002 deliberately keeps the IPA parser's
+single-app-root boundary closed instead of broadening it for an export-only
+sidecar. Gym still retains the Archive dSYM separately. A deterministic oracle
+error that occurs before publication now disarms staging retention so rollback
+can remove the unpublished Archive/IPA. Only the helper's exact indeterminate
+publication marker keeps private staging for reconciliation.
+
 Installation, dependency resolution, and this lane need no Apple login. The
 signed archive later uses the Xcode account/certificates on this Mac; upload
 uses an App Store Connect API key rather than a local Apple ID/password

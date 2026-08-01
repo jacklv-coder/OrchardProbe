@@ -212,6 +212,13 @@ Allowlist 的 XcodeGen 绝对路径、版本和文件身份。生成 Oracle 时�
 恢复后，Lane 还必须重新执行一次基于 PATH 选择的常规 XcodeGen 校验，才允许发布最终
 候选。回归 Lane 会确认缺失版本或文件身份不匹配在缩减环境中也必须被拒绝。
 
+受控 App Store 导出会显式设置 `uploadSymbols=false`。当前 Xcode 默认把该选项设为
+`true`，可能在 `Payload/` 旁增加顶层 `Symbols/`；LAB-002 不会为了这个仅供导出的
+Sidecar 放宽 IPA Parser 的单一 App Root 边界，Gym 仍会单独保留 Archive dSYM。
+如果 Oracle 在发布前发生确定性错误，Lane 现在会解除 Staging 保留标志，由 Rollback
+删除未发布的 Archive/IPA；只有 Helper 返回精确的“不确定发布”标记时才保留私有
+Staging 等待调和。
+
 ## 安全边界
 
 - 只能使用首方 DemoLab、自有 Apple 账号和自有且获授权的 iPhone。
