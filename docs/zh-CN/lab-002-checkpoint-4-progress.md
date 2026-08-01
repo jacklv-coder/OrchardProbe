@@ -125,3 +125,12 @@ Host Run 验证器也没有独立保留由已 Enrollment Manifest 推导的 Targ
 与这些 Manifest 派生值一致。新增回归会拒绝替换过的描述符身份，以及从另一 Target 派生、
 内部仍自洽的 Oracle Target 集合。由于此次修改 Rust Helper，4B PR 打开前必须重新完成两次
 独立可复现测量、只保留新 Tuple 的 Allowlist、正常门禁、完整本地测试和全新无问题 Codex CR。
+
+提交该来源修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot
+为 `220f4cab162c91a9ae82fce85c534e09bf0f4f0c798695b369de99b40df24661`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,181,488`、
+SHA-256 `b586c9629ba827d9c5f158276ffaa6994952ea7ba916e4de62854750dc98bc46`、
+CodeDirectory CDHash `6777ec989e0c6ac034ea3905b3646f61fb1d1b98`。临时测量 Hook 已在
+把该精确 Tuple 加入已评审 Allowlist 前完整移除。正常非测量门禁已重新构建并接受它，且
+无签名 Simulator Fixture 通过；Format、锁定依赖且拒绝警告的 Clippy、全部 271 项
+Workspace 测试、Ruby 语法和 Diff 检查也均通过。4B PR 前只剩全新无问题 Codex CR。

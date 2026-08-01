@@ -171,3 +171,16 @@ self-consistent Oracle target set derived from a different target. Because
 this changes the Rust Helper, two new independent reproducibility measurements,
 an updated single-tuple allowlist, the normal gate, full local tests, and a
 fresh clean Codex CR are required before the 4B PR can open.
+
+After committing that provenance remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`220f4cab162c91a9ae82fce85c534e09bf0f4f0c798695b369de99b40df24661`.
+All six products were identical: toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,181,488`, SHA-256
+`b586c9629ba827d9c5f158276ffaa6994952ea7ba916e4de62854750dc98bc46`,
+and CodeDirectory CDHash `6777ec989e0c6ac034ea3905b3646f61fb1d1b98`.
+The temporary measurement hook was removed completely before that exact tuple
+was added to the reviewed allowlist. The normal non-measurement gate rebuilt
+and admitted it and passed the unsigned Simulator fixture; formatting, locked
+Clippy with warnings denied, all 271 Workspace tests, Ruby syntax, and the diff
+check also pass. A fresh clean Codex CR remains required before the 4B PR.
