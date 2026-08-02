@@ -704,3 +704,21 @@ Clippy with warnings denied, all 288 Workspace tests, Ruby syntax, diff
 hygiene, and the explicit no-measurement-hook search also pass. The allowlist
 commit and a new clean final complete-diff CR remain required before push and
 merge. The phone remains untouched.
+
+That clean complete-diff CR then found one P2 publication-content race. The
+operator phase guard closed the directory inventory and frozen source but did
+not rebind the individual staging files immediately before and after rename,
+so a same-owner process could replace verified bytes under the same names. The
+publisher now records every created artifact device/inode identity and performs
+two bounded passes over the exact filename set at both publication boundaries;
+each pass requires the original identity, owner, `0400` mode, length, and exact
+bytes. Inventory enumeration stops as soon as it exceeds the fixed expected
+count. Deterministic regressions cover staging rewrites, post-rename rewrites,
+same-name replacement between the two passes, and above-bound inventory. Two
+follow-up uncommitted CRs first identified the missing second pass and bound,
+then found no remaining diff-scoped correctness issue. All 59 Helper tests,
+locked Helper Clippy with warnings denied, Rust formatting, and diff hygiene
+pass. Because the Rust Helper changed, two independent complete reproducibility
+measurements, replacement of the sole allowlist tuple, normal and complete
+local gates, and a new clean final CR remain required before push and merge.
+The phone remains untouched.

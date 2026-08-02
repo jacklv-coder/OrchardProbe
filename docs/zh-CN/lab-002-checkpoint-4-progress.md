@@ -450,3 +450,14 @@ Allowlist 中的 Helper，无签名 Simulator Fixture 通过。Rust Format、锁
 全 Target Workspace Clippy、全部 288 项 Workspace 测试、
 Ruby 语法、Diff Hygiene 及明确的无测量 Hook 搜索也均通过。Push 与合并前仅剩 Allowlist
 提交，以及一轮新的最终干净完整 Diff CR。真机继续不操作。
+
+随后该轮干净完整 Diff CR 发现一个 P2 发布内容竞态：Operator 阶段 Guard 虽关闭了目录清单
+和冻结 Source，却没有在 Rename 前后立即重新绑定各 Staging 文件，因此同一 Owner 进程仍可能
+在相同文件名下替换已验证字节。现在 Publisher 会记录每个新建 Artifact 的 Device/Inode 身份，
+并在两个发布边界分别对精确文件名集合执行两轮有界复核；每轮都要求原始身份、Owner、`0400`
+权限、长度和完整字节一致。目录枚举一旦超过固定预期数量就立即拒绝。确定性回归覆盖 Staging
+改写、Rename 后改写、两轮之间同名替换，以及超过上限的目录清单。两轮后续未提交 CR 先发现
+缺失的第二轮复核与上限，修复后未再发现 Diff 范围内的正确性问题。全部 59 项 Helper 测试、
+锁定依赖且拒绝警告的 Helper Clippy、Rust Format 与 Diff Hygiene 均通过。由于 Rust Helper
+再次变化，Push 与合并前仍需两次独立完整可复现性测量、替换唯一 Allowlist Tuple、正常及完整
+本地门禁，以及一轮新的最终干净 CR。真机继续不操作。

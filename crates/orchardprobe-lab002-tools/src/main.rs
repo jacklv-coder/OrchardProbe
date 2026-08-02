@@ -3267,20 +3267,43 @@ fn publish_prebuild_directory_with_arm(
     }
 
     let mut generated_files = Vec::new();
+    let mut written_artifact_identities = BTreeMap::new();
     let mut publication_renamed_back = false;
     let mut publication_may_be_live = false;
     let result = (|| {
         generated_files = generated_files_for_identity(staging_identity)?;
         for (name, bytes) in files {
-            drop(write_private_file(&staging, name, bytes)?);
+            let (file, identity) = write_private_file(&staging, name, bytes)?;
+            drop(file);
+            if written_artifact_identities
+                .insert((*name).to_owned(), identity)
+                .is_some()
+            {
+                return Err("private artifact name is duplicated".into());
+            }
         }
         for (name, bytes) in &generated_files {
-            drop(write_private_file(&staging, name, bytes)?);
+            let (file, identity) = write_private_file(&staging, name, bytes)?;
+            drop(file);
+            if written_artifact_identities
+                .insert(name.clone(), identity)
+                .is_some()
+            {
+                return Err("private artifact name is duplicated".into());
+            }
         }
         staging
             .sync_all()
             .map_err(|error| format!("could not fsync prebuild staging directory: {error}"))?;
         publication_guard(&staging_name)?;
+        verify_publication_artifacts(
+            parent,
+            &staging_name,
+            staging_identity,
+            files,
+            &generated_files,
+            &written_artifact_identities,
+        )?;
 
         publication_may_be_live = true;
         rustix::fs::renameat_with(
@@ -3313,8 +3336,16 @@ fn publish_prebuild_directory_with_arm(
             ));
         }
         verify_private_output_root_path(output_root)?;
-        verify_published_directory_identity(parent, final_name, staging_identity)?;
         publication_guard(final_name)?;
+        verify_publication_artifacts(
+            parent,
+            final_name,
+            staging_identity,
+            files,
+            &generated_files,
+            &written_artifact_identities,
+        )?;
+        verify_private_output_root_path(output_root)?;
         Ok(())
     })();
 
@@ -3351,6 +3382,121 @@ fn publish_prebuild_directory_with_arm(
         }
     }
     result.map(|()| staging_identity)
+}
+
+fn verify_publication_artifacts(
+    parent: &File,
+    directory_name: &str,
+    expected_directory_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    generated_files: &[(String, Vec<u8>)],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+) -> Result<(), String> {
+    verify_publication_artifacts_with_after_first_verification(
+        parent,
+        directory_name,
+        expected_directory_identity,
+        files,
+        generated_files,
+        expected_identities,
+        || {},
+    )
+}
+
+fn verify_publication_artifacts_with_after_first_verification(
+    parent: &File,
+    directory_name: &str,
+    expected_directory_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    generated_files: &[(String, Vec<u8>)],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+    after_first_verification: impl FnOnce(),
+) -> Result<(), String> {
+    let directory = open_directory_entry(parent, directory_name)
+        .map_err(|error| format!("could not reopen publication directory: {error}"))?;
+    let metadata = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect publication directory: {error}"))?;
+    if (metadata.dev(), metadata.ino()) != expected_directory_identity
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return Err("publication directory changed identity at the artifact boundary".into());
+    }
+
+    let expected = files
+        .iter()
+        .map(|(name, bytes)| (*name, *bytes))
+        .chain(
+            generated_files
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+        )
+        .collect::<Vec<_>>();
+    if expected.len() != expected_identities.len() {
+        return Err("publication artifact identity set is incomplete".into());
+    }
+    verify_publication_artifact_inventory(&directory, &expected)?;
+    verify_publication_artifact_bytes(&directory, &expected, expected_identities)?;
+    after_first_verification();
+    verify_publication_artifact_inventory(&directory, &expected)?;
+    verify_publication_artifact_bytes(&directory, &expected, expected_identities)?;
+    verify_published_directory_identity(parent, directory_name, expected_directory_identity)
+}
+
+fn verify_publication_artifact_bytes(
+    directory: &File,
+    expected: &[(&str, &[u8])],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+) -> Result<(), String> {
+    for (name, expected_bytes) in expected {
+        let expected_identity = expected_identities
+            .get(*name)
+            .ok_or_else(|| "publication artifact identity is missing".to_owned())?;
+        let observed = read_private_artifact(directory, name, expected_bytes.len())?;
+        if observed.bytes != *expected_bytes
+            || (observed.device, observed.inode) != *expected_identity
+            || observed.owner != rustix::process::geteuid().as_raw()
+            || observed.mode != 0o400
+            || observed.size != expected_bytes.len() as u64
+        {
+            return Err(format!(
+                "publication artifact {name} changed at the publication boundary"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn verify_publication_artifact_inventory(
+    directory: &File,
+    expected: &[(&str, &[u8])],
+) -> Result<(), String> {
+    let entries = rustix::fs::Dir::read_from(directory)
+        .map_err(|error| format!("could not open publication directory stream: {error}"))?;
+    let mut observed = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("could not enumerate publication directory: {error}"))?;
+        let name = entry.file_name().to_bytes();
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        if observed.len() == expected.len() {
+            return Err("publication artifact inventory exceeds its fixed bound".into());
+        }
+        observed.push(name.to_vec());
+    }
+    observed.sort();
+    let mut expected_names = expected
+        .iter()
+        .map(|(name, _)| name.as_bytes().to_vec())
+        .collect::<Vec<_>>();
+    expected_names.sort();
+    if observed != expected_names {
+        return Err("publication artifact inventory changed at the publication boundary".into());
+    }
+    Ok(())
 }
 
 fn verify_published_directory_identity(
@@ -4379,6 +4525,153 @@ mod tests {
     }
 
     #[test]
+    fn publication_rejects_staged_artifact_rewrite_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
+            &mut |_, _| Ok(()),
+            &mut |publication_name| {
+                let artifact = root_path.join(publication_name).join("private.bin");
+                fs::set_permissions(
+                    &artifact,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o600),
+                )
+                .unwrap();
+                fs::write(&artifact, b"altered").unwrap();
+                fs::set_permissions(
+                    &artifact,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                )
+                .unwrap();
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_rejects_published_artifact_rewrite_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let mut guard_calls = 0;
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
+            &mut |_, _| Ok(()),
+            &mut |publication_name| {
+                guard_calls += 1;
+                if guard_calls == 2 {
+                    let artifact = root_path.join(publication_name).join("private.bin");
+                    fs::set_permissions(
+                        &artifact,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+                    )
+                    .unwrap();
+                    fs::write(&artifact, b"altered").unwrap();
+                    fs::set_permissions(
+                        &artifact,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                    )
+                    .unwrap();
+                }
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+        assert_eq!(guard_calls, 2);
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_second_pass_rejects_same_name_artifact_replacement() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let parent = File::open(root.path()).unwrap();
+        let phase_name = "phase";
+        fs::create_dir(root.path().join(phase_name)).unwrap();
+        fs::set_permissions(
+            root.path().join(phase_name),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let phase = open_directory_entry(&parent, phase_name).unwrap();
+        let phase_metadata = phase.metadata().unwrap();
+        let (first, first_identity) = write_private_file(&phase, "first.bin", b"private").unwrap();
+        let (second, second_identity) =
+            write_private_file(&phase, "second.bin", b"stable").unwrap();
+        drop((first, second));
+        let identities = BTreeMap::from([
+            ("first.bin".to_owned(), first_identity),
+            ("second.bin".to_owned(), second_identity),
+        ]);
+        let first_path = root.path().join(phase_name).join("first.bin");
+
+        let error = verify_publication_artifacts_with_after_first_verification(
+            &parent,
+            phase_name,
+            (phase_metadata.dev(), phase_metadata.ino()),
+            &[("first.bin", b"private"), ("second.bin", b"stable")],
+            &[],
+            &identities,
+            || {
+                fs::remove_file(&first_path).unwrap();
+                fs::write(&first_path, b"altered").unwrap();
+                fs::set_permissions(
+                    &first_path,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                )
+                .unwrap();
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+    }
+
+    #[test]
+    fn publication_inventory_rejects_above_bound_without_collecting_all_entries() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("expected.bin"), b"expected").unwrap();
+        fs::write(root.path().join("unexpected.bin"), b"unexpected").unwrap();
+        let directory = File::open(root.path()).unwrap();
+
+        let error =
+            verify_publication_artifact_inventory(&directory, &[("expected.bin", b"expected")])
+                .unwrap_err();
+
+        assert!(error.contains("exceeds its fixed bound"));
+    }
+
+    #[test]
     fn failed_prepublication_is_durably_cleaned() {
         let root = TempDir::new().unwrap();
         fs::set_permissions(
@@ -4588,7 +4881,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.contains("changed identity before success"));
+        assert!(error.contains("publication directory changed identity"));
         assert!(!moved_path.join("private.bin").exists());
         assert_eq!(
             fs::read(final_path.join("replacement.bin")).unwrap(),
