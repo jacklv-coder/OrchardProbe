@@ -254,3 +254,10 @@ Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随�
 并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。Format、锁定依赖且拒绝警告的
 Clippy、全部 280 项 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均
 通过。4B PR 前只剩一次新的干净 Codex CR。
+
+该次全新完整 Diff CR 发现一个 P1 最终化缺口：第二轮结果先于完整双轮 Verifier 发布，
+因此不同的规范化观察会先关闭阶段，随后验证失败，却不能保留任何最终 Disposition。修复会在
+发布第二轮前先验证完整有序双轮链；结构有效的重复性不一致或不同单轮封闭 Disposition 现在
+会成为通用 `no_go`，而重放、顺序、Enrollment、冻结 Oracle 与 Artifact 完整性错误仍会
+拒绝发布。该 Rust Helper 变更再次要求两次独立可复现测量、替换唯一 Allowlist Tuple、正常
+及本地门禁和一次新的干净 CR，才能打开 4B PR。

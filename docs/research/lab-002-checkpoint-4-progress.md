@@ -313,6 +313,17 @@ all 278 Workspace tests, Ruby syntax, diff check, and the explicit
 no-measurement-hook check also pass. A fresh clean Codex CR remains required
 before the 4B PR.
 
+That fresh complete-diff CR found one P1 finalization gap. Run 2 was published
+before the complete two-run verifier ran, so different normalized observations
+could close the phase and then fail verification without retaining any final
+disposition. The remediation verifies the complete ordered two-run chain before
+publishing run 2. A structurally valid repetition mismatch or different closed
+per-run disposition now becomes generic `no_go`; replay, ordering, enrollment,
+frozen-Oracle, and artifact-integrity failures still reject publication. This
+Rust Helper change again requires two independent reproducibility measurements,
+a replacement sole allowlist tuple, the normal and local gates, and a fresh
+clean CR before the 4B PR.
+
 That final complete-diff CR found one P2 source-lifetime gap: the complete
 operator verifier loaded and validated the frozen prebuild/candidate tuple
 before checking both retained runs, but did not reopen it after chain

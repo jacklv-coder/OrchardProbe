@@ -1663,16 +1663,6 @@ fn close_run_phase(
         now()?,
     )
     .map_err(|error| format!("could not close run {ordinal}: {error}"))?;
-    let result_name = run_directory_name(ordinal, "result");
-    publish_prebuild_directory(
-        &root,
-        &result_name,
-        &[
-            (RUN_EXPORT_NAME, &export),
-            (RUN_BINDING_NAME, &closure.collection_binding),
-        ],
-        &mut arm_publication,
-    )?;
     let evidence_disposition = if ordinal == 2 {
         let run_one = run_files(&root, 1)?;
         verify_intent_source(&root, &run_one.intent)?;
@@ -1697,6 +1687,16 @@ fn close_run_phase(
     } else {
         None
     };
+    let result_name = run_directory_name(ordinal, "result");
+    publish_prebuild_directory(
+        &root,
+        &result_name,
+        &[
+            (RUN_EXPORT_NAME, &export),
+            (RUN_BINDING_NAME, &closure.collection_binding),
+        ],
+        &mut arm_publication,
+    )?;
     let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     require_retained_source_match(
         &final_source,

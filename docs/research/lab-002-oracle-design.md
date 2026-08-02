@@ -1042,6 +1042,10 @@ That build authorization does not replace the RFC-0001 acknowledgements below.
 
 A crash, unavailable extension, incomplete role, changed inventory, or
 non-identical normalized result is recorded and never silently retried away.
+When both runs are individually valid but their normalized observations or
+closed per-run dispositions differ, the complete-chain verifier derives a
+generic `no_go` before publishing the run-two result. Replay, ordering,
+enrollment, and frozen-Oracle integrity failures still invalidate publication.
 
 ## Device-free implementation and validation gate
 

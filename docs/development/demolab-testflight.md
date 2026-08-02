@@ -292,10 +292,12 @@ pre-upload evidence before accepting the two-run chain.
 Every
 signed role report must then match the Oracle's exact role/slice identity,
 initial encryption coverage, and expected mapped plaintext digest. The second
-close additionally requires byte-identical normalized observations across the
-ordered two-run chain. The checked-in iOS observer truthfully reports its
-bounded signature parse as `not_checked`; Host closure accepts only that exact
-`inconclusive`/`signature_invalid_or_unchecked` tuple as reproducible No-Go
+close evaluates byte-identical normalized observations across the ordered
+two-run chain before publishing run 2; a mismatch is atomically retained as
+generic `no_go`, while replay, ordering, enrollment, and frozen-Oracle integrity
+failures still reject publication. The checked-in iOS observer truthfully
+reports its bounded signature parse as `not_checked`; Host closure accepts only
+that exact `inconclusive`/`signature_invalid_or_unchecked` tuple as reproducible No-Go
 evidence and never treats it as valid signature evidence or a Go result.
 If an otherwise well-formed signed report preserves the authorized identity
 and bounded evidence integrity but a signature, initial-protection, disk, or

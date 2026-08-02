@@ -1228,11 +1228,9 @@ pub fn verify_two_run_chain(
         || run_one.environment != enrollment.environment
         || run_two.environment != enrollment.environment
         || run_one.oracle_sha256 != run_two.oracle_sha256
-        || run_one.normalized_evidence_sha256 != run_two.normalized_evidence_sha256
-        || run_one.evidence_disposition != run_two.evidence_disposition
     {
         return Err(Lab002Error::InvalidEvidence(
-            "two collection runs are replayed, unordered, enrollment-inconsistent, or observationally different",
+            "two collection runs are replayed, unordered, or enrollment-inconsistent",
         ));
     }
 
@@ -1240,7 +1238,14 @@ pub fn verify_two_run_chain(
         enrollment_binding_sha256: enrollment.device_enrollment_binding_sha256.clone(),
         run_one_binding_sha256: run_one.collection_binding_sha256.clone(),
         run_two_binding_sha256: run_two.collection_binding_sha256.clone(),
-        evidence_disposition: run_one.evidence_disposition,
+        evidence_disposition: if run_one.normalized_evidence_sha256
+            != run_two.normalized_evidence_sha256
+            || run_one.evidence_disposition != run_two.evidence_disposition
+        {
+            EvidenceDisposition::NoGo
+        } else {
+            run_one.evidence_disposition
+        },
     })
 }
 
@@ -2397,10 +2402,27 @@ mod tests {
     }
 
     #[test]
-    fn two_run_chain_rejects_normalized_observation_drift() {
+    fn two_run_chain_closes_normalized_observation_drift_as_no_go() {
         let (enrollment, run_one, mut run_two) = verified_two_run_fixture();
         run_two.normalized_evidence_sha256 = digest(0xef);
-        assert!(verify_two_run_chain(&enrollment, &run_one, &run_two).is_err());
+        assert_eq!(
+            verify_two_run_chain(&enrollment, &run_one, &run_two)
+                .unwrap()
+                .evidence_disposition(),
+            EvidenceDisposition::NoGo
+        );
+    }
+
+    #[test]
+    fn two_run_chain_closes_different_run_dispositions_as_no_go() {
+        let (enrollment, run_one, mut run_two) = verified_two_run_fixture();
+        run_two.evidence_disposition = EvidenceDisposition::Go;
+        assert_eq!(
+            verify_two_run_chain(&enrollment, &run_one, &run_two)
+                .unwrap()
+                .evidence_disposition(),
+            EvidenceDisposition::NoGo
+        );
     }
 
     #[test]
