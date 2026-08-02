@@ -261,3 +261,12 @@ Clippy、全部 280 项 Workspace 测试、Ruby 语法、Diff 检查和明确的
 会成为通用 `no_go`，而重放、顺序、Enrollment、冻结 Oracle 与 Artifact 完整性错误仍会
 拒绝发布。该 Rust Helper 变更再次要求两次独立可复现测量、替换唯一 Allowlist Tuple、正常
 及本地门禁和一次新的干净 CR，才能打开 4B PR。
+
+提交最终化修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot
+为 `775a15d6c019c39f99d110efb7dcc5bacc470fc0361e7d1061c6fff7468fa729`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,271,056`、
+SHA-256 `203b22526f7664d942b55c5742ed3649a4f829f192211c85f82e08cae95582b6`、
+CodeDirectory CDHash `66fc768edadb1f1a9e3b2a134d1fba8fdfe14927`。临时缺失 Tuple
+测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。4B PR 前仍需正常非测量
+门禁、全部本地门禁和一次新的干净 CR。

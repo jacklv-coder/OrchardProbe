@@ -324,6 +324,19 @@ Rust Helper change again requires two independent reproducibility measurements,
 a replacement sole allowlist tuple, the normal and local gates, and a fresh
 clean CR before the 4B PR.
 
+After committing the finalization remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`775a15d6c019c39f99d110efb7dcc5bacc470fc0361e7d1061c6fff7468fa729`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,271,056`, SHA-256
+`203b22526f7664d942b55c5742ed3649a4f829f192211c85f82e08cae95582b6`,
+and CodeDirectory CDHash `66fc768edadb1f1a9e3b2a134d1fba8fdfe14927`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate, all local gates, and a fresh clean CR remain required
+before the 4B PR.
+
 That final complete-diff CR found one P2 source-lifetime gap: the complete
 operator verifier loaded and validated the frozen prebuild/candidate tuple
 before checking both retained runs, but did not reopen it after chain
