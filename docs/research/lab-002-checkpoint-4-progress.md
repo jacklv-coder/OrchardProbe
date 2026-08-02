@@ -792,3 +792,12 @@ Rust formatting, locked all-target Workspace Clippy with warnings denied, all
 allowlist/progress commit, clean complete-diff Codex CR, SSH push, remote CI and
 review inspection, pre-merge CR, and merge remain strictly ordered. The phone
 remains untouched.
+
+The required complete-diff Codex CR against unchanged `origin/main`
+`9bb4ee86b051e7794fb2d63c57bc1cdd31b9cde4` then completed with no actionable
+correctness issue. Its independent Core and Operator test reruns passed. The
+only Workspace rerun failure was the review sandbox denying Unix-socket
+creation before the CLI test assertion; the same test and all 294 Workspace
+tests pass in the normal local gate recorded above. The remaining order is now
+SSH push, remote review-thread and CI closure, a fresh pre-merge Codex CR, and
+merge. The phone remains untouched.

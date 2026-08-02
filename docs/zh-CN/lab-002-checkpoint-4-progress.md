@@ -508,3 +508,10 @@ Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门�
 Workspace Clippy、全部 294 项 Workspace 测试、Ruby 语法、Diff Hygiene 及无 Hook 搜索。
 后续仍严格依次执行 Allowlist/进度提交、干净完整 Diff Codex CR、SSH Push、远端 CI 与评审
 检查、合并前 CR 及合并。真机继续不操作。
+
+随后，针对未变化 `origin/main`
+`9bb4ee86b051e7794fb2d63c57bc1cdd31b9cde4` 的必要完整 Diff Codex CR 已结束，未发现
+可执行的正确性问题；其独立复跑的 Core 与 Operator 测试均通过。Workspace 复跑中唯一失败
+是评审沙箱在进入 CLI 测试断言前禁止创建 Unix Socket；上述正常本地门禁中同一测试及全部
+294 项 Workspace 测试均通过。剩余顺序现在是 SSH Push、关闭远端评审会话与 CI、重新执行
+合并前 Codex CR，然后合并。真机继续不操作。
