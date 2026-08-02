@@ -685,3 +685,22 @@ inventory. Because this changes the Rust Helper, two new independent complete
 reproducibility measurements, a replacement sole allowlist tuple, the normal
 and complete local gates, and a new clean final CR are required before push and
 merge. The phone remains untouched.
+
+After committing the exact-container remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`5b17f8c1f0487364c896f9fe5e7d99ad9d0a78792644f6da1a5846c3b68d5fb6`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,361,856`, SHA-256
+`6839cda7e73f0877998efdf59783bba849fc85772e14318d8c977d5097484986`,
+and CodeDirectory CDHash `b1554d431c643b3232161e90abd500058012e0b7`;
+both unsigned Simulator fixtures passed. The temporary hook applied only when
+the source snapshot had no existing allowlist entry, so the existing
+substituted-product regression remained fail-closed. It was then removed
+completely, and the explicit no-hook search passed before the exact sole
+product tuple was added to the reviewed source-snapshot allowlist. A normal
+non-measurement gate rebuilt and admitted the allowlisted Helper and passed the
+unsigned Simulator fixture. Rust formatting, locked all-target Workspace
+Clippy with warnings denied, all 288 Workspace tests, Ruby syntax, diff
+hygiene, and the explicit no-measurement-hook search also pass. The allowlist
+commit and a new clean final complete-diff CR remain required before push and
+merge. The phone remains untouched.

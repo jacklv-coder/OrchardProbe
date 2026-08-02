@@ -436,3 +436,17 @@ Workspace 测试、锁定依赖且拒绝警告的全 Target Clippy、Rust Format
 二进制，Host 回归则拒绝其他字段完全相同的多 Slice FAT 类型替换。由于这会改变 Rust
 Helper，Push 与合并前必须重新完成两次独立完整可复现性测量、替换唯一 Allowlist Tuple、
 正常及完整本地门禁，以及一轮新的最终干净 CR。真机继续不操作。
+
+提交精确容器类型修复后，两次独立完整 Fastlane 门禁分别从 Source Snapshot
+`5b17f8c1f0487364c896f9fe5e7d99ad9d0a78792644f6da1a5846c3b68d5fb6` 重新构建三份
+Helper。全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size
+`3,361,856`、SHA-256
+`6839cda7e73f0877998efdf59783bba849fc85772e14318d8c977d5097484986`、CodeDirectory
+CDHash `b1554d431c643b3232161e90abd500058012e0b7`；两轮无签名 Simulator Fixture
+均通过。临时 Hook 仅在 Source Snapshot 完全没有既有 Allowlist 项时生效，因此已有 Source
+的替换产物回归仍会失败关闭。随后已完整删除该 Hook，并在明确的无 Hook 搜索通过后，将这个
+精确唯一产物 Tuple 加入已评审 Source Snapshot Allowlist。正常非测量门禁重新构建并接纳
+Allowlist 中的 Helper，无签名 Simulator Fixture 通过。Rust Format、锁定依赖且拒绝警告的
+全 Target Workspace Clippy、全部 288 项 Workspace 测试、
+Ruby 语法、Diff Hygiene 及明确的无测量 Hook 搜索也均通过。Push 与合并前仅剩 Allowlist
+提交，以及一轮新的最终干净完整 Diff CR。真机继续不操作。
