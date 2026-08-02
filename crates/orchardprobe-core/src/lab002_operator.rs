@@ -62,6 +62,10 @@ pub struct EnrollmentClosure {
     pub device_enrollment_binding: Vec<u8>,
 }
 
+fn causal_host_timestamp(observed_at: i64, signed_event_at: i64) -> i64 {
+    observed_at.max(signed_event_at)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunControl {
     pub acknowledgement: Vec<u8>,
@@ -227,7 +231,7 @@ pub fn close_enrollment(
     authorization_envelope: &[u8],
     signed_enrollment_receipt: &[u8],
     displayed_fingerprint: &str,
-    confirmed_at: i64,
+    observed_at: i64,
 ) -> Result<(EnrollmentClosure, VerifiedEnrollment), Lab002Error> {
     let (manifest, _) =
         verified_artifact_sha256::<AuthorizedTargetManifest>(authorized_target_manifest)?;
@@ -254,6 +258,10 @@ pub fn close_enrollment(
             "device selection fingerprint does not match all 64 hex characters",
         ));
     }
+    // A device clock may lead the Host within the verifier's accepted window. Preserve
+    // causal ordering without widening that window: verify_enrollment_chain still
+    // rejects the resulting closure when this effective timestamp is too late.
+    let confirmed_at = causal_host_timestamp(observed_at, receipt.created_at);
 
     let selection = DeviceSelectionConfirmation {
         schema: DeviceSelectionConfirmation::SCHEMA.into(),
@@ -465,7 +473,7 @@ pub fn close_run(
     authorization_envelope: &[u8],
     collection_intent: &[u8],
     signed_session_export: &[u8],
-    completed_at: i64,
+    observed_at: i64,
 ) -> Result<(RunClosure, VerifiedRun), Lab002Error> {
     let (acknowledgement, acknowledgement_sha256) =
         verified_artifact_sha256::<AuthorizationAcknowledgement>(run_acknowledgement)?;
@@ -484,6 +492,13 @@ pub fn close_run(
     let (_, framework_sha256) = entry::<RoleReport>(&export, 2, LogicalFilename::Framework)?;
     let (_, share_extension_sha256) =
         entry::<RoleReport>(&export, 3, LogicalFilename::ShareExtension)?;
+    let signed_completed_at = session.completed_at.ok_or(Lab002Error::InvalidEvidence(
+        "exported session is not complete",
+    ))?;
+    // Keep the Host-authored binding causally after the signed device session when the
+    // device clock is slightly ahead. verify_run_chain remains responsible for the
+    // signed authorization deadline (including its bounded skew allowance).
+    let completed_at = causal_host_timestamp(observed_at, signed_completed_at);
     let binding = CollectionBinding {
         schema: CollectionBinding::SCHEMA.into(),
         profile: LAB002_PROFILE.into(),
@@ -793,6 +808,49 @@ mod tests {
             sha256_hex(&receipt)
         );
         assert_eq!(verified.completed_at, 1_200);
+    }
+
+    #[test]
+    fn closure_timestamp_follows_ahead_signed_device_event() {
+        let (host_key, manifest, control, receipt, _) = closed_enrollment();
+        let signed_receipt = SignedEnrollmentReceipt::from_canonical_bytes(&receipt).unwrap();
+        let unsigned_receipt = UnsignedEnrollmentReceipt::from_canonical_bytes(
+            signed_receipt.unsigned_receipt_canonical.as_bytes(),
+        )
+        .unwrap();
+        let envelope =
+            AuthorizedOperationEnvelope::from_canonical_bytes(&control.authorization_envelope)
+                .unwrap();
+        let (_, core) = verify_authorized_operation::<
+            AuthorizationAcknowledgement,
+            super::super::artifacts::InstallationEnrollmentCore,
+        >(&envelope, &authorization_public_key(&host_key))
+        .unwrap();
+        let fingerprint = device_selection_fingerprint_sha256(
+            &sha256_hex(&control.authorization_envelope),
+            &unsigned_receipt.enrollment_public_key,
+            &unsigned_receipt.device_installation_binding_sha256,
+            &core.device_selection_nonce,
+        )
+        .unwrap();
+
+        let (_, verified) = close_enrollment(
+            &manifest,
+            &control.acknowledgement,
+            &control.authorization_envelope,
+            &receipt,
+            &fingerprint,
+            unsigned_receipt.created_at - 120,
+        )
+        .unwrap();
+
+        assert_eq!(verified.completed_at, unsigned_receipt.created_at);
+    }
+
+    #[test]
+    fn causal_host_timestamp_never_moves_an_observation_backward() {
+        assert_eq!(causal_host_timestamp(2_000, 2_120), 2_120);
+        assert_eq!(causal_host_timestamp(2_120, 2_000), 2_120);
     }
 
     #[test]
