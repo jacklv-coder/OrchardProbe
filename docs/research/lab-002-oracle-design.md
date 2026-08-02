@@ -428,10 +428,25 @@ The closed signature values reuse the export-manifest vocabulary: presence is
 role. Validation must come from an explicit, reviewed validator operating on
 that role's stable descriptor and signature structure; successful launch,
 entitlements, a digest, UUID, or `cryptid` cannot be inferred as validation.
-The report records a fixed validator ID/revision. If no public platform API or
-bounded independently tested implementation can perform the validation, the
-observer records `not_checked` and LAB-002 is No-Go. An absent, ad-hoc,
-unknown, invalid, inconsistent, or unchecked signature is never accepted.
+An independently validated report records the fixed validator ID
+`security-framework` and the exact frozen observer revision as its validator
+revision. If no public platform API or bounded independently tested
+implementation can perform the validation, the checked-in observer instead
+records the exact parser tuple `not_checked` /
+`demolab-bounded-codesign-parser` / `1`, outcome `inconclusive`, and sole reason
+`signature_invalid_or_unchecked`. The Host may close that exact truthful tuple
+as reproducible No-Go evidence while still requiring every identity,
+encryption, disk, and mapped-plaintext comparison to match. It never promotes
+the tuple to valid or Go. Every inconsistent validator tuple is rejected; an
+absent, ad-hoc, unknown, invalid, or unchecked signature remains method-level
+No-Go. An approved independent validator's exact `present` / `cms` / `invalid`
+tuple is retained as generic No-Go with
+`signature_invalid_or_unchecked`; it is not rejected as missing evidence.
+Likewise, a structurally valid signed report that preserves authorized identity
+and bounded coordinate integrity but fails a protection, disk, or mapped-
+plaintext comparison closes as generic No-Go. Only contradictory validator,
+outcome, or reason semantics and substituted identity/integrity fields fail the
+artifact verifier itself.
 
 Initial protection is Pass only when:
 
@@ -846,6 +861,14 @@ set digest, enrollment public key, expected device-installation binding,
 complete toolchain identity, pre-upload evidence SHA-256, IPA SHA-256,
 external oracle SHA-256, expected inventory digest, and observer revision.
 
+The expected inventory digest is SHA-256 over the domain
+`"orchardprobe.demolab.lab002.expected-inventory.v1\0"`, one `u32be` byte
+length, and the canonical JSON object whose only key is `roles` and whose value
+is the frozen oracle's exact ordered role array. It therefore binds every role,
+target-identity digest, slice identity, coordinate, and frozen range digest.
+The complete intent remains Host-side; only its already-hashed signed challenge
+envelope is imported to DemoLab.
+
 All wall-clock fields are signed Unix UTC seconds. The Mac samples
 `CLOCK_REALTIME` once when it closes each acknowledgement, sets `not_before` to
 that sample and `not_after` to exactly `not_before + 900`, and rejects overflow
@@ -1019,6 +1042,10 @@ That build authorization does not replace the RFC-0001 acknowledgements below.
 
 A crash, unavailable extension, incomplete role, changed inventory, or
 non-identical normalized result is recorded and never silently retried away.
+When both runs are individually valid but their normalized observations or
+closed per-run dispositions differ, the complete-chain verifier derives a
+generic `no_go` before publishing the run-two result. Replay, ordering,
+enrollment, and frozen-Oracle integrity failures still invalidate publication.
 
 ## Device-free implementation and validation gate
 
@@ -1077,7 +1104,7 @@ LAB-002 is Go only when both sessions satisfy every row:
 |---|---|
 | Frozen provenance | Same source commit, version/build, private authorization-manifest digest, build binding, IPA digest, externally stored oracle digest, toolchain, and three-role inventory |
 | Authorized targets | Every role's observed target-identity binding matches the private authorized Bundle ID, signed identifier/team, and selected entitlement tuple |
-| Authorized operation | One fresh supported-policy acknowledgement precedes installation and one precedes each run; all four RFC-0001 assertions are true, and each exact app/device/technique/data/retention/time scope is authenticated by the compiled host authorization key and validates as one-time |
+| Authorized operation | One fresh supported-policy acknowledgement precedes installation and one precedes each run; explicit confirmation plus all four RFC-0001 scope assertions are true, and each exact app/device/technique/data/retention/time scope is authenticated by the compiled host authorization key and validates as one-time |
 | Fresh collection | Two distinct one-shot host challenges, valid response digests, ordered windows, and a valid run-2-to-run-1 binding chain |
 | Physical environment | Authenticated installation enrollment and full host/device fingerprint comparison select the physical device before run 1; its device-only key signs the receipt and both exports, and both runs have the same non-null enrollment/device-installation bindings, hardware model, iOS product version, and iOS build, with no reinstall, state reset, device change, or OS update |
 | Installed inventory | Exact role/slice equality; no missing, extra, inactive, or reclassified slice |

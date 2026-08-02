@@ -86,9 +86,18 @@ Slice 唯一固定区间：
 `valid/invalid/not_checked/not_applicable`。报告还写固定 Validator ID/Revision
 和存在时的签名 Superblob SHA-256。只有显式、已评审 Validator 对各 Role 稳定
 Descriptor/签名结构实际校验后才能写 `valid`；成功启动、Entitlement、Digest、
-UUID 或 `cryptid` 不能推断验证成功。没有可用的公开平台 API 或有界且独立测试的
-实现时必须写 `not_checked` 并得到 No-Go；Absent、Ad Hoc、Unknown、Invalid、
-矛盾或 Unchecked 都不能通过。
+UUID 或 `cryptid` 不能推断验证成功。独立验证的报告必须写固定 Validator ID
+`security-framework`，并以冻结 Observer Revision 作为 Validator Revision。没有可用的
+公开平台 API 或有界且独立测试的实现时，当前 Observer 必须精确写
+`not_checked` / `demolab-bounded-codesign-parser` / `1`、Outcome `inconclusive`，且唯一
+Reason 为 `signature_invalid_or_unchecked`。Host 可以关闭这个如实 Tuple 作为可复现的
+方法级 No-Go 证据，但仍要求全部身份、加密、磁盘与映射明文比较一致；它绝不会把该 Tuple
+提升成 `valid` 或 Go。任何不一致 Validator Tuple 都会被拒绝；Absent、Ad Hoc、Unknown、
+Invalid 或 Unchecked 签名仍是方法级 No-Go。已批准独立 Validator 的精确
+`present` / `cms` / `invalid` Tuple 会携带 `signature_invalid_or_unchecked` 保留为通用
+No-Go，而不是被当成缺失证据拒绝。同样，保持授权身份和有界坐标完整性、但保护态、磁盘或
+映射明文比较失败的结构有效设备签名报告，也会关闭为通用 No-Go。只有矛盾的 Validator、
+Outcome 或 Reason 语义，以及被替换的身份/完整性字段，才会让工件验证器本身失败。
 
 预期明文 Hash 从干净 Commit 直接构建的 Archive 固定 Section 生成；随后独立
 Hash 导出 IPA 的同一 Slice/区间，并要求身份、坐标、长度和 Hash 全部一致。
@@ -326,6 +335,11 @@ Binding Hash/公钥、已建立的 Device/Installation Binding 与时间窗。Ho
 Intent 绑定该文件 Hash/签名、同一精确 Counter、安装确认与 Enrollment Binding
 Hash、本轮确认、
 授权清单/Target 身份集合、工具链、预上传证据、IPA、外部 Oracle 和预期清单。
+预期清单摘要的输入依次为固定 Domain
+`"orchardprobe.demolab.lab002.expected-inventory.v1\0"`、一个 `u32be` 字节长度，
+以及只包含 `roles` 一个 Key、Value 为冻结 Oracle 精确有序 Role Array 的规范 JSON。
+因此它绑定全部 Role、Target-identity 摘要、Slice 身份、坐标与冻结区间摘要。完整
+Intent 只保留在 Host；DemoLab 只导入已经 Hash 并签名的 Challenge 信封。
 Run 1 的 Prior Binding 为 `null`，但 Enrollment/Device Binding 已经非空；Run 2
 还必须写入 Run 1 Binding Hash。维护者通过 AirDrop 或 Files 显式导入签名信封；
 任何 OrchardProbe Host/Helper API 都不能访问 App Group，且自由路径/Target/Range
@@ -411,6 +425,9 @@ Go 必须来自两次运行：
 
 崩溃、Extension 未执行、报告缺失、重复、过期、重放、Slice 变化或两轮不一致，
 都不能通过重试后静默忽略。
+若两轮各自有效，但规范化观察或每轮已关闭裁决不一致，完整链验证器必须在发布
+第二轮结果前导出通用 `no_go`。重放、顺序、登记和冻结 Oracle 完整性失败仍会使
+发布无效。
 
 ## 下一实现门禁
 

@@ -235,6 +235,92 @@ Payload 继续被绑定。Oracle 会记录供已安装 Build Verifier 使用的 
 Fat 或多 Slice Size 变化、签名起点移动、闭合签名尾之外的增长，或任何既有身份/区间变化
 仍会失败关闭。
 
+## 检查点 4 Host 操作流程
+
+这套维护者流程必须先随实现 PR 进入 `main`，随后才能安装精确 TestFlight Build。
+它不是安装命令，不会访问 App Group、启动 App、上传 Build，也不接受用于观察的自由
+Target/Path/Range。固定顺序为：
+
+```sh
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_verify
+```
+
+开始 Enrollment 只接受冻结 Prebuild/Candidate Tuple，在仓库外已存在的 `0700` 输出根
+下排他发布固定 `lab002-experiment` 目录。该根目录必须为空；只要存在任何保留的既有实验
+就会失败关闭，因此不能在放弃或失败的生命周期旁重新发布 Enrollment 来绕过保留约束。
+Helper 会紧邻原子 No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清单。
+同一次原子发布还会写入私有绑定，记录所持有的输出根与实验目录身份及 Enrollment Experiment
+ID，并由冻结 Host 授权密钥签名。后续每个 Lane 都会用独立重新打开的冻结 Source 验证签名，
+要求固定子目录名，并在阶段发布前后把持久身份与当前持有的 Parent、Experiment 及路径再次
+比对。复制目录树后重写 Binding、仅移动实验子目录或替换任一路径，都不能产生第二条可用
+生命周期；后续必须原地使用最初发布的目录。它会保留全新 15 分钟确认/信封。通过 TestFlight Provision
+已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
+关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
+显示的全部 64 位小写十六进制 Fingerprint。关闭或发布 Enrollment 前，Helper 还会同时
+持有并完整复核原始 Prebuild/Candidate 目录，要求其 Source Tuple 与实验中保留的字节一致。
+开始 Run 自动选择唯一合法的下一 Ordinal，
+完整 Intent 留在 Mac，只导入签名 Challenge。开始 Run 2 前会重新验证完整 Run-1 Chain；
+只有当前 Host 时间同时严格晚于 Run 1 已签名的 15 分钟 `not_after`，以及保留的 Run 1
+Host 完成时间加完整 120 秒设备时钟偏差，才允许发布；否则明确拒绝。操作员应在两个边界
+之后重新运行同一 Lane，不能修改时间戳，也不能让 Helper 内部等待。
+开始、关闭或最终验证任何 Run 前，Helper
+都会重新打开原始 Prebuild 与冻结 Candidate，要求保留的 Manifest、Oracle 和预上传证据
+逐字节不变。完整链验证还会在两轮链闭合后、返回处置结果前再次执行全部冻结源复核，因此并发的源变更不能让基于过期内存数据的结果成功返回。第二轮关闭在返回闭合处置前执行同样的最终源复核，并在接受两轮链前重新核对第一轮保留 Intent 与冻结预上传证据。
+每次操作还会解析并以密码学方式验证刚刚 Hash 的精确 Archive 可执行文件快照，以及有界
+IPA 内存快照中持有的精确可执行 Entry；它会独立验证每份 Archive/IPA `Info.plist`、签名
+身份、Entitlements、CMS Trust，并从已签名 Manifest 重算 Target Binding，再重新推导完整
+Oracle Role/Slice Tuple。只有与保留 Oracle 结构完全相等才可接受；仅核对 UUID，或使用
+自洽但被替换的报告都不充分。关闭 Run 会验证设备签名 Export、逐 Role/Slice 对照冻结 Oracle 的身份、初始
+加密覆盖和预期映射明文摘要，再派生 Binding；第二轮会在发布结果前比较有序两轮的规范化
+观察，不一致会原子保留为通用 `no_go`，而重放、顺序、Enrollment 与冻结 Oracle 完整性
+错误仍会拒绝发布。
+当前 iOS Observer 会如实把有界签名解析记录为 `not_checked`；Host 只允许精确的
+`inconclusive`/`signature_invalid_or_unchecked` Tuple 作为可复现 No-Go 证据关闭，绝不会
+把它当作有效签名证据或 Go 结果。
+如果其他结构有效的设备签名报告仍保持授权身份和有界证据完整性，但签名、初始保护、
+磁盘或映射明文门禁失败，Host 会把结果保留为通用 `no_go`，而不是拒绝并丢失失败结果；
+矛盾的 Validator/Outcome/Reason Tuple，以及身份或坐标替换仍然失败关闭。第二轮关闭与
+最终验证会显式输出 `go`、`no_go_signature_unchecked` 或 `no_go`；Fastlane 会明确显示
+任一 No-Go，而不是普通成功。
+
+每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
+和精确阶段清单；每个 Enrollment/Run 的 Control/Result 阶段都会在紧邻 Rename 前后复核
+该清单，如果边界处出现意外同级项，只回滚自身发布并失败关闭。
+同一个边界 Guard 还会在每次 Rename 前后重新打开完整冻结 Source Tuple；等待发布确认期间的
+变化不能提交基于过期 Source 的 Control 或 Result。每个边界 Guard 还会在 Source 复核的
+前后各检查一次阶段清单，复核窗口不能接纳未计入的同级项。已有或不完整阶段不能覆盖或
+静默重试。
+保留的上传对账记录还必须满足
+`attempt_started_at <= reconciled_at <=` 当前 Active 上传尝试时间；不可能的审计时间顺序会
+失败关闭。在 Active Retry 尚未存在时，上传门禁与对账 Lane 会强制执行可独立判断的时间下界；
+Operator Source Loader 还会强制执行 Retry 时间上界。授权 Seed 只留在冻结 Prebuild，设备
+Enrollment 私钥永不离开设备。
+Fastlane 会在完整 Helper 调用期间，对该操作绑定的每个目录持有非阻塞排他锁：输出根或
+实验根，以及该操作使用的冻结 Prebuild 与 Candidate 目录。锁按确定性的 Device/Inode
+顺序获取；部分获取失败时会释放已经持有的锁。与同一工作流或任一冻结 Source 冲突的
+受控并发 Lane，会在读取或发布状态前失败。上传 Lane 会从最后一次 Helper 门禁开始持有
+同一 Candidate 目录锁，直到不确定记录创建、完整 Apple 请求和终态替换全部结束；对账
+Lane 则会持锁直到原子替换与归档都结束。
+
+所有 Lane 都要求
+`DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI`，拒绝 CI、
+Dirty Checkout，以及不在已认证 GitHub `main` 历史中的 `HEAD`；完成前还会重新检查
+Clean、Reviewed Source。本流程需要仓库外私有目录变量、所选自有 iPhone 的脱敏
+Hardware/iOS Tuple、每次操作
+前全新的五项 `DEMO_LAB_LAB002_CONFIRM_* = true` RFC-0001 确认，以及关闭 Enrollment
+时的 Receipt Path、完整 Fingerprint 和显式匹配确认，或关闭 Run 时的 Export Path。
+Receipt/Export 必须位于仓库外绝对路径、仅 Owner 可访问、有界且为非符号链接的普通文件；
+非阻塞快照会拒绝 FIFO 与其他特殊文件。具体变量名与约束见英文 Runbook。不得把私有值、
+实验 ID、Fingerprint、路径、
+Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或已开始后中断的阶段必须
+按 No-Go 保留，不能删除后重建成 Pass。
+
 ## 安全边界
 
 - 只能使用首方 DemoLab、自有 Apple 账号和自有且获授权的 iPhone。
@@ -281,7 +367,8 @@ Fat 或多 Slice Size 变化、签名起点移动、闭合签名尾之外的增�
   `DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT`，再设置
   `DEMO_LAB_CONFIRM_RETRY_AFTER_RECONCILIATION` 为
   `I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT` 并运行
-  `fastlane ios demolab_reconcile_indeterminate_upload`。该 Lane 会锁住并复核旧记录，
+  `fastlane ios demolab_reconcile_indeterminate_upload`。该 Lane 会锁住 Candidate 目录和
+  旧记录并完成复核，
   通过已 fsync 的原子替换将其持久化为 `status: reconciled_absent` 后排他归档；
   归档成功后才允许新上传。
   恢复 Lane 只额外需要

@@ -50,7 +50,10 @@ acknowledgement and operation core rather than parsed copies.
   action sequence. Run acknowledgements require the enrollment binding and
   fixed observation/export/cleanup sequence.
 - The oracle role array is exactly main app, framework, share extension. Each
-  role has one through four slices in ordinal order, each executable extent is
+  role retains the exact frozen `thin`, `fat32`, or `fat64` container kind and
+  has one through four slices in ordinal order. Host closure requires the
+  installed report to match that exact representation; slice count alone
+  cannot substitute one FAT encoding for another. Each executable extent is
   capped at 100 MiB, and the build configuration is fixed to `Release`. The
   signed export entry array is exactly session, main app, framework, share
   extension.
@@ -65,6 +68,9 @@ acknowledgement and operation core rather than parsed copies.
   requires counter `0000000000000002` and a non-null prior binding. That
   ordinal/counter relationship is closed in the challenge, intent, unsigned
   export, session report, role report, and collection binding.
+- The Host computes `expected_inventory_sha256` from the fixed domain, a
+  `u32be` length, and canonical `{"roles": <exact oracle role array>}` bytes.
+  The intent is retained on the Host and is never accepted as device input.
 - The session and role reports persist the exact signed
   `authorization_not_after`. Device observation/completion and the Host
   verifier reject phase or completion times later than that absolute value

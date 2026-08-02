@@ -1295,6 +1295,7 @@ pub struct OracleRole {
     pub role: LabRole,
     pub fixture_relative_path: String,
     pub target_identity_binding_sha256: String,
+    pub container_kind: ContainerKind,
     pub slices: Vec<OracleSlice>,
 }
 
@@ -1360,6 +1361,7 @@ impl ClosedArtifact for LabOracle {
         validate_observer(&self.observer_revision)?;
         if self.fixture_source_root != "fixtures/DemoLab"
             || self.configuration != "Release"
+            || self.generator_revision != self.source_commit
             || self.ipa_size == 0
             || self.ipa_size > MAX_JCS_SAFE_INTEGER
             || self.roles.len() != LabRole::ALL.len()

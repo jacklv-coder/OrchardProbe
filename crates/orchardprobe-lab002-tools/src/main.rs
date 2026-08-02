@@ -1,7 +1,8 @@
-//! Private, host-only build artifact tooling for the repository-owned DemoLab.
+//! Private, host-only build and operator artifact tooling for DemoLab.
 //!
 //! This binary is invoked by the hardened Fastlane flow. It has no device,
-//! upload, installation, decryption, or arbitrary-target operation.
+//! installation, decryption, or arbitrary-target operation. Its operator mode
+//! only authors and verifies the fixed user-mediated LAB-002 control chain.
 
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -14,17 +15,20 @@ use ed25519_dalek::SigningKey;
 use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
 use orchardprobe_core::ipa_app::{ParsedInfoPlist, parse_info_plist};
 use orchardprobe_core::lab002::artifacts::{
-    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, LabOracle, OracleRole, OracleSlice,
-    Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
+    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, ContainerKind, LabOracle,
+    OracleRole, OracleSlice, Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
 };
 use orchardprobe_core::lab002::{
     AppGroups, BuildBindingInput, EntitlementValue, FixedSectionReport, LAB002_PROFILE, LabRole,
     PreuploadSigningMetadata, TargetIdentityInput, build_binding_sha256, canonical_json,
     parse_fixed_sections, target_identity_binding_sha256, target_identity_set_sha256,
 };
+use orchardprobe_core::macho::MachOContainer;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+mod operator_flow;
 
 const REQUEST_SCHEMA: &str = "orchardprobe.lab002.prebuild-request.v1";
 const INSPECT_REQUEST_SCHEMA: &str = "orchardprobe.lab002.inspect-prebuild-request.v1";
@@ -38,6 +42,7 @@ const PUBLICATION_IDENTITY_SCHEMA: &str = "orchardprobe.lab002.published-directo
 const PUBLICATION_ACK_PATH: &str = "/dev/fd/3";
 const PRIVATE_OUTPUT_ROOT_PATH: &str = "/dev/fd/4";
 const PRIVATE_RUN_DIRECTORY_PATH: &str = "/dev/fd/5";
+const PRIVATE_CANDIDATE_DIRECTORY_PATH: &str = "/dev/fd/6";
 const MAX_REQUEST_BYTES: usize = 32 * 1024;
 const PRIVATE_SEED_NAME: &str = "lab-002-authorization-seed-v1.bin";
 const MANIFEST_NAME: &str = "lab-002-authorized-targets-v1.json";
@@ -240,6 +245,7 @@ enum CommandOutput {
     InspectPrebuild(Box<InspectPrebuildOutput>),
     Oracle(OracleOutput),
     UploadGate(UploadGateOutput),
+    Operator(operator_flow::OperatorOutput),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -268,7 +274,18 @@ fn main() -> ExitCode {
         }
     };
     let operation = arguments.first().and_then(|value| value.to_str());
-    let run_directory = if matches!(operation, Some("create-oracle" | "verify-upload-gate")) {
+    let run_directory = if matches!(
+        operation,
+        Some(
+            "create-oracle"
+                | "verify-upload-gate"
+                | "operator-start-enrollment"
+                | "operator-close-enrollment"
+                | "operator-start-run"
+                | "operator-close-run"
+                | "operator-verify"
+        )
+    ) {
         match File::open(PRIVATE_RUN_DIRECTORY_PATH) {
             Ok(directory) => Some(directory),
             Err(error) => {
@@ -279,10 +296,31 @@ fn main() -> ExitCode {
     } else {
         None
     };
+    let candidate_directory = if matches!(
+        operation,
+        Some(
+            "operator-start-enrollment"
+                | "operator-close-enrollment"
+                | "operator-start-run"
+                | "operator-close-run"
+                | "operator-verify"
+        )
+    ) {
+        match File::open(PRIVATE_CANDIDATE_DIRECTORY_PATH) {
+            Ok(directory) => Some(directory),
+            Err(error) => {
+                eprintln!("error: could not receive the held private candidate directory: {error}");
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        None
+    };
     match execute(
         arguments,
         output_root_directory,
         run_directory,
+        candidate_directory,
         |staging_name, identity| {
             write_publication_identity(&mut stdout, staging_name, identity)?;
             wait_for_publication_ack()
@@ -351,8 +389,23 @@ fn execute(
     arguments: Vec<std::ffi::OsString>,
     output_root_directory: File,
     run_directory: Option<File>,
+    candidate_directory: Option<File>,
     arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<CommandOutput, String> {
+    if arguments
+        .first()
+        .and_then(|value| value.to_str())
+        .is_some_and(|value| value.starts_with("operator-"))
+    {
+        return operator_flow::execute(
+            &arguments,
+            output_root_directory,
+            run_directory,
+            candidate_directory,
+            arm_publication,
+        )
+        .map(CommandOutput::Operator);
+    }
     match arguments.first().and_then(|value| value.to_str()) {
         Some("prepare") => {
             let (path, expected_identity) =
@@ -439,7 +492,7 @@ fn execute(
                 .map(CommandOutput::UploadGate)
         }
         _ => Err(
-            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle|verify-upload-gate \
+            "usage: oprobe-lab002 prepare|inspect-prebuild|create-oracle|verify-upload-gate|operator-* \
              with fixed private directories"
                 .into(),
         ),
@@ -2474,8 +2527,34 @@ fn close_oracle_role(
         role,
         fixture_relative_path: role.fixture_relative_path().into(),
         target_identity_binding_sha256,
+        container_kind: match archive.container {
+            MachOContainer::Thin => ContainerKind::Thin,
+            MachOContainer::Fat32 => ContainerKind::Fat32,
+            MachOContainer::Fat64 => ContainerKind::Fat64,
+        },
         slices,
     })
+}
+
+fn verify_oracle_role_against_reports(
+    oracle_role: &OracleRole,
+    archive: &FixedSectionReport,
+    ipa: &FixedSectionReport,
+    expected_target_identity_binding_sha256: String,
+) -> Result<(), String> {
+    let derived = close_oracle_role(
+        oracle_role.role,
+        expected_target_identity_binding_sha256,
+        archive,
+        ipa,
+    )?;
+    if &derived != oracle_role {
+        return Err(format!(
+            "frozen Oracle {} slice tuple does not derive from the frozen Archive and IPA",
+            oracle_role.role.fixture_relative_path()
+        ));
+    }
+    Ok(())
 }
 
 fn closed_archive_ipa_export_extents(
@@ -2825,6 +2904,7 @@ fn read_reconciled_upload_records(
             || record.status != "reconciled_absent"
             || record.note != RECONCILED_UPLOAD_NOTE
             || !is_bounded_utc_timestamp(&record.reconciled_at)
+            || record.attempt_started_at.as_str() > record.reconciled_at.as_str()
             || record.reconciliation != "operator_confirmed_absent_in_app_store_connect"
         {
             return Err("reconciled upload audit record does not match this upload tuple".into());
@@ -3007,11 +3087,52 @@ fn publish_prebuild_directory(
     files: &[(&str, &[u8])],
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
     publish_prebuild_directory_with_arm(
         output_root,
         final_name,
         files,
+        &mut no_generated_files,
         arm_publication,
+        &mut allow_any_publication_inventory,
+        File::sync_all,
+    )
+}
+
+fn publish_prebuild_directory_guarded(
+    output_root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        &mut no_generated_files,
+        arm_publication,
+        publication_guard,
+        File::sync_all,
+    )
+}
+
+fn publish_prebuild_directory_guarded_with_generated_files(
+    output_root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    generated_files: &mut impl FnMut((u64, u64)) -> Result<Vec<(String, Vec<u8>)>, String>,
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        generated_files,
+        arm_publication,
+        publication_guard,
         File::sync_all,
     )
 }
@@ -3023,20 +3144,29 @@ fn publish_prebuild_directory_with(
     files: &[(&str, &[u8])],
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
     publish_prebuild_directory_with_arm(
         output_root,
         final_name,
         files,
+        &mut no_generated_files,
         &mut |_, _| Ok(()),
+        &mut allow_any_publication_inventory,
         &mut sync_parent,
     )
+}
+
+fn allow_any_publication_inventory(_: &str) -> Result<(), String> {
+    Ok(())
 }
 
 fn publish_prebuild_directory_with_arm(
     output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
+    generated_files_for_identity: &mut impl FnMut((u64, u64)) -> Result<Vec<(String, Vec<u8>)>, String>,
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(u64, u64), String> {
     verify_private_output_root_path(output_root)?;
@@ -3136,15 +3266,44 @@ fn publish_prebuild_directory_with_arm(
         return Err(format!("could not arm prebuild rollback: {error}"));
     }
 
+    let mut generated_files = Vec::new();
+    let mut written_artifact_identities = BTreeMap::new();
     let mut publication_renamed_back = false;
     let mut publication_may_be_live = false;
     let result = (|| {
+        generated_files = generated_files_for_identity(staging_identity)?;
         for (name, bytes) in files {
-            drop(write_private_file(&staging, name, bytes)?);
+            let (file, identity) = write_private_file(&staging, name, bytes)?;
+            drop(file);
+            if written_artifact_identities
+                .insert((*name).to_owned(), identity)
+                .is_some()
+            {
+                return Err("private artifact name is duplicated".into());
+            }
+        }
+        for (name, bytes) in &generated_files {
+            let (file, identity) = write_private_file(&staging, name, bytes)?;
+            drop(file);
+            if written_artifact_identities
+                .insert(name.clone(), identity)
+                .is_some()
+            {
+                return Err("private artifact name is duplicated".into());
+            }
         }
         staging
             .sync_all()
             .map_err(|error| format!("could not fsync prebuild staging directory: {error}"))?;
+        publication_guard(&staging_name)?;
+        verify_publication_artifacts(
+            parent,
+            &staging_name,
+            staging_identity,
+            files,
+            &generated_files,
+            &written_artifact_identities,
+        )?;
 
         publication_may_be_live = true;
         rustix::fs::renameat_with(
@@ -3177,15 +3336,33 @@ fn publish_prebuild_directory_with_arm(
             ));
         }
         verify_private_output_root_path(output_root)?;
-        verify_published_directory_identity(parent, final_name, staging_identity)?;
+        publication_guard(final_name)?;
+        verify_publication_artifacts(
+            parent,
+            final_name,
+            staging_identity,
+            files,
+            &generated_files,
+            &written_artifact_identities,
+        )?;
+        verify_private_output_root_path(output_root)?;
         Ok(())
     })();
 
     if result.is_err() {
+        let cleanup_files = files
+            .iter()
+            .copied()
+            .chain(
+                generated_files
+                    .iter()
+                    .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+            )
+            .collect::<Vec<_>>();
         if let Err(cleanup_error) = cleanup_staging_directory_durably(
             &staging,
             staging_identity,
-            files,
+            &cleanup_files,
             parent,
             &staging_name,
             publication_may_be_live.then_some(final_name),
@@ -3205,6 +3382,121 @@ fn publish_prebuild_directory_with_arm(
         }
     }
     result.map(|()| staging_identity)
+}
+
+fn verify_publication_artifacts(
+    parent: &File,
+    directory_name: &str,
+    expected_directory_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    generated_files: &[(String, Vec<u8>)],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+) -> Result<(), String> {
+    verify_publication_artifacts_with_after_first_verification(
+        parent,
+        directory_name,
+        expected_directory_identity,
+        files,
+        generated_files,
+        expected_identities,
+        || {},
+    )
+}
+
+fn verify_publication_artifacts_with_after_first_verification(
+    parent: &File,
+    directory_name: &str,
+    expected_directory_identity: (u64, u64),
+    files: &[(&str, &[u8])],
+    generated_files: &[(String, Vec<u8>)],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+    after_first_verification: impl FnOnce(),
+) -> Result<(), String> {
+    let directory = open_directory_entry(parent, directory_name)
+        .map_err(|error| format!("could not reopen publication directory: {error}"))?;
+    let metadata = directory
+        .metadata()
+        .map_err(|error| format!("could not inspect publication directory: {error}"))?;
+    if (metadata.dev(), metadata.ino()) != expected_directory_identity
+        || metadata.uid() != rustix::process::geteuid().as_raw()
+        || metadata.mode() & 0o777 != 0o700
+    {
+        return Err("publication directory changed identity at the artifact boundary".into());
+    }
+
+    let expected = files
+        .iter()
+        .map(|(name, bytes)| (*name, *bytes))
+        .chain(
+            generated_files
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+        )
+        .collect::<Vec<_>>();
+    if expected.len() != expected_identities.len() {
+        return Err("publication artifact identity set is incomplete".into());
+    }
+    verify_publication_artifact_inventory(&directory, &expected)?;
+    verify_publication_artifact_bytes(&directory, &expected, expected_identities)?;
+    after_first_verification();
+    verify_publication_artifact_inventory(&directory, &expected)?;
+    verify_publication_artifact_bytes(&directory, &expected, expected_identities)?;
+    verify_published_directory_identity(parent, directory_name, expected_directory_identity)
+}
+
+fn verify_publication_artifact_bytes(
+    directory: &File,
+    expected: &[(&str, &[u8])],
+    expected_identities: &BTreeMap<String, (u64, u64)>,
+) -> Result<(), String> {
+    for (name, expected_bytes) in expected {
+        let expected_identity = expected_identities
+            .get(*name)
+            .ok_or_else(|| "publication artifact identity is missing".to_owned())?;
+        let observed = read_private_artifact(directory, name, expected_bytes.len())?;
+        if observed.bytes != *expected_bytes
+            || (observed.device, observed.inode) != *expected_identity
+            || observed.owner != rustix::process::geteuid().as_raw()
+            || observed.mode != 0o400
+            || observed.size != expected_bytes.len() as u64
+        {
+            return Err(format!(
+                "publication artifact {name} changed at the publication boundary"
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn verify_publication_artifact_inventory(
+    directory: &File,
+    expected: &[(&str, &[u8])],
+) -> Result<(), String> {
+    let entries = rustix::fs::Dir::read_from(directory)
+        .map_err(|error| format!("could not open publication directory stream: {error}"))?;
+    let mut observed = Vec::new();
+    for entry in entries {
+        let entry =
+            entry.map_err(|error| format!("could not enumerate publication directory: {error}"))?;
+        let name = entry.file_name().to_bytes();
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        if observed.len() == expected.len() {
+            return Err("publication artifact inventory exceeds its fixed bound".into());
+        }
+        observed.push(name.to_vec());
+    }
+    observed.sort();
+    let mut expected_names = expected
+        .iter()
+        .map(|(name, _)| name.as_bytes().to_vec())
+        .collect::<Vec<_>>();
+    expected_names.sort();
+    if observed != expected_names {
+        return Err("publication artifact inventory changed at the publication boundary".into());
+    }
+    Ok(())
 }
 
 fn verify_published_directory_identity(
@@ -3815,6 +4107,7 @@ mod tests {
                 role: target.role,
                 fixture_relative_path: target.role.fixture_relative_path().into(),
                 target_identity_binding_sha256: target.target_identity_binding_sha256.clone(),
+                container_kind: ContainerKind::Thin,
                 slices: vec![OracleSlice {
                     ordinal: 0,
                     cpu_type: 0x0100000c,
@@ -3925,7 +4218,7 @@ mod tests {
 
         let reconciled_path =
             run_path.join("demolab-upload-result-reconciled-0123456789abcdef01234567.json");
-        let reconciled = ReconciledUploadRecord {
+        let mut reconciled = ReconciledUploadRecord {
             schema_version: 1,
             source_commit: record.source_commit.clone(),
             ipa_sha256: ipa_sha256.clone(),
@@ -3949,6 +4242,18 @@ mod tests {
             gate_request(),
         )
         .unwrap();
+
+        reconciled.reconciled_at = "2026-07-31T23:59:59Z".into();
+        fs::write(&reconciled_path, serde_json::to_vec(&reconciled).unwrap()).unwrap();
+        assert!(
+            verify_upload_gate(
+                validate_private_output_root(&prebuild_path).unwrap(),
+                validate_private_output_root(&run_path).unwrap(),
+                gate_request(),
+            )
+            .is_err()
+        );
+        reconciled.reconciled_at = "2026-08-01T00:05:00Z".into();
 
         let mut wrong_reconciled = reconciled;
         wrong_reconciled.ipa_sha256 = "99".repeat(32);
@@ -4159,13 +4464,211 @@ mod tests {
             &root,
             "lab002-prebuild-test",
             &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
             &mut |_, _| Err("injected rollback-arm failure".into()),
+            &mut |_| Ok(()),
             File::sync_all,
         )
         .unwrap_err();
 
         assert!(error.contains("could not arm prebuild rollback"));
         assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_guard_rolls_back_when_a_sibling_appears_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let mut guard_calls = 0;
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
+            &mut |_, _| Ok(()),
+            &mut |only_name| {
+                let mut names = fs::read_dir(&root_path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>();
+                names.sort();
+                if names != [std::ffi::OsString::from(only_name)] {
+                    return Err("output root inventory changed".into());
+                }
+                guard_calls += 1;
+                if guard_calls == 1 {
+                    fs::create_dir(root_path.join("retained-prior-experiment")).unwrap();
+                }
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("output root inventory changed"));
+        assert_eq!(guard_calls, 1);
+        assert!(!root_path.join("lab002-experiment").exists());
+        assert!(root_path.join("retained-prior-experiment").is_dir());
+        assert!(fs::read_dir(&root_path).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lab002-prebuild-")
+        }));
+    }
+
+    #[test]
+    fn publication_rejects_staged_artifact_rewrite_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
+            &mut |_, _| Ok(()),
+            &mut |publication_name| {
+                let artifact = root_path.join(publication_name).join("private.bin");
+                fs::set_permissions(
+                    &artifact,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o600),
+                )
+                .unwrap();
+                fs::write(&artifact, b"altered").unwrap();
+                fs::set_permissions(
+                    &artifact,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                )
+                .unwrap();
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_rejects_published_artifact_rewrite_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let mut guard_calls = 0;
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
+            &mut |_, _| Ok(()),
+            &mut |publication_name| {
+                guard_calls += 1;
+                if guard_calls == 2 {
+                    let artifact = root_path.join(publication_name).join("private.bin");
+                    fs::set_permissions(
+                        &artifact,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o600),
+                    )
+                    .unwrap();
+                    fs::write(&artifact, b"altered").unwrap();
+                    fs::set_permissions(
+                        &artifact,
+                        std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                    )
+                    .unwrap();
+                }
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+        assert_eq!(guard_calls, 2);
+        assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_second_pass_rejects_same_name_artifact_replacement() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let parent = File::open(root.path()).unwrap();
+        let phase_name = "phase";
+        fs::create_dir(root.path().join(phase_name)).unwrap();
+        fs::set_permissions(
+            root.path().join(phase_name),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let phase = open_directory_entry(&parent, phase_name).unwrap();
+        let phase_metadata = phase.metadata().unwrap();
+        let (first, first_identity) = write_private_file(&phase, "first.bin", b"private").unwrap();
+        let (second, second_identity) =
+            write_private_file(&phase, "second.bin", b"stable").unwrap();
+        drop((first, second));
+        let identities = BTreeMap::from([
+            ("first.bin".to_owned(), first_identity),
+            ("second.bin".to_owned(), second_identity),
+        ]);
+        let first_path = root.path().join(phase_name).join("first.bin");
+
+        let error = verify_publication_artifacts_with_after_first_verification(
+            &parent,
+            phase_name,
+            (phase_metadata.dev(), phase_metadata.ino()),
+            &[("first.bin", b"private"), ("second.bin", b"stable")],
+            &[],
+            &identities,
+            || {
+                fs::remove_file(&first_path).unwrap();
+                fs::write(&first_path, b"altered").unwrap();
+                fs::set_permissions(
+                    &first_path,
+                    std::os::unix::fs::PermissionsExt::from_mode(0o400),
+                )
+                .unwrap();
+            },
+        )
+        .unwrap_err();
+
+        assert!(error.contains("changed at the publication boundary"));
+    }
+
+    #[test]
+    fn publication_inventory_rejects_above_bound_without_collecting_all_entries() {
+        let root = TempDir::new().unwrap();
+        fs::write(root.path().join("expected.bin"), b"expected").unwrap();
+        fs::write(root.path().join("unexpected.bin"), b"unexpected").unwrap();
+        let directory = File::open(root.path()).unwrap();
+
+        let error =
+            verify_publication_artifact_inventory(&directory, &[("expected.bin", b"expected")])
+                .unwrap_err();
+
+        assert!(error.contains("exceeds its fixed bound"));
     }
 
     #[test]
@@ -4378,7 +4881,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.contains("changed identity before success"));
+        assert!(error.contains("publication directory changed identity"));
         assert!(!moved_path.join("private.bin").exists());
         assert_eq!(
             fs::read(final_path.join("replacement.bin")).unwrap(),
@@ -4574,10 +5077,41 @@ mod tests {
         ipa.slices[0].slice_file_size += 64;
         ipa.slices[0].code_signature_size = Some(576);
         let role = close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &ipa).unwrap();
+        assert_eq!(role.container_kind, ContainerKind::Thin);
         assert_eq!(role.slices[0].expected_plaintext_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].ipa_section_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].code_signature_sha256, "66".repeat(32));
         assert_eq!(role.slices[0].slice_file_size, 4160);
+        verify_oracle_role_against_reports(
+            &role,
+            &archive,
+            &ipa,
+            role.target_identity_binding_sha256.clone(),
+        )
+        .unwrap();
+        assert!(
+            verify_oracle_role_against_reports(&role, &archive, &ipa, "88".repeat(32)).is_err()
+        );
+
+        for mutate in [
+            |role: &mut OracleRole| role.container_kind = ContainerKind::Fat32,
+            |role: &mut OracleRole| role.slices[0].expected_plaintext_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].ipa_section_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].code_signature_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].section_file_offset += 1,
+        ] {
+            let mut tampered = role.clone();
+            mutate(&mut tampered);
+            assert!(
+                verify_oracle_role_against_reports(
+                    &tampered,
+                    &archive,
+                    &ipa,
+                    role.target_identity_binding_sha256.clone(),
+                )
+                .is_err()
+            );
+        }
 
         let mut unbound_growth = ipa.clone();
         unbound_growth.slices[0].code_signature_size = Some(512);

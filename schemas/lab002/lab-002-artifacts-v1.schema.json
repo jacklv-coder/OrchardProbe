@@ -2009,6 +2009,7 @@
         "role",
         "fixture_relative_path",
         "target_identity_binding_sha256",
+        "container_kind",
         "slices"
       ],
       "properties": {
@@ -2026,6 +2027,13 @@
         },
         "target_identity_binding_sha256": {
           "$ref": "#/$defs/sha256"
+        },
+        "container_kind": {
+          "enum": [
+            "thin",
+            "fat32",
+            "fat64"
+          ]
         },
         "slices": {
           "type": "array",

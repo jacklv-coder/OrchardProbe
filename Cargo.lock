@@ -835,6 +835,7 @@ dependencies = [
  "ed25519-dalek",
  "jsonschema",
  "plist",
+ "rand_core",
  "rustix",
  "serde",
  "serde_json",
@@ -857,6 +858,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "zip",
 ]
 
 [[package]]

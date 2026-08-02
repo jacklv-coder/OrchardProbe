@@ -246,6 +246,150 @@ Prefer the least-privileged App Store Connect key that can upload this app.
 The lane uses the key only for Apple's local `altool` package-upload command;
 it does not create a Fastlane Pilot session.
 
+## Checkpoint 4 Host operator workflow
+
+This maintainer-only workflow must be merged on `main` before the exact
+TestFlight installation. It is not an installation command and it never opens
+an App Group, launches an app, uploads a build, or accepts a target/path/range
+for observation. The five lanes are deliberately serial:
+
+```sh
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
+bundle _4.0.16_ exec fastlane ios demolab_operator_verify
+```
+
+`start_enrollment` accepts only the frozen prebuild/candidate tuple and creates
+the fixed `lab002-experiment` child below an already existing mode-`0700`
+operator output root. The root must be empty: any retained prior experiment
+makes the command fail closed, so an abandoned or failed lifecycle cannot be
+bypassed by publishing another enrollment beside it. The Helper checks the
+exact one-entry staging/final inventory immediately before and after its atomic
+no-replace rename. During that same atomic publication it writes a private
+binding for the held output-root and experiment directory identities, the
+Enrollment experiment ID, and a signature made by the frozen Host authorization
+key. Every later lane authenticates that binding against the independently
+reopened frozen source, requires the fixed child name, and revalidates both
+persisted identities against the held parent, held experiment, and current path
+before and around phase publication. Copying the tree and rewriting its binding,
+moving only the experiment child, or substituting either path cannot create a
+second usable lifecycle; keep using the originally published directory in
+place. It retains the exact source controls and a fresh 15-minute
+acknowledgement/envelope. Provisioning the already processed build
+through TestFlight remains a separate operator action outside OrchardProbe;
+only the fixed installation envelope is imported afterward.
+
+`close_enrollment` accepts one bounded signed Receipt and the complete 64
+lowercase-hex fingerprint after the operator compares the Mac and iPhone
+displays. Before it closes or publishes enrollment, it also holds and fully
+revalidates the original prebuild/candidate directories and requires their
+source tuple to match the bytes retained in the experiment. `start_run`
+automatically selects only the next legal ordinal,
+retains the full Intent on the Mac, and exposes only the signed Challenge for
+import. For run 2 it first re-verifies the complete run-1 chain and refuses to
+publish until the current Host time is strictly later than both run 1's signed
+15-minute `not_after` and its retained Host completion time plus the full
+120-second device clock-skew allowance; rerun the same lane after both
+boundaries instead of editing a timestamp or waiting inside the Helper. `close_run` accepts one
+bounded signed Export and derives the Binding before re-running the complete
+verifier. Before authoring, accepting, or finally verifying any run, the helper
+reopens the original prebuild and frozen candidate and requires the retained
+manifest, Oracle, and pre-upload evidence to remain byte-identical. A complete
+chain verification repeats that full frozen-source revalidation after the
+two-run chain closes and before returning a disposition, so a concurrent
+source change cannot leave a successful result based on stale in-memory data.
+The second close applies the same final source revalidation before returning
+its closed disposition and rechecks run 1's retained Intent against the frozen
+pre-upload evidence before accepting the two-run chain.
+For every operation, the Helper parses and cryptographically verifies the exact
+Archive executable snapshots it hashed and the exact executable entries held
+in the bounded IPA snapshot. It independently validates each Archive/IPA
+`Info.plist`, signing identity, entitlements, CMS trust, and the target binding
+recomputed from the signed manifest, then re-derives the complete Oracle role
+and slice tuple. Structural equality with the retained Oracle is mandatory;
+UUID-only or self-consistent but substituted reports are insufficient. Every
+signed role report must therefore match the Oracle's exact role/slice identity,
+initial encryption coverage, and expected mapped plaintext digest. The second
+close evaluates byte-identical normalized observations across the ordered
+two-run chain before publishing run 2; a mismatch is atomically retained as
+generic `no_go`, while replay, ordering, enrollment, and frozen-Oracle integrity
+failures still reject publication. The checked-in iOS observer truthfully
+reports its bounded signature parse as `not_checked`; Host closure accepts only
+that exact `inconclusive`/`signature_invalid_or_unchecked` tuple as reproducible No-Go
+evidence and never treats it as valid signature evidence or a Go result.
+If an otherwise well-formed signed report preserves the authorized identity
+and bounded evidence integrity but a signature, initial-protection, disk, or
+mapped-plaintext gate fails, closure retains it as the generic `no_go`
+disposition instead of rejecting and losing the result. Contradictory
+validator/outcome/reason tuples and identity or coordinate substitutions still
+fail closed. Both the second close and final verifier expose `go`,
+`no_go_signature_unchecked`, or `no_go`; Fastlane prints either No-Go explicitly
+rather than as a generic success.
+
+Every publishing lane uses a random owner-only staging directory, fixed
+filenames, exclusive rename, directory fsync, and exact phase inventory. It
+rechecks that inventory at the immediate pre-rename and post-rename publication
+boundaries, including every enrollment/run result and control phase, and rolls
+back its own publication if an unexpected sibling appears. The same boundary
+guard reopens the complete frozen source tuple before and after each rename;
+changing it while publication waits cannot commit a stale control or result.
+Each boundary guard checks the phase inventory both before and after that
+source validation, so the validation window cannot admit an unaccounted sibling.
+It refuses an existing/incomplete phase rather than overwriting or silently
+retrying it.
+Retained upload-reconciliation records must also satisfy
+`attempt_started_at <= reconciled_at <=` the active upload attempt time; an
+impossible audit chronology fails closed. The upload gate and reconciliation
+lane enforce the independently knowable lower bound before an active retry
+exists; the operator source loader additionally enforces the retry-time upper
+bound. The authorization seed remains only in the frozen prebuild; the device
+enrollment private key never leaves the device.
+Fastlane also holds non-blocking exclusive locks on every bound directory for
+the complete Helper invocation: the output or experiment root plus the frozen
+prebuild and candidate directories used by that operation. It acquires them in
+deterministic device/inode order and releases any partial acquisition on
+failure. A competing controlled lane against the same workflow or either
+frozen source fails before reading or publishing state. The upload lane holds
+that same candidate-directory lock from its final Helper gate through creation
+of the indeterminate record, the complete Apple request, and terminal result
+replacement. Reconciliation holds it through atomic replacement and archival.
+
+The operator lanes use these additional private environment values:
+
+- `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN` must equal
+  `I_AM_RUNNING_LOCALLY_OUTSIDE_CI`; every lane rejects CI, a dirty checkout,
+  and a `HEAD` that is not contained in the authenticated GitHub `main`
+  history, then rechecks the clean reviewed source before completion;
+- `DEMO_LAB_LAB002_OPERATOR_OUTPUT_ROOT`: new, empty, absolute mode-`0700`
+  directory outside the repository;
+- `DEMO_LAB_LAB002_PREBUILD_DIRECTORY`: exact frozen 3A prebuild directory;
+- `DEMO_LAB_BUILD_OUTPUT_DIRECTORY`: exact frozen candidate directory;
+- `DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY`: the exclusively published experiment
+  child used in place by every later lane; do not copy it or rewrite its signed
+  directory-binding artifact;
+- `DEMO_LAB_LAB002_HARDWARE_MODEL`, `DEMO_LAB_LAB002_IOS_PRODUCT_VERSION`, and
+  `DEMO_LAB_LAB002_IOS_BUILD`: sanitized expected environment for the selected
+  owned iPhone, with no stable device identifier;
+- the five `DEMO_LAB_LAB002_CONFIRM_*` authorization variables shown by
+  `lab002_operator_assertions!`: each must equal `true` only after the fresh
+  RFC-0001 acknowledgement immediately preceding enrollment or a run;
+- `DEMO_LAB_LAB002_RECEIPT_PATH` plus the full
+  `DEMO_LAB_LAB002_DEVICE_SELECTION_FINGERPRINT` and
+  `DEMO_LAB_LAB002_CONFIRM_FINGERPRINT_MATCH=true` for enrollment closure;
+- `DEMO_LAB_LAB002_EXPORT_PATH` for the current run's signed Export.
+
+Receipt/Export files may come from AirDrop or Files, but must be absolute-path,
+owner-only, bounded, non-symlink regular files outside the repository. Their
+nonblocking snapshots reject FIFOs and other special files. Do not paste
+private values, experiment IDs,
+fingerprints, paths, Receipt/Export contents, or Host results into GitHub or
+logs. A failed/expired/post-start phase is retained and evaluated under the
+reviewed No-Go rules; it is not deleted and recreated to obtain a pass.
+
 ## Stage 1: create the signed candidate
 
 Before the first run, sign in to the correct development team in Xcode and
@@ -379,7 +523,10 @@ the helper accepts only the fixed lowercase name form and revalidates each
 owner-only record's schema, source commit, IPA SHA-256, timestamps, destination,
 and `reconciled_absent` decision. Every other additional entry is rejected. The
 same gate is repeated after the read-only IPA snapshot is ready and before an
-upload-attempt record or Apple network action is created.
+upload-attempt record or Apple network action is created. This final gate keeps
+the frozen run-directory lock until the upload result is durably accepted or
+retained as indeterminate, so an operator workflow cannot consume a changing
+candidate.
 After the API key descriptor and locked named IPA snapshot are ready, the lane
 repeats the complete archive-binary measurement immediately before it
 revalidates the selected Xcode and launches `altool`; a mismatch aborts before
@@ -530,7 +677,7 @@ I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT
 bundle _4.0.16_ exec fastlane ios demolab_reconcile_indeterminate_upload
 ```
 
-The lane locks the result against an upload that is still running, validates
+The lane locks both the candidate directory and result against an upload that is still running, validates
 that its commit, IPA hash, and attempt timestamp match the current evidence,
 durably changes it through a fsynced atomic replacement to
 `status: reconciled_absent`, and publishes it under a new

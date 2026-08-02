@@ -227,6 +227,190 @@ DEMO_LAB_TRUSTED_LAB002_PRIVATE_TOOLS = {
         "cdhash" => "6d5b865692e1f2ff7931bc2d5726ba20e18afe6c",
       }.freeze,
     ].freeze,
+    "aef9bdd50b2fe145956a0597cfd5c052fea6f353057f6ab9623258bf3d9366e5" => [
+      {
+        "size" => 2_981_040,
+        "sha256" =>
+          "129b17eb2bab5a097410e56bc02670988be5772d284a228707cba1fadb37ef5f",
+        "cdhash" => "1d3ade69071524e8c91ad741075b60fdf1ef5859",
+      }.freeze,
+    ].freeze,
+    "599f167cfd2341ed4c4cf1fead948adacb275de29066d9e99ec70a0291cff58e" => [
+      {
+        "size" => 3_061_616,
+        "sha256" =>
+          "2a575fb77fe47281a05d755d4b438ce76cb12f02c0964ee3b60e5768da97e777",
+        "cdhash" => "3a4480fcadff0a9e86f42f10ad313da6d11d91fc",
+      }.freeze,
+    ].freeze,
+    "530cab7a35c5079901d76257515ce9f719ccab9c8f6ac6c301edad999d527559" => [
+      {
+        "size" => 3_062_032,
+        "sha256" =>
+          "4c6aee99400d0805ab63de776696aeede961e0277965b168964dde9c9a3870ec",
+        "cdhash" => "47eddc2a6e3619d3eededc262d9b2d434ad079db",
+      }.freeze,
+    ].freeze,
+    "252af3147edadf200a090cc818c2fd4da231d5721befaaa7aa5c7b0f990aabd9" => [
+      {
+        "size" => 3_062_032,
+        "sha256" =>
+          "5d4e47c52967331af2ea7d066d6cd9c6c443d837fb88c0a94860c743f1a1d29e",
+        "cdhash" => "42bd1c5f3d0e1c3841c5ef80216a21744529d37b",
+      }.freeze,
+    ].freeze,
+    "0cab364ef4b3964bf6de1b864c459cd8b7b25e1e27d2e0d962ff20af6665d281" => [
+      {
+        "size" => 3_179_072,
+        "sha256" =>
+          "0019b20af4d176fa62afe012fbf57cceac89009ffa2db47bdd1b54c2f3b4808f",
+        "cdhash" => "b0e3663ee3475784d787239f6ff9fdd7c3ff824c",
+      }.freeze,
+    ].freeze,
+    "8f468ee4a076008520070110dcafc9dc76e43208adaf568a61cab91c13c90207" => [
+      {
+        "size" => 3_179_024,
+        "sha256" =>
+          "5789f1726bec7aa1f7df93adc131ff103608fc625a06ecac13275bc0ffcb0413",
+        "cdhash" => "59bafcc5867af9864bbf1b10d17d8ea375b2607a",
+      }.freeze,
+    ].freeze,
+    "220f4cab162c91a9ae82fce85c534e09bf0f4f0c798695b369de99b40df24661" => [
+      {
+        "size" => 3_181_488,
+        "sha256" =>
+          "b586c9629ba827d9c5f158276ffaa6994952ea7ba916e4de62854750dc98bc46",
+        "cdhash" => "6777ec989e0c6ac034ea3905b3646f61fb1d1b98",
+      }.freeze,
+    ].freeze,
+    "87142c73a633b88df721cef1b008e53b76d455707870bc24a849da0debd93968" => [
+      {
+        "size" => 3_181_376,
+        "sha256" =>
+          "df9e5f1bc60ee537930c51f6875e964660056040c78ee22ab73fb797a63abeab",
+        "cdhash" => "c8206133f0885ab4e3b2d46179d71478f1e2912c",
+      }.freeze,
+    ].freeze,
+    "6dc02974b685a970d1e32b874142f6d26de92dab78605460a9ff82781a17502b" => [
+      {
+        "size" => 3_181_712,
+        "sha256" =>
+          "911ba178be1c0b20234ae72adeabe04c8c9ebbafe874c2cbdf9cdd5853e63c20",
+        "cdhash" => "8285d08248480782cf362abb0136a1b37b1a8b91",
+      }.freeze,
+    ].freeze,
+    "ff4bdb2c9674d3e63019104e69d96a83aee2e054f609f52227e9016232885b5b" => [
+      {
+        "size" => 3_270_256,
+        "sha256" =>
+          "c840e1a92ddeabc18fc63376a5ec193c8f0710508cd2015085dcfba75af3f0b4",
+        "cdhash" => "03450ddbd3e5096f7c948abdf2c8bc73245b2e8e",
+      }.freeze,
+    ].freeze,
+    "cbd037cd1b219dbeefeb994bce760cc9e3452a0657f0dc24d3eb0fca22089732" => [
+      {
+        "size" => 3_270_832,
+        "sha256" =>
+          "48b8fc4736b828c05b889cb691cf7a324fd1fa5202469e0863e4c02bc06ed51a",
+        "cdhash" => "f2be8b9daf358bbd866bade65f387454f6a44db6",
+      }.freeze,
+    ].freeze,
+    "e7edd34197e5b4aade1c74431dbe632eb7e46470f2ec412046b45d42b47a5299" => [
+      {
+        "size" => 3_270_944,
+        "sha256" =>
+          "1a173e6189cead86850e52332c6f6aadcddfc8f148698f4b7d8ca6777a91aa47",
+        "cdhash" => "71fb6ba2b6ed95c64d3d206d0913f9b0e4413347",
+      }.freeze,
+    ].freeze,
+    "c454b2084ce5abbe2f677e91fbc4423fed9a852d0c167c7f82200543f427de3f" => [
+      {
+        "size" => 3_270_944,
+        "sha256" =>
+          "fb57184babc4d7e6ba3bf2970ca2089ea345b0726c85b337f2c8d9ec4e405cf0",
+        "cdhash" => "5ffdb86cb678ac6ab670bccb811a28edbfb12a3e",
+      }.freeze,
+    ].freeze,
+    "c562abef73db2ef844582793a80883c1ee64b88087c4abd607f1ac72e32fffa1" => [
+      {
+        "size" => 3_271_056,
+        "sha256" =>
+          "6ee4fd9ee2def07fad6dd512337a52d6a3ea30a3bbb9a3890dd743794f297a0f",
+        "cdhash" => "5d6319d37d5bdc0852fbb8631cf7e7179e86ba6f",
+      }.freeze,
+    ].freeze,
+    "775a15d6c019c39f99d110efb7dcc5bacc470fc0361e7d1061c6fff7468fa729" => [
+      {
+        "size" => 3_271_056,
+        "sha256" =>
+          "203b22526f7664d942b55c5742ed3649a4f829f192211c85f82e08cae95582b6",
+        "cdhash" => "66fc768edadb1f1a9e3b2a134d1fba8fdfe14927",
+      }.freeze,
+    ].freeze,
+    "690aa31e3d0da4d562b974b8e368fbb13c44c37c59a045e2a304c4ed8b7e25ec" => [
+      {
+        "size" => 3_283_408,
+        "sha256" =>
+          "ba8bb79ac2f3bbf7ad3120b79f27e17c285aabcb3e784a5a1f2db818bce70246",
+        "cdhash" => "25138be1efb9132acaa555d4bf561ce52b0ff8ea",
+      }.freeze,
+    ].freeze,
+    "87ae31a61d40199e20d3d9e50644660dbd6ebe6fe1ada9d0469e3d3174d27858" => [
+      {
+        "size" => 3_284_016,
+        "sha256" =>
+          "c6050562a0e036bda25fb36e7e51a9e90b3a7df01202de2e30402261a77bde91",
+        "cdhash" => "8b5f62771adf5fe02828201e41f13a90459e0f7f",
+      }.freeze,
+    ].freeze,
+    "8e94e44623985498c5b2f5873e1036bfc0979bca8fa3e3e326a0e659bec686fc" => [
+      {
+        "size" => 3_302_528,
+        "sha256" =>
+          "c87b63b0d00cd46569215f8ed0064b10973a18012931be6101c425654a6bf1e5",
+        "cdhash" => "31d712a0fa9ffa844603185d423e12b10157a7c8",
+      }.freeze,
+    ].freeze,
+    "e44ca6351bb9a9c69a0b5489e09faac97f90309dc5e2a0b9f90eae8cf3b93a21" => [
+      {
+        "size" => 3_303_744,
+        "sha256" =>
+          "11c78291e0d733c7355b8411c28376ef08ec129e43685bc7a9eb5db946f38951",
+        "cdhash" => "62aa4cabf5507bee36567b03d4766b8fa12e8c70",
+      }.freeze,
+    ].freeze,
+    "29bcf258ce3bb2a8ada0798ae65b6de1adaeed7c1c4c9cc97be38194eb645f67" => [
+      {
+        "size" => 3_360_384,
+        "sha256" =>
+          "3d9a39ad38ace5856c662120d867491cf53d81aa57bdf437a498ca3d6f1241fb",
+        "cdhash" => "95a4b27a75f08ac1337174dddac460aeb17ae028",
+      }.freeze,
+    ].freeze,
+    "5b17f8c1f0487364c896f9fe5e7d99ad9d0a78792644f6da1a5846c3b68d5fb6" => [
+      {
+        "size" => 3_361_856,
+        "sha256" =>
+          "6839cda7e73f0877998efdf59783bba849fc85772e14318d8c977d5097484986",
+        "cdhash" => "b1554d431c643b3232161e90abd500058012e0b7",
+      }.freeze,
+    ].freeze,
+    "ba0cff84503f0ae35344420c3efdc60df6992fbf08336315d6948079a6457438" => [
+      {
+        "size" => 3_381_712,
+        "sha256" =>
+          "e3c354cf9e4a15de0afd7a886802d09066d3c6c7496096f3379a0cb8279f1047",
+        "cdhash" => "b114a781ed4799057138f237f8d334bf04aecbd7",
+      }.freeze,
+    ].freeze,
+    "35af1682b7d2b7a98769ed64e5c4aa4bc7f227d60b5a7d4f2a2a745871a63d22" => [
+      {
+        "size" => 3_381_696,
+        "sha256" =>
+          "127f2821f48835dfd74aea409043dc0cb6abcd366d9fb29d3968e485438cecfc",
+        "cdhash" => "9eee8288d796fa943a6e308f8d98268e846ecea8",
+      }.freeze,
+    ].freeze,
   }.freeze,
 }.freeze
 DEMO_LAB_CRATES_IO_SOURCE =
@@ -5999,9 +6183,13 @@ end
 def verify_lab002_upload_gate!(evidence_path, evidence, xcode_toolchain:)
   marketing_version = evidence.dig("build", "marketing_version")
   build_number = evidence.dig("build", "build_number")
-  return true unless marketing_version ==
-                     DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
-                     build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+  checkpoint_3 =
+    marketing_version == DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+    build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+  unless checkpoint_3
+    yield if block_given?
+    return true
+  end
 
   source_commit = evidence.dig("source", "commit")
   binding = evidence.fetch("lab002")
@@ -6140,6 +6328,15 @@ def verify_lab002_upload_gate!(evidence_path, evidence, xcode_toolchain:)
           )
           verify_selected_xcode_toolchain!(xcode_toolchain)
           verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+          if block_given?
+            yield(run_handle)
+            verify_locked_directory!(
+              run_handle,
+              run_directory,
+              run_identity,
+              "LAB-002 upload run directory"
+            )
+          end
         rescue JSON::ParserError
           UI.user_error!("LAB-002 upload-gate helper returned invalid JSON.")
         ensure
@@ -7052,6 +7249,8 @@ def validate_reconcilable_upload_result!(record, evidence)
     end
   when "reconciled_absent"
     unless valid_utc_timestamp?(record["reconciled_at"]) &&
+           Time.iso8601(record["attempt_started_at"]) <=
+             Time.iso8601(record["reconciled_at"]) &&
            record["reconciliation"] ==
              "operator_confirmed_absent_in_app_store_connect" &&
            record["note"] == DEMO_LAB_RECONCILED_ABSENT_NOTE
@@ -7066,7 +7265,8 @@ end
 def reconcile_indeterminate_upload_result!(
   result_path,
   evidence,
-  expected_attempt_started_at:
+  expected_attempt_started_at:,
+  reconciled_at: nil
 )
   archive_path = File.join(
     File.dirname(result_path),
@@ -7094,11 +7294,12 @@ def reconcile_indeterminate_upload_result!(
     if record["status"] == "indeterminate"
       record = record.merge(
         "status" => "reconciled_absent",
-        "reconciled_at" => Time.now.utc.iso8601,
+        "reconciled_at" => reconciled_at || Time.now.utc.iso8601,
         "reconciliation" =>
           "operator_confirmed_absent_in_app_store_connect",
         "note" => DEMO_LAB_RECONCILED_ABSENT_NOTE
       )
+      validate_reconcilable_upload_result!(record, evidence)
       replacement_file = replace_locked_private_json_record!(
         result_path,
         file,
@@ -7137,11 +7338,802 @@ end
 
 default_platform(:ios)
 
+def lab002_operator_assertions!
+  names = %w[
+    DEMO_LAB_LAB002_CONFIRM_AUTHORIZED_USE
+    DEMO_LAB_LAB002_CONFIRM_OWNERSHIP
+    DEMO_LAB_LAB002_CONFIRM_SCOPE
+    DEMO_LAB_LAB002_CONFIRM_LEGAL_LIMITS
+    DEMO_LAB_LAB002_CONFIRM_OUTPUT_PROTECTION
+  ]
+  values = names.to_h { |name| [name, required_environment(name)] }
+  unless values.values.all? { |value| value == "true" }
+    UI.user_error!(
+      "Every fresh LAB-002 RFC-0001 acknowledgement must be exactly true."
+    )
+  end
+  {
+    "confirmed" => true,
+    "owns_or_explicitly_authorized_target" => true,
+    "within_authorized_scope" => true,
+    "understands_legal_limits" => true,
+    "will_protect_output_and_not_resign_install_or_redistribute" => true,
+  }
+end
+
+def lab002_operator_bound_directory!(environment_name, label)
+  raw = required_environment(environment_name)
+  unless Pathname.new(raw).absolute?
+    UI.user_error!("#{environment_name} must be an absolute path.")
+  end
+  path = ensure_outside_repository!(File.expand_path(raw), label)
+  handle, identity = lab002_open_bound_directory!(
+    path,
+    label,
+    required_mode: 0o700
+  )
+  [path, handle, identity]
+end
+
+def lock_lab002_operator_bindings!(bindings)
+  primary = bindings.first
+  unless primary.is_a?(Hash) &&
+         primary[:descriptor] == 4 &&
+         %w[--output-root --experiment-directory].include?(primary[:option])
+    UI.user_error!("The LAB-002 operator root binding is invalid.")
+  end
+  locked = []
+  begin
+    bindings.sort_by { |binding| binding.fetch(:identity).first(2) }.each do |binding|
+      verify_held_lab002_directory!(
+        binding.fetch(:path),
+        binding.fetch(:handle),
+        binding.fetch(:identity),
+        binding.fetch(:label),
+        required_mode: 0o700
+      )
+      unless binding.fetch(:handle).flock(File::LOCK_EX | File::LOCK_NB)
+        UI.user_error!(
+          "Another controlled lane already holds a LAB-002 operator binding."
+        )
+      end
+      locked << binding.fetch(:handle)
+    end
+    locked
+  rescue
+    locked.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+    raise
+  end
+end
+
+def verify_distinct_lab002_operator_bindings!(bindings)
+  identities = bindings.map do |binding|
+    identity = binding.fetch(:identity)
+    unless identity.is_a?(Array) && identity.length >= 2
+      UI.user_error!("A LAB-002 operator directory identity is invalid.")
+    end
+    [identity[0], identity[1]]
+  end
+  unless identities.uniq.length == identities.length
+    UI.user_error!(
+      "LAB-002 operator input and output directories must be distinct."
+    )
+  end
+end
+
+def run_lab002_operator_helper!(
+  operation:,
+  bindings:,
+  input:,
+  publishes:
+)
+  source_commit = reviewed_main_source_commit
+  binary = nil
+  tool_workspace = nil
+  operator_locks = []
+  acknowledgement_reader = nil
+  acknowledgement_writer = nil
+  begin
+    verify_distinct_lab002_operator_bindings!(bindings)
+    operator_locks = lock_lab002_operator_bindings!(bindings)
+    binary, tool_workspace, tool_identity, =
+      build_lab002_private_tool(source_commit)
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    arguments = [binary, operation]
+    descriptor_map = {}
+    bindings.each do |binding|
+      option = binding.fetch(:option)
+      path = binding.fetch(:path)
+      handle = binding.fetch(:handle)
+      identity = binding.fetch(:identity)
+      descriptor = binding.fetch(:descriptor)
+      verify_held_lab002_directory!(
+        path,
+        handle,
+        identity,
+        binding.fetch(:label),
+        required_mode: 0o700
+      )
+      arguments.concat(
+        [
+          option,
+          path,
+          "#{option}-device",
+          identity[0].to_s,
+          "#{option}-inode",
+          identity[1].to_s,
+        ]
+      )
+      descriptor_map[descriptor] = handle
+    end
+    acknowledgement_reader, acknowledgement_writer = IO.pipe if publishes
+    descriptor_map[3] = acknowledgement_reader if publishes
+    stdout_content = nil
+    helper_stderr = nil
+    status = nil
+    spawn_options = descriptor_map.merge(
+      chdir: repository_root,
+      close_others: true
+    )
+    Open3.popen3(
+      sanitized_dynamic_loader_environment,
+      *arguments,
+      spawn_options
+    ) do |stdin, stdout, error_stream, wait_thread|
+      acknowledgement_reader&.close
+      verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
+      stdin.binmode
+      stdin.write(input)
+      stdin.close
+      if publishes
+        identity_line = stdout.gets&.chomp
+        match = /\A#{Regexp.escape(
+          DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA
+        )} (\.lab002-prebuild-[0-9a-f]{32}) (0|[1-9][0-9]*) (0|[1-9][0-9]*)\z/
+          .match(identity_line.to_s)
+        acknowledgement_writer.write(match ? "A" : "X")
+        acknowledgement_writer.flush
+        acknowledgement_writer.close
+        UI.user_error!("LAB-002 operator publication identity is missing.") unless match
+      end
+      stdout_content = stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      helper_stderr = error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
+      status = wait_thread.value
+    ensure
+      acknowledgement_writer&.close unless acknowledgement_writer&.closed?
+    end
+    if stdout_content.to_s.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES ||
+       helper_stderr.to_s.bytesize > DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES
+      UI.user_error!("LAB-002 operator output exceeded its fixed limit.")
+    end
+    unless status&.success?
+      UI.user_error!("LAB-002 operator failed: #{helper_stderr.to_s.strip}")
+    end
+    result = JSON.parse(stdout_content)
+    allowed = %w[
+      schema
+      status
+      phase
+      experiment_id
+      run_ordinal
+      import_relative_path
+      device_selection_fingerprint_sha256
+      evidence_disposition
+    ]
+    unless result.is_a?(Hash) &&
+           (result.keys - allowed).empty? &&
+           result["schema"] == "orchardprobe.lab002.operator-result.v1" &&
+           [nil, "go", "no_go_signature_unchecked", "no_go"].include?(
+             result["evidence_disposition"]
+           ) &&
+           /\A[0-9a-f]{64}\z/.match?(result["experiment_id"].to_s)
+      UI.user_error!("LAB-002 operator returned an invalid closed result.")
+    end
+    bindings.each do |binding|
+      verify_held_lab002_directory!(
+        binding.fetch(:path),
+        binding.fetch(:handle),
+        binding.fetch(:identity),
+        binding.fetch(:label),
+        required_mode: 0o700
+      )
+    end
+    verify_lab002_private_tool!(binary, tool_workspace, tool_identity)
+    ensure_clean_source!
+    unless reviewed_main_source_commit == source_commit
+      UI.user_error!("The reviewed LAB-002 operator source changed during use.")
+    end
+    result
+  ensure
+    acknowledgement_reader&.close unless acknowledgement_reader&.closed?
+    acknowledgement_writer&.close unless acknowledgement_writer&.closed?
+    FileUtils.rm_rf(tool_workspace) if tool_workspace
+    operator_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+  end
+end
+
 platform :ios do
+  desc "Create the fresh owner-only LAB-002 installation control bundle"
+  lane :demolab_operator_start_enrollment do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      output_path, output_handle, output_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_OPERATOR_OUTPUT_ROOT",
+          "LAB-002 operator output"
+        )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
+          "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY",
+          "LAB-002 frozen candidate"
+        )
+      handles.concat([output_handle, prebuild_handle, candidate_handle])
+      request = lab002_operator_assertions!.merge(
+        "schema" =>
+          "orchardprobe.lab002.operator-start-enrollment.v1",
+        "expected_environment" => {
+          "hardware_model" => required_environment(
+            "DEMO_LAB_LAB002_HARDWARE_MODEL",
+            pattern: /\AiPhone[0-9]+,[0-9]+\z/
+          ),
+          "ios_product_version" => required_environment(
+            "DEMO_LAB_LAB002_IOS_PRODUCT_VERSION",
+            pattern: /\A[0-9]+(?:\.[0-9]+){0,3}\z/
+          ),
+          "ios_build" => required_environment(
+            "DEMO_LAB_LAB002_IOS_BUILD",
+            pattern: /\A[0-9]+[A-Z][0-9A-Za-z]+\z/
+          ),
+        },
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-start-enrollment",
+        bindings: [
+          {
+            option: "--output-root",
+            path: output_path,
+            handle: output_handle,
+            identity: output_identity,
+            descriptor: 4,
+            label: "LAB-002 operator output",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: JSON.generate(request),
+        publishes: true
+      )
+      UI.success(
+        "Created the fresh installation control bundle; import only its " \
+        "fixed installation envelope after TestFlight provisioning."
+      )
+      result
+    ensure
+      handles.each { |handle| handle.close unless handle.closed? }
+    end
+  end
+
+  desc "Verify a device receipt and close LAB-002 enrollment"
+  lane :demolab_operator_close_enrollment do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      experiment_path, experiment_handle, experiment_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+          "LAB-002 experiment"
+        )
+      handles << experiment_handle
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
+          "LAB-002 prebuild"
+        )
+      handles << prebuild_handle
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY",
+          "LAB-002 frozen candidate"
+        )
+      handles << candidate_handle
+      receipt = private_external_file_snapshot(
+        "DEMO_LAB_LAB002_RECEIPT_PATH",
+        16 * 1024,
+        "LAB-002 signed enrollment receipt"
+      )
+      fingerprint = required_environment(
+        "DEMO_LAB_LAB002_DEVICE_SELECTION_FINGERPRINT",
+        pattern: /\A[0-9a-f]{64}\z/
+      )
+      unless required_environment(
+        "DEMO_LAB_LAB002_CONFIRM_FINGERPRINT_MATCH"
+      ) == "true"
+        UI.user_error!("The full device-selection fingerprint was not confirmed.")
+      end
+      result = run_lab002_operator_helper!(
+        operation: "operator-close-enrollment",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: experiment_path,
+            handle: experiment_handle,
+            identity: experiment_identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: "#{fingerprint}\n".b + receipt,
+        publishes: true
+      )
+      UI.success("Verified the signed receipt and closed device enrollment.")
+      result
+    ensure
+      handles.each { |handle| handle.close unless handle.closed? }
+    end
+  end
+
+  desc "Create the next fresh owner-only LAB-002 run control bundle"
+  lane :demolab_operator_start_run do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      experiment_path, experiment_handle, experiment_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+          "LAB-002 experiment"
+        )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY",
+          "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY",
+          "LAB-002 frozen candidate"
+        )
+      handles.concat([experiment_handle, prebuild_handle, candidate_handle])
+      request = lab002_operator_assertions!.merge(
+        "schema" => "orchardprobe.lab002.operator-start-run.v1"
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-start-run",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: experiment_path,
+            handle: experiment_handle,
+            identity: experiment_identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: JSON.generate(request),
+        publishes: true
+      )
+      UI.success("Created the next one-shot run challenge and retained its intent.")
+      result
+    ensure
+      handles.each { |handle| handle.close unless handle.closed? }
+    end
+  end
+
+  desc "Verify a device export and close the current LAB-002 run"
+  lane :demolab_operator_close_run do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      path, handle, identity = lab002_operator_bound_directory!(
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY", "LAB-002 experiment"
+      )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY", "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
+        )
+      handles.concat([handle, prebuild_handle, candidate_handle])
+      export = private_external_file_snapshot(
+        "DEMO_LAB_LAB002_EXPORT_PATH",
+        512 * 1024,
+        "LAB-002 signed session export"
+      )
+      result = run_lab002_operator_helper!(
+        operation: "operator-close-run",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: path,
+            handle: handle,
+            identity: identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: export,
+        publishes: true
+      )
+      if result["evidence_disposition"] == "no_go_signature_unchecked"
+        UI.important(
+          "Closed the two-run chain with a method-level No-Go: " \
+          "the checked-in observer reported signature validation as unchecked."
+        )
+      elsif result["evidence_disposition"] == "no_go"
+        UI.important(
+          "Closed the two-run chain with a method-level No-Go: " \
+          "one or more bounded evidence gates failed."
+        )
+      else
+        UI.success("Verified the signed export and closed the current run.")
+      end
+      result
+    ensure
+      handles.each { |item| item.close unless item.closed? }
+    end
+  end
+
+  desc "Verify the retained LAB-002 enrollment and two-run Host chain"
+  lane :demolab_operator_verify do
+    ensure_manual_lane!
+    ensure_clean_source!
+    handles = []
+    begin
+      path, handle, identity = lab002_operator_bound_directory!(
+        "DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY",
+        "LAB-002 experiment"
+      )
+      prebuild_path, prebuild_handle, prebuild_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_LAB002_PREBUILD_DIRECTORY", "LAB-002 prebuild"
+        )
+      candidate_path, candidate_handle, candidate_identity =
+        lab002_operator_bound_directory!(
+          "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
+        )
+      handles.concat([handle, prebuild_handle, candidate_handle])
+      result = run_lab002_operator_helper!(
+        operation: "operator-verify",
+        bindings: [
+          {
+            option: "--experiment-directory",
+            path: path,
+            handle: handle,
+            identity: identity,
+            descriptor: 4,
+            label: "LAB-002 experiment",
+          },
+          {
+            option: "--prebuild-directory",
+            path: prebuild_path,
+            handle: prebuild_handle,
+            identity: prebuild_identity,
+            descriptor: 5,
+            label: "LAB-002 prebuild",
+          },
+          {
+            option: "--candidate-directory",
+            path: candidate_path,
+            handle: candidate_handle,
+            identity: candidate_identity,
+            descriptor: 6,
+            label: "LAB-002 frozen candidate",
+          },
+        ],
+        input: "",
+        publishes: false
+      )
+      if result["evidence_disposition"] == "no_go_signature_unchecked"
+        UI.important(
+          "Verified chain integrity, but the final evidence disposition is " \
+          "No-Go because signature validation remained unchecked."
+        )
+      elsif result["evidence_disposition"] == "no_go"
+        UI.important(
+          "Verified chain integrity, but the final evidence disposition is " \
+          "No-Go because one or more bounded evidence gates failed."
+        )
+      else
+        UI.success(
+          "Verified the complete retained enrollment and two-run chain with a Go disposition."
+        )
+      end
+      result
+    ensure
+      handles.each { |item| item.close unless item.closed? }
+    end
+  end
+
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
     xcode_toolchain = selected_xcode_toolchain
     xcodegen_selection = selected_xcodegen
+    Dir.mktmpdir(
+      "orchardprobe-lab002-operator-lock-check-",
+      external_temporary_base
+    ) do |operator_root|
+      File.chmod(0o700, operator_root)
+      first_handle, first_identity = lab002_open_bound_directory!(
+        operator_root,
+        "LAB-002 operator lock regression",
+        required_mode: 0o700
+      )
+      second_handle, second_identity = lab002_open_bound_directory!(
+        operator_root,
+        "LAB-002 operator lock regression",
+        required_mode: 0o700
+      )
+      first_locks = []
+      second_locks = []
+      begin
+        unique_identity = first_identity.dup
+        unique_identity[1] = first_identity[1] ^ 1
+        unique_binding = {
+          option: "--prebuild-directory",
+          path: "#{operator_root}-unique",
+          handle: first_handle,
+          identity: unique_identity,
+          descriptor: 5,
+          label: "LAB-002 distinct binding regression",
+        }
+        verify_distinct_lab002_operator_bindings!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: first_handle,
+            identity: first_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+          unique_binding,
+        ])
+        duplicate_binding_rejected = false
+        begin
+          verify_distinct_lab002_operator_bindings!([
+            {
+              option: "--output-root",
+              path: operator_root,
+              handle: first_handle,
+              identity: first_identity,
+              descriptor: 4,
+              label: "LAB-002 operator lock regression",
+            },
+            unique_binding.merge(identity: first_identity),
+          ])
+        rescue FastlaneCore::Interface::FastlaneError
+          duplicate_binding_rejected = true
+        end
+        unless duplicate_binding_rejected
+          UI.user_error!("Aliased LAB-002 operator directories were not rejected.")
+        end
+        first_locks = lock_lab002_operator_bindings!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: first_handle,
+            identity: first_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+        ])
+        competing_lock_rejected = false
+        begin
+          lock_lab002_operator_bindings!([
+            {
+              option: "--output-root",
+              path: operator_root,
+              handle: second_handle,
+              identity: second_identity,
+              descriptor: 4,
+              label: "LAB-002 operator lock regression",
+            },
+          ])
+        rescue FastlaneCore::Interface::FastlaneError
+          competing_lock_rejected = true
+        end
+        unless competing_lock_rejected
+          UI.user_error!("Concurrent LAB-002 operator roots were not rejected.")
+        end
+        first_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) }
+        first_locks = []
+        second_locks = lock_lab002_operator_bindings!([
+          {
+            option: "--output-root",
+            path: operator_root,
+            handle: second_handle,
+            identity: second_identity,
+            descriptor: 4,
+            label: "LAB-002 operator lock regression",
+          },
+        ])
+      ensure
+        first_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+        second_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+        first_handle.close unless first_handle.closed?
+        second_handle.close unless second_handle.closed?
+      end
+    end
+    Dir.mktmpdir(
+      "orchardprobe-lab002-source-lock-check-",
+      external_temporary_base
+    ) do |lock_workspace|
+      workflow_one = File.join(lock_workspace, "workflow-one")
+      workflow_two = File.join(lock_workspace, "workflow-two")
+      frozen_source = File.join(lock_workspace, "frozen-source")
+      [workflow_one, workflow_two, frozen_source].each do |path|
+        Dir.mkdir(path, 0o700)
+      end
+      workflow_one_handle, workflow_one_identity =
+        lab002_open_bound_directory!(
+          workflow_one,
+          "LAB-002 first workflow lock regression",
+          required_mode: 0o700
+        )
+      workflow_two_handle, workflow_two_identity =
+        lab002_open_bound_directory!(
+          workflow_two,
+          "LAB-002 second workflow lock regression",
+          required_mode: 0o700
+        )
+      source_one_handle, source_identity = lab002_open_bound_directory!(
+        frozen_source,
+        "LAB-002 source lock regression",
+        required_mode: 0o700
+      )
+      source_two_handle, source_two_identity = lab002_open_bound_directory!(
+        frozen_source,
+        "LAB-002 competing source lock regression",
+        required_mode: 0o700
+      )
+      first_locks = []
+      retry_locks = []
+      begin
+        first_locks = lock_lab002_operator_bindings!([
+          {
+            option: "--output-root",
+            path: workflow_one,
+            handle: workflow_one_handle,
+            identity: workflow_one_identity,
+            descriptor: 4,
+            label: "LAB-002 first workflow lock regression",
+          },
+          {
+            option: "--prebuild-directory",
+            path: frozen_source,
+            handle: source_one_handle,
+            identity: source_identity,
+            descriptor: 5,
+            label: "LAB-002 source lock regression",
+          },
+        ])
+        controlled_writer_rejected = false
+        controlled_writer_acquired = false
+        begin
+          with_locked_private_directory(
+            frozen_source,
+            [frozen_source, *source_two_identity],
+            "LAB-002 candidate writer lock regression"
+          ) { controlled_writer_acquired = true }
+        rescue FastlaneCore::Interface::FastlaneError
+          controlled_writer_rejected = true
+        end
+        unless controlled_writer_rejected && !controlled_writer_acquired
+          UI.user_error!("LAB-002 operator and writer locks did not interoperate.")
+        end
+        competing_source_rejected = false
+        competing_bindings = [
+          {
+            option: "--output-root",
+            path: workflow_two,
+            handle: workflow_two_handle,
+            identity: workflow_two_identity,
+            descriptor: 4,
+            label: "LAB-002 second workflow lock regression",
+          },
+          {
+            option: "--prebuild-directory",
+            path: frozen_source,
+            handle: source_two_handle,
+            identity: source_two_identity,
+            descriptor: 5,
+            label: "LAB-002 competing source lock regression",
+          },
+        ]
+        begin
+          lock_lab002_operator_bindings!(competing_bindings)
+        rescue FastlaneCore::Interface::FastlaneError
+          competing_source_rejected = true
+        end
+        unless competing_source_rejected
+          UI.user_error!("Concurrent LAB-002 source bindings were not rejected.")
+        end
+        first_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) }
+        first_locks = []
+        retry_locks = lock_lab002_operator_bindings!(competing_bindings)
+      ensure
+        first_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+        retry_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+        [
+          workflow_one_handle,
+          workflow_two_handle,
+          source_one_handle,
+          source_two_handle,
+        ].each { |handle| handle.close unless handle.closed? }
+      end
+    end
     export_options = demolab_export_options("A" * 10)
     unless export_options == {
       method: "app-store",
@@ -7505,6 +8497,20 @@ platform :ios do
       UI.user_error!(
         "A non-reviewed LAB-002 helper product passed the allowlist."
       )
+    end
+    if parser_commit.length == 40
+      current_helper_workspace = nil
+      begin
+        current_helper, current_helper_workspace, current_helper_identity, =
+          build_lab002_private_tool(parser_commit)
+        verify_lab002_private_tool!(
+          current_helper,
+          current_helper_workspace,
+          current_helper_identity
+        )
+      ensure
+        FileUtils.rm_rf(current_helper_workspace) if current_helper_workspace
+      end
     end
     oracle_source_fixture = {
       "ipa_size" => 4096,
@@ -9112,6 +10118,23 @@ platform :ios do
         UI.user_error!("Fastlane Gym environment override was accepted.")
       end
 
+      generic_upload_yielded = false
+      verify_lab002_upload_gate!(
+        "unused-for-non-lab002-evidence",
+        {
+          "build" => {
+            "marketing_version" => "1.0",
+            "build_number" => "2",
+          },
+        },
+        xcode_toolchain: nil
+      ) do
+        generic_upload_yielded = true
+      end
+      unless generic_upload_yielded
+        UI.user_error!("The non-LAB-002 upload path skipped its upload block.")
+      end
+
       oversized_evidence = File.join(workspace, "oversized-evidence.json")
       File.write(oversized_evidence, "x" * (DEMO_LAB_MAX_PLIST_BYTES + 1))
       File.chmod(0o600, oversized_evidence)
@@ -10048,6 +11071,27 @@ platform :ios do
         UI.user_error!("Mismatched upload reconciliation was accepted.")
       end
 
+      retry_result_before_impossible_reconciliation =
+        File.binread(retry_result_path)
+      impossible_reconciliation_rejected = false
+      begin
+        reconcile_indeterminate_upload_result!(
+          retry_result_path,
+          complete_evidence,
+          expected_attempt_started_at: retry_attempt_started_at,
+          reconciled_at: "2000-01-01T00:00:00Z"
+        )
+      rescue FastlaneCore::Interface::FastlaneError
+        impossible_reconciliation_rejected = true
+      end
+      unless impossible_reconciliation_rejected &&
+             File.binread(retry_result_path) ==
+               retry_result_before_impossible_reconciliation
+        UI.user_error!(
+          "Impossible upload reconciliation changed the live result."
+        )
+      end
+
       reconciled_path, reconciled_record =
         reconcile_indeterminate_upload_result!(
           retry_result_path,
@@ -10569,11 +11613,29 @@ platform :ios do
       File.dirname(evidence_path),
       "demolab-upload-result.json"
     )
-    archive_path, = reconcile_indeterminate_upload_result!(
-      result_path,
-      evidence,
-      expected_attempt_started_at: expected_attempt_started_at
+    run_directory = File.dirname(evidence_path)
+    run_identity = private_directory_identity!(
+      run_directory,
+      "LAB-002 reconciliation run directory"
     )
+    archive_path = nil
+    with_locked_private_directory(
+      run_directory,
+      run_identity,
+      "LAB-002 reconciliation run directory"
+    ) do |run_handle|
+      archive_path, = reconcile_indeterminate_upload_result!(
+        result_path,
+        evidence,
+        expected_attempt_started_at: expected_attempt_started_at
+      )
+      verify_locked_directory!(
+        run_handle,
+        run_directory,
+        run_identity,
+        "LAB-002 reconciliation run directory"
+      )
+    end
     UI.success(
       "Archived the reconciled absent upload attempt: #{archive_path}"
     )
@@ -10666,75 +11728,76 @@ platform :ios do
         evidence_path,
         evidence,
         xcode_toolchain: xcode_toolchain
-      )
-      attempt = {
-        "schema_version" => 1,
-        "source_commit" => evidence.dig("source", "commit"),
-        "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
-        "attempt_started_at" => Time.now.utc.iso8601,
-        "destination" => "TestFlight internal preparation",
-        "external_distribution" => false,
-        "status" => "indeterminate",
-        "note" => DEMO_LAB_UPLOAD_INDETERMINATE_NOTE,
-      }
-      result_file = publish_new_private_json_record!(
-        result_path,
-        attempt,
-        "upload result"
-      )
-      attempt_recorded = true
+      ) do
+        attempt = {
+          "schema_version" => 1,
+          "source_commit" => evidence.dig("source", "commit"),
+          "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
+          "attempt_started_at" => Time.now.utc.iso8601,
+          "destination" => "TestFlight internal preparation",
+          "external_distribution" => false,
+          "status" => "indeterminate",
+          "note" => DEMO_LAB_UPLOAD_INDETERMINATE_NOTE,
+        }
+        result_file = publish_new_private_json_record!(
+          result_path,
+          attempt,
+          "upload result"
+        )
+        attempt_recorded = true
 
-      upload_demolab_with_altool!(
-        ipa_snapshot: upload_snapshot,
-        ipa_snapshot_path: upload_snapshot_path,
-        ipa_snapshot_identity: upload_snapshot_identity,
-        ipa_workspace_identity: upload_workspace_identity,
-        key_snapshot: key_snapshot,
-        archive_path: archive_path,
-        evidence: evidence,
-        altool: altool,
-        xcode_toolchain: xcode_toolchain,
-        key_id: key_id,
-        key_type: key_type,
-        team_issuer_id: team_issuer_id,
-        apple_id: apple_id,
-        app_identifier: app_identifier,
-        marketing_version: evidence.dig("build", "marketing_version"),
-        build_number: evidence.dig("build", "build_number")
-      )
-      verify_locked_ipa_snapshot!(
-        upload_snapshot,
-        upload_snapshot_path,
-        upload_snapshot_identity,
-        upload_workspace_identity
-      )
+        upload_demolab_with_altool!(
+          ipa_snapshot: upload_snapshot,
+          ipa_snapshot_path: upload_snapshot_path,
+          ipa_snapshot_identity: upload_snapshot_identity,
+          ipa_workspace_identity: upload_workspace_identity,
+          key_snapshot: key_snapshot,
+          archive_path: archive_path,
+          evidence: evidence,
+          altool: altool,
+          xcode_toolchain: xcode_toolchain,
+          key_id: key_id,
+          key_type: key_type,
+          team_issuer_id: team_issuer_id,
+          apple_id: apple_id,
+          app_identifier: app_identifier,
+          marketing_version: evidence.dig("build", "marketing_version"),
+          build_number: evidence.dig("build", "build_number")
+        )
+        verify_locked_ipa_snapshot!(
+          upload_snapshot,
+          upload_snapshot_path,
+          upload_snapshot_identity,
+          upload_workspace_identity
+        )
 
-      result = {
-        "schema_version" => 1,
-        "source_commit" => evidence.dig("source", "commit"),
-        "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
-        "attempt_started_at" => attempt["attempt_started_at"],
-        "uploaded_at" => Time.now.utc.iso8601,
-        "destination" => "TestFlight internal preparation",
-        "external_distribution" => false,
-        "status" => "accepted",
-        "note" =>
-          "Apple altool returned explicit success without product-errors for " \
-          "the evidence-bound upload; confirm TestFlight readiness in " \
-          "App Store Connect. This does not establish installed lineage, " \
-          "protection, or plaintext.",
-      }
-      accepted_result_file = replace_locked_private_json_record!(
-        result_path,
-        result_file,
-        result,
-        "upload result"
-      )
-      result_file.flock(File::LOCK_UN)
-      result_file.close
-      result_file = accepted_result_file
-      upload_accepted = true
-      UI.success("Recorded sanitized upload result: #{result_path}")
+        result = {
+          "schema_version" => 1,
+          "source_commit" => evidence.dig("source", "commit"),
+          "ipa_sha256" => evidence.dig("artifacts", "ipa", "sha256"),
+          "attempt_started_at" => attempt["attempt_started_at"],
+          "uploaded_at" => Time.now.utc.iso8601,
+          "destination" => "TestFlight internal preparation",
+          "external_distribution" => false,
+          "status" => "accepted",
+          "note" =>
+            "Apple altool returned explicit success without product-errors for " \
+            "the evidence-bound upload; confirm TestFlight readiness in " \
+            "App Store Connect. This does not establish installed lineage, " \
+            "protection, or plaintext.",
+        }
+        accepted_result_file = replace_locked_private_json_record!(
+          result_path,
+          result_file,
+          result,
+          "upload result"
+        )
+        result_file.flock(File::LOCK_UN)
+        result_file.close
+        result_file = accepted_result_file
+        upload_accepted = true
+        UI.success("Recorded sanitized upload result: #{result_path}")
+      end
     ensure
       result_file&.close
       key_content&.clear
