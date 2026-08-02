@@ -279,6 +279,7 @@ fn main() -> ExitCode {
             "create-oracle"
                 | "verify-upload-gate"
                 | "operator-start-enrollment"
+                | "operator-close-enrollment"
                 | "operator-start-run"
                 | "operator-close-run"
                 | "operator-verify"
@@ -298,6 +299,7 @@ fn main() -> ExitCode {
         operation,
         Some(
             "operator-start-enrollment"
+                | "operator-close-enrollment"
                 | "operator-start-run"
                 | "operator-close-run"
                 | "operator-verify"
@@ -2896,6 +2898,7 @@ fn read_reconciled_upload_records(
             || record.status != "reconciled_absent"
             || record.note != RECONCILED_UPLOAD_NOTE
             || !is_bounded_utc_timestamp(&record.reconciled_at)
+            || record.attempt_started_at.as_str() > record.reconciled_at.as_str()
             || record.reconciliation != "operator_confirmed_absent_in_app_store_connect"
         {
             return Err("reconciled upload audit record does not match this upload tuple".into());
@@ -4022,7 +4025,7 @@ mod tests {
 
         let reconciled_path =
             run_path.join("demolab-upload-result-reconciled-0123456789abcdef01234567.json");
-        let reconciled = ReconciledUploadRecord {
+        let mut reconciled = ReconciledUploadRecord {
             schema_version: 1,
             source_commit: record.source_commit.clone(),
             ipa_sha256: ipa_sha256.clone(),
@@ -4046,6 +4049,18 @@ mod tests {
             gate_request(),
         )
         .unwrap();
+
+        reconciled.reconciled_at = "2026-07-31T23:59:59Z".into();
+        fs::write(&reconciled_path, serde_json::to_vec(&reconciled).unwrap()).unwrap();
+        assert!(
+            verify_upload_gate(
+                validate_private_output_root(&prebuild_path).unwrap(),
+                validate_private_output_root(&run_path).unwrap(),
+                gate_request(),
+            )
+            .is_err()
+        );
+        reconciled.reconciled_at = "2026-08-01T00:05:00Z".into();
 
         let mut wrong_reconciled = reconciled;
         wrong_reconciled.ipa_sha256 = "99".repeat(32);

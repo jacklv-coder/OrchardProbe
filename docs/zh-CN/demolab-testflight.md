@@ -258,7 +258,9 @@ Helper 会紧邻原子 No-replace Rename 的前后分别核对只含 Staging/Fin
 它会保留全新 15 分钟确认/信封。通过 TestFlight Provision
 已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
 关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
-显示的全部 64 位小写十六进制 Fingerprint。开始 Run 自动选择唯一合法的下一 Ordinal，
+显示的全部 64 位小写十六进制 Fingerprint。关闭或发布 Enrollment 前，Helper 还会同时
+持有并完整复核原始 Prebuild/Candidate 目录，要求其 Source Tuple 与实验中保留的字节一致。
+开始 Run 自动选择唯一合法的下一 Ordinal，
 完整 Intent 留在 Mac，只导入签名 Challenge。开始 Run 2 前会重新验证完整 Run-1 Chain；
 只有当前 Host 时间同时严格晚于 Run 1 已签名的 15 分钟 `not_after`，以及保留的 Run 1
 Host 完成时间加完整 120 秒设备时钟偏差，才允许发布；否则明确拒绝。操作员应在两个边界
@@ -284,10 +286,23 @@ Oracle Role/Slice Tuple。只有与保留 Oracle 结构完全相等才可接受�
 任一 No-Go，而不是普通成功。
 
 每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
-和精确阶段清单；已有或不完整阶段会失败关闭，不能覆盖或静默重试。授权 Seed 只留在
-冻结 Prebuild，设备 Enrollment 私钥永不离开设备。
-创建 Enrollment 时，Fastlane 会在完整 Helper 调用期间对绑定输出根持有非阻塞排他锁；
-后续每个操作则锁定绑定实验根。针对同一工作流的并发 Lane 会在读取或发布状态前失败。
+和精确阶段清单；每个 Enrollment/Run 的 Control/Result 阶段都会在紧邻 Rename 前后复核
+该清单，如果边界处出现意外同级项，只回滚自身发布并失败关闭。
+同一个边界 Guard 还会在每次 Rename 前后重新打开完整冻结 Source Tuple；等待发布确认期间的
+变化不能提交基于过期 Source 的 Control 或 Result。每个边界 Guard 还会在 Source 复核的
+前后各检查一次阶段清单，复核窗口不能接纳未计入的同级项。已有或不完整阶段不能覆盖或
+静默重试。
+保留的上传对账记录还必须满足
+`attempt_started_at <= reconciled_at <=` 当前 Active 上传尝试时间；不可能的审计时间顺序会
+失败关闭。在 Active Retry 尚未存在时，上传门禁与对账 Lane 会强制执行可独立判断的时间下界；
+Operator Source Loader 还会强制执行 Retry 时间上界。授权 Seed 只留在冻结 Prebuild，设备
+Enrollment 私钥永不离开设备。
+Fastlane 会在完整 Helper 调用期间，对该操作绑定的每个目录持有非阻塞排他锁：输出根或
+实验根，以及该操作使用的冻结 Prebuild 与 Candidate 目录。锁按确定性的 Device/Inode
+顺序获取；部分获取失败时会释放已经持有的锁。与同一工作流或任一冻结 Source 冲突的
+受控并发 Lane，会在读取或发布状态前失败。上传 Lane 会从最后一次 Helper 门禁开始持有
+同一 Candidate 目录锁，直到不确定记录创建、完整 Apple 请求和终态替换全部结束；对账
+Lane 则会持锁直到原子替换与归档都结束。
 
 所有 Lane 都要求
 `DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI`，拒绝 CI、
@@ -348,7 +363,8 @@ Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或
   `DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT`，再设置
   `DEMO_LAB_CONFIRM_RETRY_AFTER_RECONCILIATION` 为
   `I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT` 并运行
-  `fastlane ios demolab_reconcile_indeterminate_upload`。该 Lane 会锁住并复核旧记录，
+  `fastlane ios demolab_reconcile_indeterminate_upload`。该 Lane 会锁住 Candidate 目录和
+  旧记录并完成复核，
   通过已 fsync 的原子替换将其持久化为 `status: reconciled_absent` 后排他归档；
   归档成功后才允许新上传。
   恢复 Lane 只额外需要

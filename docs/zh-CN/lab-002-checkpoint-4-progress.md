@@ -333,3 +333,48 @@ Allowlist；两轮测量门禁的无签名 Simulator Fixture 均通过。随后�
 接纳该精确 Helper，Fixture 也通过。Format、锁定依赖且拒绝警告的 Clippy、全部 284 项
 Workspace 测试、Ruby 语法、Diff Hygiene 与明确的无测量 Hook 检查也均通过。Push 与合并
 现在只剩一次最终的完整 Diff 干净 CR；真机保持不操作。
+
+该次完整 Diff CR 又发现三个 P2 生命周期边界：冻结 Prebuild/Candidate Tuple 发生变化后，
+Enrollment Close 仍可能发布闭合结果；保留的上传对账记录没有强制因果时间顺序；
+Enrollment Result 及 Run Control/Result 发布使用通用 Publisher，Rename 边界没有阶段级精确
+清单保护。修复后 Enrollment Close 会接收并持有 Prebuild/Candidate Descriptor，在闭合和
+发布前完整复核 Source；对账时间必须满足
+`attempt_started_at <= reconciled_at <=` 当前 Active 上传尝试时间；所有 Operator 阶段统一
+通过感知既有阶段的 Rename 前后清单 Guard。回归覆盖两个方向的不可能时间顺序，以及
+Staging 创建后、Rename 前由同一用户注入意外同级项的情形。由于 Rust Helper 再次变化，
+Push 与合并前仍需两次新的独立可复现测量、替换唯一 Allowlist Tuple、正常与完整本地门禁，
+以及一轮新的最终干净 CR。真机保持不操作。
+
+后续未提交 CR 又发现一个剩余 P2 竞态：Enrollment Close 的最后一次 Source 检查仍早于
+Publisher 等待确认的窗口。现在每个 Operator Control/Result 发布都会在 Rename 边界 Guard
+的前后内部重新检查 Source；等待期间发生变化会回滚发布。可复现测量与最终门禁要求保持
+不变；真机继续不操作。
+
+第二轮后续未提交 CR 发现，Operator Loader 已强制执行对账因果时间顺序，但更早的上传门禁
+和 Fastlane 记录校验仍会接受 `reconciled_at < attempt_started_at`。两处现在都会强制执行
+可独立判断的时间下界；Operator Source Loader 还会针对后续 Active Retry 强制执行时间上界。
+Rust 与 Fastlane 回归覆盖倒置时间线。可复现测量与最终门禁要求保持不变；真机继续不操作。
+
+下一轮未提交 CR 又发现两个 P2 错误路径缺陷：Host 时钟回拨时，对账可能先发布终态记录，
+然后才拒绝其时间顺序；关闭 Enrollment 也只在三个目录全部打开后才统一登记 Handle。现在会在
+原子替换之前先验证待发布的终态记录，且回归证明拒绝后 Live Indeterminate 记录保持逐字节
+不变；Enrollment Close 会在每次成功打开后立即登记 Handle，确保任意早期失败都关闭此前的
+Descriptor。可复现测量与最终门禁要求保持不变；真机继续不操作。
+
+随后的未提交 CR 又发现一个 P2 顺序竞态：同一用户可在 Source Guard 重新打开冻结 Tuple
+期间插入意外阶段同级项，而该窗口位于边界唯一一次清单扫描之后。现在每个边界（包括
+Enrollment Start）都会用两次清单检查夹住 Source 复核；回归从 Source Guard 内注入同级项，
+确认发布回滚并删除自身 Staging。可复现测量与最终门禁仍然必需；真机继续不操作。
+
+下一轮未提交 CR 发现一个 P2 Source 发布边界缺口：只在验证点重新打开冻结 Source，仍可能
+漏掉第二个受控 Lane 在首个 Helper 调用期间进行的瞬时修改并恢复。现在 Fastlane 会按确定性
+Device/Inode 顺序，为每个绑定目录获取非阻塞排他锁，并在完整 Helper 生命周期内持有全部锁。
+共享任一冻结 Source 的冲突工作流会被拒绝；回归还证明多锁获取中途失败时，会先释放此前已
+获取的锁，然后才允许重试。可复现测量与最终门禁仍然必需；真机继续不操作。
+
+后续 CR 发现一个 P2 互操作缺口：Operator 锁可以排除其他 Operator 调用，但上传 Lane 在
+最后门禁结束后、创建或替换上传结果记录前就释放了 Candidate 锁；对账也只持有结果文件锁。
+现在最后一次上传门禁会在完整 Apple 请求和终态结果持久发布期间，持续持有 Output、Prebuild
+与 Candidate 锁；对账会在原子替换和归档期间持续持有同一个 Candidate 目录锁。新增回归证明
+既有受控 Writer 锁与新的 Operator Source 锁会相互排斥。可复现测量与最终门禁仍然必需；
+真机继续不操作。

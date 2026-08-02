@@ -276,7 +276,10 @@ only the fixed installation envelope is imported afterward.
 
 `close_enrollment` accepts one bounded signed Receipt and the complete 64
 lowercase-hex fingerprint after the operator compares the Mac and iPhone
-displays. `start_run` automatically selects only the next legal ordinal,
+displays. Before it closes or publishes enrollment, it also holds and fully
+revalidates the original prebuild/candidate directories and requires their
+source tuple to match the bytes retained in the experiment. `start_run`
+automatically selects only the next legal ordinal,
 retains the full Intent on the Mac, and exposes only the signed Challenge for
 import. For run 2 it first re-verifies the complete run-1 chain and refuses to
 publish until the current Host time is strictly later than both run 1's signed
@@ -320,13 +323,31 @@ rather than as a generic success.
 
 Every publishing lane uses a random owner-only staging directory, fixed
 filenames, exclusive rename, directory fsync, and exact phase inventory. It
-refuses an existing/incomplete phase rather than overwriting or silently
-retrying it. The authorization seed remains only in the frozen prebuild; the
-device enrollment private key never leaves the device.
-Fastlane also holds a non-blocking exclusive lock on the bound output root for
-enrollment creation, or on the bound experiment root for every later operation,
-for the complete Helper invocation. A competing lane against the same workflow
-fails before reading or publishing its state.
+rechecks that inventory at the immediate pre-rename and post-rename publication
+boundaries, including every enrollment/run result and control phase, and rolls
+back its own publication if an unexpected sibling appears. The same boundary
+guard reopens the complete frozen source tuple before and after each rename;
+changing it while publication waits cannot commit a stale control or result.
+Each boundary guard checks the phase inventory both before and after that
+source validation, so the validation window cannot admit an unaccounted sibling.
+It refuses an existing/incomplete phase rather than overwriting or silently
+retrying it.
+Retained upload-reconciliation records must also satisfy
+`attempt_started_at <= reconciled_at <=` the active upload attempt time; an
+impossible audit chronology fails closed. The upload gate and reconciliation
+lane enforce the independently knowable lower bound before an active retry
+exists; the operator source loader additionally enforces the retry-time upper
+bound. The authorization seed remains only in the frozen prebuild; the device
+enrollment private key never leaves the device.
+Fastlane also holds non-blocking exclusive locks on every bound directory for
+the complete Helper invocation: the output or experiment root plus the frozen
+prebuild and candidate directories used by that operation. It acquires them in
+deterministic device/inode order and releases any partial acquisition on
+failure. A competing controlled lane against the same workflow or either
+frozen source fails before reading or publishing state. The upload lane holds
+that same candidate-directory lock from its final Helper gate through creation
+of the indeterminate record, the complete Apple request, and terminal result
+replacement. Reconciliation holds it through atomic replacement and archival.
 
 The operator lanes use these additional private environment values:
 
@@ -492,7 +513,10 @@ the helper accepts only the fixed lowercase name form and revalidates each
 owner-only record's schema, source commit, IPA SHA-256, timestamps, destination,
 and `reconciled_absent` decision. Every other additional entry is rejected. The
 same gate is repeated after the read-only IPA snapshot is ready and before an
-upload-attempt record or Apple network action is created.
+upload-attempt record or Apple network action is created. This final gate keeps
+the frozen run-directory lock until the upload result is durably accepted or
+retained as indeterminate, so an operator workflow cannot consume a changing
+candidate.
 After the API key descriptor and locked named IPA snapshot are ready, the lane
 repeats the complete archive-binary measurement immediately before it
 revalidates the selected Xcode and launches `altool`; a mismatch aborts before
@@ -643,7 +667,7 @@ I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT
 bundle _4.0.16_ exec fastlane ios demolab_reconcile_indeterminate_upload
 ```
 
-The lane locks the result against an upload that is still running, validates
+The lane locks both the candidate directory and result against an upload that is still running, validates
 that its commit, IPA hash, and attempt timestamp match the current evidence,
 durably changes it through a fsynced atomic replacement to
 `status: reconciled_absent`, and publishes it under a new

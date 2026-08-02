@@ -34,8 +34,8 @@ use super::{
     ORACLE_NAME, PREBUILD_NAME, PREBUILD_SCHEMA, PRIVATE_SEED_NAME, PrivateOutputRoot,
     RECONCILED_UPLOAD_NOTE, ReconciledUploadRecord, canonical_json, is_bounded_utc_timestamp,
     is_lower_hex, lower_hex, open_directory_entry, parse_identity_component,
-    publish_prebuild_directory, publish_prebuild_directory_guarded, read_private_artifact,
-    read_private_file_with_mode, read_request, sha256_hex, validate_bound_private_output_root,
+    publish_prebuild_directory_guarded, read_private_artifact, read_private_file_with_mode,
+    read_request, sha256_hex, validate_bound_private_output_root,
     verify_private_artifact_inventory,
 };
 
@@ -1037,6 +1037,8 @@ fn read_candidate_reconciled_upload_records(
             || record.status != "reconciled_absent"
             || record.note != RECONCILED_UPLOAD_NOTE
             || !is_bounded_utc_timestamp(&record.reconciled_at)
+            || record.attempt_started_at.as_str() > record.reconciled_at.as_str()
+            || record.reconciled_at.as_str() > upload.attempt_started_at.as_str()
             || record.reconciliation != "operator_confirmed_absent_in_app_store_connect"
         {
             return Err(
@@ -1576,6 +1578,35 @@ fn exact_experiment_inventory(
     exact_inventory(&root.directory, &expected_refs)
 }
 
+fn publish_operator_phase(
+    root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    existing_phases: &[String],
+    source_guard: &mut impl FnMut() -> Result<(), String>,
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    let mut publication_guard = |publication_name: &str| {
+        let mut expected_phases = existing_phases.to_vec();
+        expected_phases.push(publication_name.to_owned());
+        let verify_inventory = || {
+            exact_experiment_inventory(root, &expected_phases).map_err(|_| {
+                format!("operator phase inventory changed before publication of {final_name}")
+            })
+        };
+        verify_inventory()?;
+        source_guard()?;
+        verify_inventory()
+    };
+    publish_prebuild_directory_guarded(
+        root,
+        final_name,
+        files,
+        arm_publication,
+        &mut publication_guard,
+    )
+}
+
 fn verified_enrollment(
     root: &PrivateOutputRoot,
 ) -> Result<
@@ -1737,7 +1768,16 @@ fn start_enrollment(
             .map_err(|error| error.to_string())?;
     let mut publication_guard = |only_name: &str| {
         exact_inventory(&output.directory, &[only_name])
-            .map_err(|_| "operator enrollment output root changed before publication".into())
+            .map_err(|_| "operator enrollment output root changed before publication".to_owned())?;
+        let current_source = load_source_bundle(&prebuild, &candidate)?;
+        require_retained_source_match(
+            &current_source,
+            &source.manifest,
+            &source.oracle,
+            &source.evidence,
+        )?;
+        exact_inventory(&output.directory, &[only_name])
+            .map_err(|_| "operator enrollment output root changed before publication".to_owned())
     };
     publish_prebuild_directory_guarded(
         &output,
@@ -1767,13 +1807,22 @@ fn start_enrollment(
 fn close_enrollment_phase(
     arguments: &[OsString],
     experiment_descriptor: File,
+    prebuild_descriptor: File,
+    candidate_descriptor: File,
     mut arm_publication: impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<OperatorOutput, String> {
-    if arguments.len() != 7 {
-        return Err("operator-close-enrollment requires one bound experiment directory".into());
+    if arguments.len() != 19 {
+        return Err(
+            "operator-close-enrollment requires bound experiment, prebuild, and candidate directories"
+                .into(),
+        );
     }
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
+    let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
+    let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
     let root = held_root(path, identity, experiment_descriptor)?;
+    let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
+    let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     exact_inventory(
         &root.directory,
         &[
@@ -1784,6 +1833,7 @@ fn close_enrollment_phase(
             INSTALL_ENVELOPE_NAME,
         ],
     )?;
+    let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     let (fingerprint, receipt) = read_fingerprint_and_receipt()?;
     let manifest = read_root_artifact(&root, SOURCE_MANIFEST_NAME)?;
     let acknowledgement = read_root_artifact(&root, INSTALL_ACK_NAME)?;
@@ -1797,7 +1847,23 @@ fn close_enrollment_phase(
         now()?,
     )
     .map_err(|error| format!("could not close enrollment: {error}"))?;
-    publish_prebuild_directory(
+    let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    require_retained_source_match(
+        &final_source,
+        &source.manifest,
+        &source.oracle,
+        &source.evidence,
+    )?;
+    let mut source_guard = || {
+        let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+        require_retained_source_match(
+            &current_source,
+            &source.manifest,
+            &source.oracle,
+            &source.evidence,
+        )
+    };
+    publish_operator_phase(
         &root,
         ENROLLMENT_RESULT_DIRECTORY,
         &[
@@ -1805,6 +1871,8 @@ fn close_enrollment_phase(
             (SELECTION_NAME, &closure.device_selection_confirmation),
             (ENROLLMENT_BINDING_NAME, &closure.device_enrollment_binding),
         ],
+        &[],
+        &mut source_guard,
         &mut arm_publication,
     )?;
     let binding = DeviceEnrollmentBinding::from_canonical_bytes(&closure.device_enrollment_binding)
@@ -1910,7 +1978,16 @@ fn start_run(
     )
     .map_err(|error| format!("could not create run control: {error}"))?;
     let phase = run_directory_name(ordinal, "control");
-    publish_prebuild_directory(
+    let mut source_guard = || {
+        let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+        require_retained_source_match(
+            &current_source,
+            &source.manifest,
+            &source.oracle,
+            &source.evidence,
+        )
+    };
+    publish_operator_phase(
         &root,
         &phase,
         &[
@@ -1918,6 +1995,8 @@ fn start_run(
             (RUN_ENVELOPE_NAME, &control.authorization_envelope),
             (RUN_INTENT_NAME, &control.collection_intent),
         ],
+        &phases,
+        &mut source_guard,
         &mut arm_publication,
     )?;
     Ok(OperatorOutput {
@@ -2029,13 +2108,24 @@ fn close_run_phase(
         None
     };
     let result_name = run_directory_name(ordinal, "result");
-    publish_prebuild_directory(
+    let mut source_guard = || {
+        let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+        require_retained_source_match(
+            &current_source,
+            &source.manifest,
+            &source.oracle,
+            &source.evidence,
+        )
+    };
+    publish_operator_phase(
         &root,
         &result_name,
         &[
             (RUN_EXPORT_NAME, &export),
             (RUN_BINDING_NAME, &closure.collection_binding),
         ],
+        &phases,
+        &mut source_guard,
         &mut arm_publication,
     )?;
     let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
@@ -2156,9 +2246,13 @@ pub(super) fn execute(
             candidate_descriptor.ok_or("held candidate directory is missing")?,
             arm_publication,
         ),
-        Some("operator-close-enrollment") => {
-            close_enrollment_phase(arguments, output_descriptor, arm_publication)
-        }
+        Some("operator-close-enrollment") => close_enrollment_phase(
+            arguments,
+            output_descriptor,
+            secondary_descriptor.ok_or("held prebuild directory is missing")?,
+            candidate_descriptor.ok_or("held candidate directory is missing")?,
+            arm_publication,
+        ),
         Some("operator-start-run") => start_run(
             arguments,
             output_descriptor,
@@ -2185,6 +2279,7 @@ pub(super) fn execute(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
     use std::fs::{self, File};
     use std::io::{Cursor, Write};
 
@@ -2200,10 +2295,12 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::{
-        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, MANIFEST_NAME,
-        PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle,
-        UPLOAD_RESULT_NAME, UploadResult, candidate_inventory, derive_prebuild_bindings,
-        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, INSTALL_ACK_NAME,
+        INSTALL_ENVELOPE_NAME, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME,
+        RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME, SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME,
+        SourceBundle, UPLOAD_RESULT_NAME, UploadResult, candidate_inventory,
+        derive_prebuild_bindings, exact_inventory, has_exact_derived_prebuild_bindings,
+        next_run_ordinal, open_run_ordinal, publish_operator_phase,
         read_candidate_reconciled_upload_records, require_empty_output_root,
         require_retained_source_match, require_unchanged_source_artifact,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
@@ -2438,7 +2535,7 @@ mod tests {
         }
         let reconciled_name = "demolab-upload-result-reconciled-0123456789abcdef01234567.json";
         let reconciled_path = temporary.path().join(reconciled_name);
-        let upload = UploadResult {
+        let mut upload = UploadResult {
             schema_version: 1,
             source_commit: "11".repeat(20),
             ipa_sha256: "22".repeat(32),
@@ -2473,11 +2570,31 @@ mod tests {
         assert_eq!(names, [reconciled_name]);
         assert!(read_candidate_reconciled_upload_records(&directory, &names, &upload).is_ok());
 
-        let mut wrong_tuple = upload;
-        wrong_tuple.ipa_sha256 = "33".repeat(32);
-        assert!(
-            read_candidate_reconciled_upload_records(&directory, &names, &wrong_tuple).is_err()
-        );
+        let mut impossible_chronology = reconciled;
+        impossible_chronology.reconciled_at = "2026-08-01T00:07:00Z".into();
+        fs::write(
+            &reconciled_path,
+            serde_json::to_vec(&impossible_chronology).unwrap(),
+        )
+        .unwrap();
+        assert!(read_candidate_reconciled_upload_records(&directory, &names, &upload).is_err());
+
+        impossible_chronology.reconciled_at = "2026-07-31T23:59:59Z".into();
+        fs::write(
+            &reconciled_path,
+            serde_json::to_vec(&impossible_chronology).unwrap(),
+        )
+        .unwrap();
+        assert!(read_candidate_reconciled_upload_records(&directory, &names, &upload).is_err());
+
+        impossible_chronology.reconciled_at = "2026-08-01T00:05:00Z".into();
+        fs::write(
+            &reconciled_path,
+            serde_json::to_vec(&impossible_chronology).unwrap(),
+        )
+        .unwrap();
+        upload.ipa_sha256 = "33".repeat(32);
+        assert!(read_candidate_reconciled_upload_records(&directory, &names, &upload).is_err());
 
         File::create(
             temporary
@@ -2502,6 +2619,152 @@ mod tests {
             require_empty_output_root(&root),
             Err("operator enrollment output root must be empty".into())
         );
+    }
+
+    #[test]
+    fn operator_phase_publication_rejects_a_boundary_inventory_change() {
+        let temporary = tempdir().unwrap();
+        fs::set_permissions(
+            temporary.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        for name in [
+            SOURCE_MANIFEST_NAME,
+            SOURCE_ORACLE_NAME,
+            SOURCE_EVIDENCE_NAME,
+            INSTALL_ACK_NAME,
+            INSTALL_ENVELOPE_NAME,
+        ] {
+            File::create(temporary.path().join(name)).unwrap();
+        }
+        let root = super::super::PrivateOutputRoot {
+            canonical_path: temporary.path().canonicalize().unwrap(),
+            directory: File::open(temporary.path()).unwrap(),
+        };
+        let unexpected = temporary.path().join("unexpected.json");
+        let error = publish_operator_phase(
+            &root,
+            "enrollment-result",
+            &[("private.bin", b"private")],
+            &[],
+            &mut || Ok(()),
+            &mut |_, _| {
+                File::create(&unexpected).map_err(|error| error.to_string())?;
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("operator phase inventory changed"));
+        assert!(unexpected.exists());
+        assert!(!temporary.path().join("enrollment-result").exists());
+        assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lab002-prebuild-")
+        }));
+    }
+
+    #[test]
+    fn operator_phase_publication_revalidates_source_after_arming() {
+        let temporary = tempdir().unwrap();
+        fs::set_permissions(
+            temporary.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        for name in [
+            SOURCE_MANIFEST_NAME,
+            SOURCE_ORACLE_NAME,
+            SOURCE_EVIDENCE_NAME,
+            INSTALL_ACK_NAME,
+            INSTALL_ENVELOPE_NAME,
+        ] {
+            File::create(temporary.path().join(name)).unwrap();
+        }
+        let root = super::super::PrivateOutputRoot {
+            canonical_path: temporary.path().canonicalize().unwrap(),
+            directory: File::open(temporary.path()).unwrap(),
+        };
+        let source_changed = Cell::new(false);
+        let error = publish_operator_phase(
+            &root,
+            "enrollment-result",
+            &[("private.bin", b"private")],
+            &[],
+            &mut || {
+                if source_changed.get() {
+                    Err("source tuple changed at publication boundary".into())
+                } else {
+                    Ok(())
+                }
+            },
+            &mut |_, _| {
+                source_changed.set(true);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("source tuple changed"));
+        assert!(!temporary.path().join("enrollment-result").exists());
+        assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lab002-prebuild-")
+        }));
+    }
+
+    #[test]
+    fn operator_phase_publication_rechecks_inventory_after_source_validation() {
+        let temporary = tempdir().unwrap();
+        fs::set_permissions(
+            temporary.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        for name in [
+            SOURCE_MANIFEST_NAME,
+            SOURCE_ORACLE_NAME,
+            SOURCE_EVIDENCE_NAME,
+            INSTALL_ACK_NAME,
+            INSTALL_ENVELOPE_NAME,
+        ] {
+            File::create(temporary.path().join(name)).unwrap();
+        }
+        let root = super::super::PrivateOutputRoot {
+            canonical_path: temporary.path().canonicalize().unwrap(),
+            directory: File::open(temporary.path()).unwrap(),
+        };
+        let unexpected = temporary.path().join("unexpected-during-source-check.json");
+        let injected = Cell::new(false);
+        let error = publish_operator_phase(
+            &root,
+            "enrollment-result",
+            &[("private.bin", b"private")],
+            &[],
+            &mut || {
+                if !injected.replace(true) {
+                    File::create(&unexpected).map_err(|error| error.to_string())?;
+                }
+                Ok(())
+            },
+            &mut |_, _| Ok(()),
+        )
+        .unwrap_err();
+        assert!(error.contains("operator phase inventory changed"));
+        assert!(unexpected.exists());
+        assert!(!temporary.path().join("enrollment-result").exists());
+        assert!(fs::read_dir(temporary.path()).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lab002-prebuild-")
+        }));
     }
 
     #[test]

@@ -526,3 +526,73 @@ passed the fixture. Formatting, locked Clippy with warnings denied, all 284
 Workspace tests, Ruby syntax, diff hygiene, and the explicit
 no-measurement-hook check also pass. Push and merge now require one final clean
 complete-diff CR; the phone remains untouched.
+
+That complete-diff CR found three further P2 lifecycle boundaries. Enrollment
+closure could publish a closed result after the frozen prebuild/candidate tuple
+changed; retained reconciliation records did not enforce their causal time
+order; and the enrollment-result plus run control/result publications used the
+generic publisher without an exact inventory guard at the rename boundary.
+The remediation passes held prebuild/candidate descriptors into enrollment
+closure and fully revalidates the source before closure and publication,
+requires `attempt_started_at <= reconciled_at <=` the active upload attempt,
+and routes every operator phase through a phase-aware pre/post-rename inventory
+guard. Regressions cover both impossible chronology directions and a same-user
+unexpected sibling injected after staging but before rename. Because the Rust
+Helper changed again, two fresh independent reproducibility measurements, the
+replacement sole allowlist tuple, the normal and complete local gates, and a
+new clean final CR remain required before push and merge. The phone remains
+untouched.
+
+The follow-up uncommitted CR found one remaining P2 race: enrollment closure's
+last source check still preceded the publisher's acknowledgement wait. The
+source check now runs inside both sides of the rename-boundary guard for every
+operator control/result publication, so a source change during that wait rolls
+back the publication. The same measurement and final-gate requirements remain;
+the phone remains untouched.
+
+A second follow-up uncommitted CR found that the operator loader enforced the
+reconciliation chronology but the earlier upload gate and Fastlane record
+validator accepted `reconciled_at < attempt_started_at`. Both now enforce that
+independently knowable lower bound, while the operator loader additionally
+enforces the upper bound against the later active retry. Rust and Fastlane
+regressions cover the reversed chronology. The same reproducibility and final
+gate requirements remain; the phone remains untouched.
+
+The next uncommitted CR found two P2 failure-path defects. A backward host
+clock could cause reconciliation to publish a terminal record before rejecting
+its chronology, and enrollment closure registered its three directory handles
+only after all opens succeeded. Reconciliation now validates the prospective
+terminal record before atomic replacement and a regression proves the live
+indeterminate record remains byte-identical on rejection. Enrollment closure
+registers each handle immediately so every early failure closes all prior
+descriptors. The measurement and final-gate requirements remain; the phone
+remains untouched.
+
+The following uncommitted CR found one P2 ordering race: a same-user writer
+could add an unexpected phase sibling while the source guard was reopening the
+frozen tuple, after the boundary's only inventory scan. Each boundary now
+brackets source validation with inventory checks, including enrollment start,
+and a regression injects the sibling from inside the source guard. Publication
+rolls back and removes its staging directory. Reproducibility and final gates
+remain required; the phone remains untouched.
+
+The next uncommitted CR found one P2 source-publication boundary gap. Reopening
+the frozen source only at validation points could miss a transient change and
+restore by a second controlled lane while the first Helper invocation remained
+active. Fastlane now acquires non-blocking exclusive locks for every bound
+directory, in deterministic device/inode order, and retains all of them for the
+complete Helper lifetime. A competing workflow that shares either frozen source
+is rejected, and a regression also proves that a failed multi-lock acquisition
+releases its earlier locks before retry. Reproducibility and final gates remain
+required; the phone remains untouched.
+
+The follow-up CR found one P2 interoperability gap: the operator locks excluded
+other operator invocations, but the upload lane released its candidate lock
+after the final gate and before creating or replacing the upload-result record;
+reconciliation likewise held only the result-file lock. The final upload gate
+now retains its output, prebuild, and candidate locks through the complete Apple
+request and durable terminal result publication. Reconciliation retains the
+same candidate-directory lock through atomic replacement and archival. A
+regression proves the existing controlled-writer lock and the new operator
+source lock exclude each other. Reproducibility and final gates remain required;
+the phone remains untouched.
