@@ -6,7 +6,10 @@
 
 激活 PR：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-当前分支状态：**检查点 4 active；4A 完成；PR #74 正在执行 4B 最终评审与合并门禁**
+Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
+
+当前分支状态：**检查点 4 active；4A 与 4B 已完成；4C 是下一步，任何真机操作前仍须
+紧邻地记录一份新的 RFC-0001 安装确认**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -36,9 +39,9 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 
 | 顺序 | 步骤 | 状态 | 完成门禁 |
 |---:|---|---|---|
-| 4A | 激活并关闭提前上传/对账治理偏差 | `激活 PR 进入 main 时完成` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
-| 4B | 闭合 Host 操作流程 | `实现 PR 进入 main 时完成` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前必须通过无设备测试、Codex CR、CI、PR 与合并 |
-| 4C | 精确安装与 Enrollment | `blocked on 4B` | 记录全新安装确认并签署一次性信封；在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
+| 4A | 激活并关闭提前上传/对账治理偏差 | `完成 — PR #73` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
+| 4B | 闭合 Host 操作流程 | `完成 — PR #74` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前要求的无设备测试、Codex CR、CI、PR 与合并均已通过 |
+| 4C | 精确安装与 Enrollment | `下一步 — 需要新的确认` | 记录全新安装确认并签署一次性信封；在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
 | 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
 | 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
 | 4F | 检查点关闭 | `blocked on 4E` | 以冻结 Manifest、IPA 证据和外部 Oracle 验证完整 Enrollment 加两轮链；发布脱敏 Go/No-Go，不能通过重试掩盖失败或不完整运行 |
@@ -515,3 +518,11 @@ Workspace Clippy、全部 294 项 Workspace 测试、Ruby 语法、Diff Hygiene 
 是评审沙箱在进入 CLI 测试断言前禁止创建 Unix Socket；上述正常本地门禁中同一测试及全部
 294 项 Workspace 测试均通过。剩余顺序现在是 SSH Push、关闭远端评审会话与 CI、重新执行
 合并前 Codex CR，然后合并。真机继续不操作。
+
+随后 PR #74 的三项远端 CI 全部通过，两个评审线程均已关闭，并以
+`4c021cb1f6a01f26f904ce90769c88fbaf54a1f0` Squash Merge 进入 `main`。最终合并前
+CR 曾提出把上传前与安装后 SuperBlob 摘要强制相等；单独的只读裁决认定该建议不成立：Apple
+会重签名 TestFlight 工件，冻结设计因此有意绑定安装后的 Target Identity、UUID、Slice/区间
+元组、签名状态和两轮安装后摘要稳定性。加入所建议的相等检查反而会拒绝合法首方 TestFlight
+安装。因此 4B 无需 Production 改动即可完成。期间没有发生安装、Enrollment 或观察；4C
+仍必须等紧邻操作前的新 RFC-0001 确认及一次性安装信封。

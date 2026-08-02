@@ -6,8 +6,11 @@ Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
 Activation PR: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-Current branch status: **checkpoint 4 active; 4A complete; PR #74 is in final
-4B review and merge gates**
+Host workflow PR: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
+
+Current branch status: **checkpoint 4 active; 4A and 4B complete; 4C is next
+and requires a fresh RFC-0001 installation acknowledgement before any device
+action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -48,9 +51,9 @@ start until the matching signed one-shot envelope exists.
 
 | Order | Step | Status | Completion gate |
 |---:|---|---|---|
-| 4A | Activation and closure of the early upload/reconciliation deviation | `complete when the activation PR is on main` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
-| 4B | Closed Host operator workflow | `complete when the implementation PR is on main` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge must pass before installation |
-| 4C | Exact installation and enrollment | `blocked on 4B` | Record the fresh installation acknowledgement and sign its one-shot envelope; independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
+| 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
+| 4C | Exact installation and enrollment | `next — fresh acknowledgement required` | Record the fresh installation acknowledgement and sign its one-shot envelope; independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -801,3 +804,15 @@ creation before the CLI test assertion; the same test and all 294 Workspace
 tests pass in the normal local gate recorded above. The remaining order is now
 SSH push, remote review-thread and CI closure, a fresh pre-merge Codex CR, and
 merge. The phone remains untouched.
+
+PR #74 then passed all three remote CI jobs, closed both review threads, and
+was squash-merged to `main` as `4c021cb1f6a01f26f904ce90769c88fbaf54a1f0`.
+The final pre-merge CR raised one proposed pre-upload/installed SuperBlob digest
+equality check; a separate read-only adjudication rejected it because Apple
+re-signs TestFlight artifacts and the frozen design deliberately binds the
+installed target identity, UUID, slice/range tuple, signature state, and
+two-run installed digest stability instead. Adding the proposed equality would
+reject the legitimate first-party TestFlight installation. Checkpoint 4B is
+therefore complete without a production change. No installation, enrollment,
+or observation occurred; 4C remains gated on the immediately preceding fresh
+RFC-0001 acknowledgement and one-shot installation envelope.
