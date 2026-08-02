@@ -322,3 +322,14 @@ Status、Note 和操作员对账决定；最终 Source 复核还会按身份重�
 流程、无效名称和错误 Tuple。由于这会改变 Rust Helper，Push 与合并前仍需两次新的独立可
 复现测量、替换唯一 Allowlist Tuple、正常与完整本地门禁，以及另一轮最终干净 CR。真机保持
 不操作。
+
+提交对账历史兼容修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source
+Snapshot 为 `8e94e44623985498c5b2f5873e1036bfc0979bca8fa3e3e326a0e659bec686fc`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,302,528`、
+SHA-256 `c87b63b0d00cd46569215f8ed0064b10973a18012931be6101c425654a6bf1e5`、
+CodeDirectory CDHash `31d712a0fa9ffa844603185d423e12b10157a7c8`。临时缺失 Tuple
+测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 均通过。随后正常非测量门禁重新构建并
+接纳该精确 Helper，Fixture 也通过。Format、锁定依赖且拒绝警告的 Clippy、全部 284 项
+Workspace 测试、Ruby 语法、Diff Hygiene 与明确的无测量 Hook 检查也均通过。Push 与合并
+现在只剩一次最终的完整 Diff 干净 CR；真机保持不操作。

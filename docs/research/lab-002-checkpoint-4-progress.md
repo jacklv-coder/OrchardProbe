@@ -510,3 +510,19 @@ invalid-name and wrong-tuple cases. Because this changes the Rust Helper, two
 fresh independent reproducibility measurements, replacement of the sole
 allowlist tuple, the normal and complete local gates, and another clean final
 CR remain required before push and merge. The phone remains untouched.
+
+After committing the reconciliation-history remediation, two independent
+complete Fastlane gates each rebuilt three Helpers from source snapshot
+`8e94e44623985498c5b2f5873e1036bfc0979bca8fa3e3e326a0e659bec686fc`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,302,528`, SHA-256
+`c87b63b0d00cd46569215f8ed0064b10973a18012931be6101c425654a6bf1e5`,
+and CodeDirectory CDHash `31d712a0fa9ffa844603185d423e12b10157a7c8`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates passed the unsigned Simulator fixture. The normal
+non-measurement gate then rebuilt and admitted the exact allowlisted Helper and
+passed the fixture. Formatting, locked Clippy with warnings denied, all 284
+Workspace tests, Ruby syntax, diff hygiene, and the explicit
+no-measurement-hook check also pass. Push and merge now require one final clean
+complete-diff CR; the phone remains untouched.
