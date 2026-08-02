@@ -268,5 +268,7 @@ Clippy、全部 280 项 Workspace 测试、Ruby 语法、Diff 检查和明确的
 SHA-256 `203b22526f7664d942b55c5742ed3649a4f829f192211c85f82e08cae95582b6`、
 CodeDirectory CDHash `66fc768edadb1f1a9e3b2a134d1fba8fdfe14927`。临时缺失 Tuple
 测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
-Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。4B PR 前仍需正常非测量
-门禁、全部本地门禁和一次新的干净 CR。
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建
+并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。Format、锁定依赖且拒绝警告的
+Clippy、全部 281 项 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均
+通过。4B PR 前只剩一次新的干净 Codex CR。
