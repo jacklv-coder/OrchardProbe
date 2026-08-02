@@ -596,6 +596,7 @@ impl VerifiedRun {
 pub enum EvidenceDisposition {
     Go,
     NoGoSignatureUnchecked,
+    NoGo,
 }
 
 impl EvidenceDisposition {
@@ -603,33 +604,80 @@ impl EvidenceDisposition {
         match self {
             Self::Go => "go",
             Self::NoGoSignatureUnchecked => "no_go_signature_unchecked",
+            Self::NoGo => "no_go",
         }
     }
 }
 
-fn accepted_signature_assessment(report: &RoleReport) -> Option<EvidenceDisposition> {
-    if report.signature.presence != SignaturePresence::Present
-        || report.signature.kind != SignatureKind::Cms
-        || report.signature.superblob_sha256.is_none()
-    {
-        return None;
+fn accepted_report_assessment(report: &RoleReport) -> Result<EvidenceDisposition, Lab002Error> {
+    let independently_validated = report.signature.validation == SignatureValidation::Valid
+        && report.signature.presence == SignaturePresence::Present
+        && report.signature.kind == SignatureKind::Cms
+        && report.signature.superblob_sha256.is_some()
+        && report.signature.validator_id == APPROVED_SIGNATURE_VALIDATOR_ID
+        && report.signature.validator_revision == report.observer_revision;
+    let independently_invalid = report.signature.validation == SignatureValidation::Invalid
+        && report.signature.presence == SignaturePresence::Present
+        && report.signature.kind == SignatureKind::Cms
+        && report.signature.superblob_sha256.is_some()
+        && report.signature.validator_id == APPROVED_SIGNATURE_VALIDATOR_ID
+        && report.signature.validator_revision == report.observer_revision;
+    let bounded_present = report.signature.presence == SignaturePresence::Present
+        && matches!(
+            report.signature.kind,
+            SignatureKind::Cms | SignatureKind::AdHoc | SignatureKind::Unknown
+        )
+        && report.signature.validation == SignatureValidation::NotChecked
+        && report.signature.superblob_sha256.is_some();
+    let bounded_absent = report.signature.presence == SignaturePresence::Absent
+        && report.signature.kind == SignatureKind::NotApplicable
+        && report.signature.validation == SignatureValidation::NotApplicable
+        && report.signature.superblob_sha256.is_none();
+    let bounded_observer = (bounded_present || bounded_absent)
+        && report.signature.validator_id == BOUNDED_SIGNATURE_PARSER_ID
+        && report.signature.validator_revision == BOUNDED_SIGNATURE_PARSER_REVISION;
+
+    if (independently_validated || independently_invalid) == bounded_observer {
+        return Err(Lab002Error::InvalidEvidence(
+            "role signature assessment is not one exact reviewed validator tuple",
+        ));
     }
 
-    let independently_validated = report.signature.validation == SignatureValidation::Valid
-        && report.signature.validator_id == APPROVED_SIGNATURE_VALIDATOR_ID
-        && report.signature.validator_revision == report.observer_revision
-        && report.outcome == Outcome::Pass
-        && report.reasons.is_empty();
-    let truthfully_unchecked = report.signature.validation == SignatureValidation::NotChecked
-        && report.signature.validator_id == BOUNDED_SIGNATURE_PARSER_ID
-        && report.signature.validator_revision == BOUNDED_SIGNATURE_PARSER_REVISION
-        && report.outcome == Outcome::Inconclusive
-        && report.reasons == [ReasonCode::SignatureInvalidOrUnchecked];
+    let active = &report.slices[usize::from(report.active_slice_ordinal)];
+    let mut expected_reasons = Vec::with_capacity(3);
+    if !independently_validated {
+        expected_reasons.push(ReasonCode::SignatureInvalidOrUnchecked);
+    }
+    let encryption_invalid = active.cryptid != 1 || active.cryptsize == 0;
+    if encryption_invalid {
+        expected_reasons.push(ReasonCode::EncryptionCommandInvalid);
+    }
+    if !active.encryption_covers_section {
+        expected_reasons.push(ReasonCode::EncryptionDoesNotCoverRange);
+    }
+    let expected_outcome = if encryption_invalid || !active.encryption_covers_section {
+        Outcome::Fail
+    } else if independently_validated {
+        Outcome::Pass
+    } else {
+        Outcome::Inconclusive
+    };
+    if report.outcome != expected_outcome || report.reasons != expected_reasons {
+        return Err(Lab002Error::InvalidEvidence(
+            "role outcome or reasons contradict the bounded observer evidence",
+        ));
+    }
 
-    match (independently_validated, truthfully_unchecked) {
-        (true, false) => Some(EvidenceDisposition::Go),
-        (false, true) => Some(EvidenceDisposition::NoGoSignatureUnchecked),
-        _ => None,
+    if independently_validated {
+        Ok(EvidenceDisposition::Go)
+    } else if bounded_present
+        && report.signature.kind == SignatureKind::Cms
+        && !encryption_invalid
+        && active.encryption_covers_section
+    {
+        Ok(EvidenceDisposition::NoGoSignatureUnchecked)
+    } else {
+        Ok(EvidenceDisposition::NoGo)
     }
 }
 
@@ -637,11 +685,7 @@ fn verify_report_against_oracle(
     report: &RoleReport,
     oracle_role: &super::artifacts::OracleRole,
 ) -> Result<EvidenceDisposition, Lab002Error> {
-    let evidence_disposition = accepted_signature_assessment(report).ok_or(
-        Lab002Error::InvalidEvidence(
-            "role identity, signature, outcome, or complete slice inventory does not match the oracle",
-        ),
-    )?;
+    let mut evidence_disposition = accepted_report_assessment(report)?;
     if report.role != oracle_role.role
         || report.fixture_relative_path != oracle_role.fixture_relative_path
         || report.target_identity_binding_sha256 != oracle_role.target_identity_binding_sha256
@@ -671,8 +715,12 @@ fn verify_report_against_oracle(
             .ok_or(Lab002Error::InvalidEvidence(
                 "installed slice range overflows",
             ))?;
-        if expected.ipa_section_sha256 != expected.expected_plaintext_sha256
-            || observed.ordinal != expected.ordinal
+        if expected.ipa_section_sha256 != expected.expected_plaintext_sha256 {
+            return Err(Lab002Error::InvalidEvidence(
+                "frozen oracle plaintext evidence is internally inconsistent",
+            ));
+        }
+        if observed.ordinal != expected.ordinal
             || observed.cpu_type != expected.cpu_type
             || observed.cpu_subtype != expected.cpu_subtype
             || observed.macho_uuid != expected.macho_uuid
@@ -682,22 +730,41 @@ fn verify_report_against_oracle(
             || observed.section_file_offset != expected.section_file_offset
             || observed.section_vm_offset != expected.section_vm_offset
             || observed.section_length != expected.section_length
-            || observed.cryptid != 1
-            || observed.cryptsize == 0
             || slice_file_end > report.installed_file_size
             || crypt_end > observed.slice_file_size
+        {
+            return Err(Lab002Error::InvalidEvidence(
+                "slice identity or bounded coordinates do not match the oracle",
+            ));
+        }
+        if observed.cryptid != 1
+            || observed.cryptsize == 0
             || !observed.encryption_covers_section
             || observed.cryptoff > observed.section_slice_offset
             || crypt_end < section_end
             || observed.disk_sha256 == expected.expected_plaintext_sha256
             || observed.mapped_sha256 != expected.expected_plaintext_sha256
         {
-            return Err(Lab002Error::InvalidEvidence(
-                "slice identity, initial protection, or mapped plaintext evidence does not match the oracle",
-            ));
+            evidence_disposition = EvidenceDisposition::NoGo;
         }
     }
     Ok(evidence_disposition)
+}
+
+fn combined_evidence_disposition(dispositions: [EvidenceDisposition; 3]) -> EvidenceDisposition {
+    if dispositions
+        .iter()
+        .all(|value| *value == EvidenceDisposition::Go)
+    {
+        EvidenceDisposition::Go
+    } else if dispositions
+        .iter()
+        .all(|value| *value == EvidenceDisposition::NoGoSignatureUnchecked)
+    {
+        EvidenceDisposition::NoGoSignatureUnchecked
+    } else {
+        EvidenceDisposition::NoGo
+    }
 }
 
 fn normalized_evidence_sha256(
@@ -1019,14 +1086,7 @@ pub fn verify_run_chain(
         verify_report_against_oracle(&framework, &oracle.roles[1])?,
         verify_report_against_oracle(&share_extension, &oracle.roles[2])?,
     ];
-    let evidence_disposition = if evidence_dispositions
-        .iter()
-        .all(|value| *value == EvidenceDisposition::Go)
-    {
-        EvidenceDisposition::Go
-    } else {
-        EvidenceDisposition::NoGoSignatureUnchecked
-    };
+    let evidence_disposition = combined_evidence_disposition(evidence_dispositions);
     if main_app.phases[1].completed_at > framework.phases[0].completed_at
         || framework.phases[1].completed_at > share_extension.phases[0].completed_at
     {
@@ -2110,7 +2170,7 @@ mod tests {
     }
 
     #[test]
-    fn oracle_comparison_rejects_unprotected_or_nonplaintext_role_evidence() {
+    fn oracle_comparison_closes_unprotected_or_nonplaintext_role_evidence_as_no_go() {
         let enrollment = enrollment_fixture();
         let chain = owned_run_chain(&enrollment);
         let oracle = LabOracle::from_canonical_bytes(&chain.oracle).unwrap();
@@ -2126,11 +2186,21 @@ mod tests {
 
         let mut unprotected = report.clone();
         unprotected.slices[0].cryptid = 0;
-        assert!(verify_report_against_oracle(&unprotected, &oracle.roles[0]).is_err());
+        unprotected.outcome = Outcome::Fail;
+        unprotected
+            .reasons
+            .push(ReasonCode::EncryptionCommandInvalid);
+        assert_eq!(
+            verify_report_against_oracle(&unprotected, &oracle.roles[0]).unwrap(),
+            EvidenceDisposition::NoGo
+        );
 
         let mut ciphertext_only = report;
         ciphertext_only.slices[0].mapped_sha256 = digest(0xee);
-        assert!(verify_report_against_oracle(&ciphertext_only, &oracle.roles[0]).is_err());
+        assert_eq!(
+            verify_report_against_oracle(&ciphertext_only, &oracle.roles[0]).unwrap(),
+            EvidenceDisposition::NoGo
+        );
     }
 
     #[test]
@@ -2167,7 +2237,7 @@ mod tests {
     }
 
     #[test]
-    fn oracle_comparison_accepts_only_the_two_closed_signature_tuples() {
+    fn oracle_comparison_accepts_only_the_three_closed_signature_tuples() {
         let enrollment = enrollment_fixture();
         let chain = owned_run_chain(&enrollment);
         let oracle = LabOracle::from_canonical_bytes(&chain.oracle).unwrap();
@@ -2196,6 +2266,15 @@ mod tests {
             EvidenceDisposition::Go
         );
 
+        let mut independently_invalid = independently_validated;
+        independently_invalid.signature.validation = SignatureValidation::Invalid;
+        independently_invalid.outcome = Outcome::Inconclusive;
+        independently_invalid.reasons = vec![ReasonCode::SignatureInvalidOrUnchecked];
+        assert_eq!(
+            verify_report_against_oracle(&independently_invalid, &oracle.roles[0]).unwrap(),
+            EvidenceDisposition::NoGo
+        );
+
         let mut false_pass = report.clone();
         false_pass.outcome = Outcome::Pass;
         false_pass.reasons.clear();
@@ -2204,6 +2283,58 @@ mod tests {
         let mut omitted_reason = report;
         omitted_reason.reasons = vec![ReasonCode::InventoryMismatch];
         assert!(verify_report_against_oracle(&omitted_reason, &oracle.roles[0]).is_err());
+    }
+
+    #[test]
+    fn oracle_comparison_closes_bounded_non_cms_or_absent_signatures_as_no_go() {
+        let enrollment = enrollment_fixture();
+        let chain = owned_run_chain(&enrollment);
+        let oracle = LabOracle::from_canonical_bytes(&chain.oracle).unwrap();
+        let signed = SignedSessionExport::from_canonical_bytes(&chain.export).unwrap();
+        let export = UnsignedSessionExport::from_canonical_bytes(
+            signed.unsigned_export_canonical.as_bytes(),
+        )
+        .unwrap();
+        let report =
+            RoleReport::from_canonical_bytes(export.entries[1].canonical_document.as_bytes())
+                .unwrap();
+
+        let mut ad_hoc = report.clone();
+        ad_hoc.signature.kind = SignatureKind::AdHoc;
+        assert_eq!(
+            verify_report_against_oracle(&ad_hoc, &oracle.roles[0]).unwrap(),
+            EvidenceDisposition::NoGo
+        );
+
+        let mut absent = report;
+        absent.signature.presence = SignaturePresence::Absent;
+        absent.signature.kind = SignatureKind::NotApplicable;
+        absent.signature.validation = SignatureValidation::NotApplicable;
+        absent.signature.superblob_sha256 = None;
+        assert_eq!(
+            verify_report_against_oracle(&absent, &oracle.roles[0]).unwrap(),
+            EvidenceDisposition::NoGo
+        );
+    }
+
+    #[test]
+    fn report_dispositions_combine_without_promoting_mixed_failures() {
+        assert_eq!(
+            combined_evidence_disposition([EvidenceDisposition::Go; 3]),
+            EvidenceDisposition::Go
+        );
+        assert_eq!(
+            combined_evidence_disposition([EvidenceDisposition::NoGoSignatureUnchecked; 3]),
+            EvidenceDisposition::NoGoSignatureUnchecked
+        );
+        assert_eq!(
+            combined_evidence_disposition([
+                EvidenceDisposition::NoGoSignatureUnchecked,
+                EvidenceDisposition::Go,
+                EvidenceDisposition::NoGo,
+            ]),
+            EvidenceDisposition::NoGo
+        );
     }
 
     fn verified_two_run_fixture() -> (VerifiedEnrollment, VerifiedRun, VerifiedRun) {

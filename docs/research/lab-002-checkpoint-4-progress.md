@@ -365,3 +365,29 @@ the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
 all 278 Workspace tests, Ruby syntax, the diff check, and the explicit
 no-measurement-hook check also pass. A fresh clean Codex CR remains required
 before the 4B PR.
+
+That fresh complete-diff CR found one P2 result-retention gap. Host closure
+recognized only the all-Go tuple and the checked-in observer's exact
+signature-unchecked tuple; a structurally valid signed report containing a
+different failed evidence gate was rejected before it could become the
+documented method-level No-Go. The remediation adds a closed generic `no_go`
+disposition, checks the bounded observer's exact signature/outcome/reason
+semantics, retains authorized identity and coordinate integrity, and converts
+failed signature, protection, disk, or mapped-plaintext comparisons into that
+No-Go instead of losing the result. Mixed role dispositions cannot be promoted
+to the signature-only No-Go. Fastlane accepts and explicitly renders all three
+closed values: `go`, `no_go_signature_unchecked`, and `no_go`. Because this
+changes the Rust Helper, two new independent reproducibility measurements, a
+replacement sole allowlist tuple, the normal gate, all local gates, and a fresh
+clean CR remain required before the 4B PR.
+
+The follow-up uncommitted CR found one remaining P2 case in that remediation:
+an approved independent validator's explicit `present` / `cms` / `invalid`
+assessment still fell outside both accepted branches and was rejected instead
+of retained. That exact reviewed-validator tuple now closes as generic `no_go`
+with the required signature reason, while altered validator identity,
+revision, outcome, or reasons remain invalid. A regression pins the invalid
+tuple beside the reviewed Go, bounded unchecked, ad-hoc, absent, protection,
+and digest-failure cases. The follow-up remediation CR found no actionable
+correctness issue. The same reproducibility, allowlist, normal-gate,
+local-gate, and clean-CR requirements remain in force before the 4B PR.

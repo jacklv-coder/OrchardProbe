@@ -227,3 +227,19 @@ Format、锁定依赖且拒绝警告的 Clippy、全部 278 项 Workspace 测试
 这轮全新完整 Diff CR 又发现两个 P2 关闭路径缺口：第二轮关闭重新验证第一轮时，没有单独把保留 Intent 重新绑定到冻结预上传证据；返回闭合处置前，也没有执行最终验证器使用的链后源复核。修复会在接受两轮链前重新核对第一轮保留 Intent，并在链闭合后、每次关闭返回前重新打开完整冻结 Prebuild/Candidate 元组。由于这会改变 Rust Helper，4B PR 前还需要两次新的独立可复现测量、替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和一次新的干净 CR。
 
 提交该关闭路径修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source Snapshot 为 `c454b2084ce5abbe2f677e91fbc4423fed9a852d0c167c7f82200543f427de3f`。全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,270,944`、SHA-256 `fb57184babc4d7e6ba3bf2970ca2089ea345b0726c85b337f2c8d9ec4e405cf0`、CodeDirectory CDHash `5ffdb86cb678ac6ab670bccb811a28edbfb12a3e`。临时缺失 Tuple 测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审 Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。Format、锁定依赖且拒绝警告的 Clippy、全部 278 项 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均通过。4B PR 前只剩一次新的干净 Codex CR。
+
+该次全新完整 Diff CR 又发现一个 P2 失败结果保留缺口：Host 关闭只识别全 Go Tuple 与当前
+Observer 的精确签名未检查 Tuple；包含其他失败证据门禁、但结构有效且有设备签名的报告，
+会在形成文档要求的方法级 No-Go 前被拒绝。修复增加封闭的通用 `no_go` Disposition，核对
+有界 Observer 精确的签名/Outcome/Reason 语义，继续强制授权身份与坐标完整性，并把签名、
+保护态、磁盘或映射明文比较失败保留为 No-Go，而不是丢失结果。混合 Role 处置不能被提升成
+仅签名未检查的 No-Go。Fastlane 会接受并明确显示 `go`、`no_go_signature_unchecked` 与
+`no_go` 三个封闭值。由于这会改变 Rust Helper，4B PR 前还需要两次新的独立可复现测量、
+替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和一次新的干净 CR。
+
+后续未提交 CR 又发现该修复仍有一个 P2：已批准独立 Validator 明确给出的
+`present` / `cms` / `invalid` 仍不属于两个已接受分支，会被拒绝而不是保留。现在只有这个
+精确的已评审 Validator Tuple 会携带所需签名 Reason 关闭为通用 `no_go`；被修改的
+Validator 身份、Revision、Outcome 或 Reasons 仍然无效。新增回归把 Invalid Tuple 与已评审
+Go、有界 Unchecked、Ad-hoc、Absent、保护态和摘要失败情形一起固定。4B PR 前仍执行同一组
+可复现性、Allowlist、正常门禁、本地门禁和干净 CR 要求。

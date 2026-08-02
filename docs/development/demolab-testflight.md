@@ -297,9 +297,14 @@ ordered two-run chain. The checked-in iOS observer truthfully reports its
 bounded signature parse as `not_checked`; Host closure accepts only that exact
 `inconclusive`/`signature_invalid_or_unchecked` tuple as reproducible No-Go
 evidence and never treats it as valid signature evidence or a Go result.
-Both the second close and final verifier expose the closed disposition as
-`go` or `no_go_signature_unchecked`; Fastlane prints the latter as a
-method-level No-Go rather than a generic success.
+If an otherwise well-formed signed report preserves the authorized identity
+and bounded evidence integrity but a signature, initial-protection, disk, or
+mapped-plaintext gate fails, closure retains it as the generic `no_go`
+disposition instead of rejecting and losing the result. Contradictory
+validator/outcome/reason tuples and identity or coordinate substitutions still
+fail closed. Both the second close and final verifier expose `go`,
+`no_go_signature_unchecked`, or `no_go`; Fastlane prints either No-Go explicitly
+rather than as a generic success.
 
 Every publishing lane uses a random owner-only staging directory, fixed
 filenames, exclusive rename, directory fsync, and exact phase inventory. It

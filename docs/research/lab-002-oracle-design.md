@@ -439,7 +439,14 @@ as reproducible No-Go evidence while still requiring every identity,
 encryption, disk, and mapped-plaintext comparison to match. It never promotes
 the tuple to valid or Go. Every inconsistent validator tuple is rejected; an
 absent, ad-hoc, unknown, invalid, or unchecked signature remains method-level
-No-Go.
+No-Go. An approved independent validator's exact `present` / `cms` / `invalid`
+tuple is retained as generic No-Go with
+`signature_invalid_or_unchecked`; it is not rejected as missing evidence.
+Likewise, a structurally valid signed report that preserves authorized identity
+and bounded coordinate integrity but fails a protection, disk, or mapped-
+plaintext comparison closes as generic No-Go. Only contradictory validator,
+outcome, or reason semantics and substituted identity/integrity fields fail the
+artifact verifier itself.
 
 Initial protection is Pass only when:
 

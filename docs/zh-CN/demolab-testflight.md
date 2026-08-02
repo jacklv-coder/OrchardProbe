@@ -267,8 +267,11 @@ Host 完成时间加完整 120 秒设备时钟偏差，才允许发布；否则�
 当前 iOS Observer 会如实把有界签名解析记录为 `not_checked`；Host 只允许精确的
 `inconclusive`/`signature_invalid_or_unchecked` Tuple 作为可复现 No-Go 证据关闭，绝不会
 把它当作有效签名证据或 Go 结果。
-第二轮关闭与最终验证都会显式输出 `go` 或 `no_go_signature_unchecked`；Fastlane 会把
-后者显示为方法级 No-Go，而不是普通成功。
+如果其他结构有效的设备签名报告仍保持授权身份和有界证据完整性，但签名、初始保护、
+磁盘或映射明文门禁失败，Host 会把结果保留为通用 `no_go`，而不是拒绝并丢失失败结果；
+矛盾的 Validator/Outcome/Reason Tuple，以及身份或坐标替换仍然失败关闭。第二轮关闭与
+最终验证会显式输出 `go`、`no_go_signature_unchecked` 或 `no_go`；Fastlane 会明确显示
+任一 No-Go，而不是普通成功。
 
 每个发布 Lane 都使用随机 Owner-only Staging、固定文件名、排他 Rename、目录 Fsync
 和精确阶段清单；已有或不完整阶段会失败关闭，不能覆盖或静默重试。授权 Seed 只留在

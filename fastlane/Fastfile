@@ -7417,7 +7417,7 @@ def run_lab002_operator_helper!(
     unless result.is_a?(Hash) &&
            (result.keys - allowed).empty? &&
            result["schema"] == "orchardprobe.lab002.operator-result.v1" &&
-           [nil, "go", "no_go_signature_unchecked"].include?(
+           [nil, "go", "no_go_signature_unchecked", "no_go"].include?(
              result["evidence_disposition"]
            ) &&
            /\A[0-9a-f]{64}\z/.match?(result["experiment_id"].to_s)
@@ -7696,6 +7696,11 @@ platform :ios do
           "Closed the two-run chain with a method-level No-Go: " \
           "the checked-in observer reported signature validation as unchecked."
         )
+      elsif result["evidence_disposition"] == "no_go"
+        UI.important(
+          "Closed the two-run chain with a method-level No-Go: " \
+          "one or more bounded evidence gates failed."
+        )
       else
         UI.success("Verified the signed export and closed the current run.")
       end
@@ -7759,6 +7764,11 @@ platform :ios do
         UI.important(
           "Verified chain integrity, but the final evidence disposition is " \
           "No-Go because signature validation remained unchecked."
+        )
+      elsif result["evidence_disposition"] == "no_go"
+        UI.important(
+          "Verified chain integrity, but the final evidence disposition is " \
+          "No-Go because one or more bounded evidence gates failed."
         )
       else
         UI.success(

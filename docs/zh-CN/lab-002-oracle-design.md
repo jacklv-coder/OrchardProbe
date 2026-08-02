@@ -93,7 +93,11 @@ UUID 或 `cryptid` 不能推断验证成功。独立验证的报告必须写固�
 Reason 为 `signature_invalid_or_unchecked`。Host 可以关闭这个如实 Tuple 作为可复现的
 方法级 No-Go 证据，但仍要求全部身份、加密、磁盘与映射明文比较一致；它绝不会把该 Tuple
 提升成 `valid` 或 Go。任何不一致 Validator Tuple 都会被拒绝；Absent、Ad Hoc、Unknown、
-Invalid 或 Unchecked 签名仍是方法级 No-Go。
+Invalid 或 Unchecked 签名仍是方法级 No-Go。已批准独立 Validator 的精确
+`present` / `cms` / `invalid` Tuple 会携带 `signature_invalid_or_unchecked` 保留为通用
+No-Go，而不是被当成缺失证据拒绝。同样，保持授权身份和有界坐标完整性、但保护态、磁盘或
+映射明文比较失败的结构有效设备签名报告，也会关闭为通用 No-Go。只有矛盾的 Validator、
+Outcome 或 Reason 语义，以及被替换的身份/完整性字段，才会让工件验证器本身失败。
 
 预期明文 Hash 从干净 Commit 直接构建的 Archive 固定 Section 生成；随后独立
 Hash 导出 IPA 的同一 Slice/区间，并要求身份、坐标、长度和 Hash 全部一致。
