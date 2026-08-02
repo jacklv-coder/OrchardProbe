@@ -3083,6 +3083,24 @@ fn publish_prebuild_directory(
         final_name,
         files,
         arm_publication,
+        &mut allow_any_publication_inventory,
+        File::sync_all,
+    )
+}
+
+fn publish_prebuild_directory_guarded(
+    output_root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        arm_publication,
+        publication_guard,
         File::sync_all,
     )
 }
@@ -3099,8 +3117,13 @@ fn publish_prebuild_directory_with(
         final_name,
         files,
         &mut |_, _| Ok(()),
+        &mut allow_any_publication_inventory,
         &mut sync_parent,
     )
+}
+
+fn allow_any_publication_inventory(_: &str) -> Result<(), String> {
+    Ok(())
 }
 
 fn publish_prebuild_directory_with_arm(
@@ -3108,6 +3131,7 @@ fn publish_prebuild_directory_with_arm(
     final_name: &str,
     files: &[(&str, &[u8])],
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(u64, u64), String> {
     verify_private_output_root_path(output_root)?;
@@ -3216,6 +3240,7 @@ fn publish_prebuild_directory_with_arm(
         staging
             .sync_all()
             .map_err(|error| format!("could not fsync prebuild staging directory: {error}"))?;
+        publication_guard(&staging_name)?;
 
         publication_may_be_live = true;
         rustix::fs::renameat_with(
@@ -3249,6 +3274,7 @@ fn publish_prebuild_directory_with_arm(
         }
         verify_private_output_root_path(output_root)?;
         verify_published_directory_identity(parent, final_name, staging_identity)?;
+        publication_guard(final_name)?;
         Ok(())
     })();
 
@@ -4231,12 +4257,61 @@ mod tests {
             "lab002-prebuild-test",
             &[("private.bin", b"private")],
             &mut |_, _| Err("injected rollback-arm failure".into()),
+            &mut |_| Ok(()),
             File::sync_all,
         )
         .unwrap_err();
 
         assert!(error.contains("could not arm prebuild rollback"));
         assert!(fs::read_dir(&root_path).unwrap().next().is_none());
+    }
+
+    #[test]
+    fn publication_guard_rolls_back_when_a_sibling_appears_at_the_boundary() {
+        let root = TempDir::new().unwrap();
+        fs::set_permissions(
+            root.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let root_path = root.path().canonicalize().unwrap();
+        let root = validate_private_output_root(&root_path).unwrap();
+        let mut guard_calls = 0;
+        let error = publish_prebuild_directory_with_arm(
+            &root,
+            "lab002-experiment",
+            &[("private.bin", b"private")],
+            &mut |_, _| Ok(()),
+            &mut |only_name| {
+                let mut names = fs::read_dir(&root_path)
+                    .unwrap()
+                    .map(|entry| entry.unwrap().file_name())
+                    .collect::<Vec<_>>();
+                names.sort();
+                if names != [std::ffi::OsString::from(only_name)] {
+                    return Err("output root inventory changed".into());
+                }
+                guard_calls += 1;
+                if guard_calls == 1 {
+                    fs::create_dir(root_path.join("retained-prior-experiment")).unwrap();
+                }
+                Ok(())
+            },
+            File::sync_all,
+        )
+        .unwrap_err();
+
+        assert!(error.contains("output root inventory changed"));
+        assert_eq!(guard_calls, 1);
+        assert!(!root_path.join("lab002-experiment").exists());
+        assert!(root_path.join("retained-prior-experiment").is_dir());
+        assert!(fs::read_dir(&root_path).unwrap().all(|entry| {
+            !entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".lab002-prebuild-")
+        }));
     }
 
     #[test]

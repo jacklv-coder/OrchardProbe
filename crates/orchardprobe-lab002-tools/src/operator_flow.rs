@@ -33,9 +33,9 @@ use super::{
     MAX_PRIVATE_ARTIFACT_BYTES, MAX_UPLOAD_RESULT_BYTES, ORACLE_NAME, PREBUILD_NAME,
     PREBUILD_SCHEMA, PRIVATE_SEED_NAME, PrivateOutputRoot, canonical_json,
     is_bounded_utc_timestamp, is_lower_hex, lower_hex, open_directory_entry,
-    parse_identity_component, publish_prebuild_directory, read_private_artifact,
-    read_private_file_with_mode, read_request, sha256_hex, validate_bound_private_output_root,
-    verify_private_artifact_inventory,
+    parse_identity_component, publish_prebuild_directory, publish_prebuild_directory_guarded,
+    read_private_artifact, read_private_file_with_mode, read_request, sha256_hex,
+    validate_bound_private_output_root, verify_private_artifact_inventory,
 };
 
 const START_ENROLLMENT_SCHEMA: &str = "orchardprobe.lab002.operator-start-enrollment.v1";
@@ -48,6 +48,7 @@ const SOURCE_ORACLE_NAME: &str = "frozen-oracle.json";
 const SOURCE_EVIDENCE_NAME: &str = "preupload-evidence.json";
 const INSTALL_ACK_NAME: &str = "installation-acknowledgement.json";
 const INSTALL_ENVELOPE_NAME: &str = "installation-envelope.json";
+const EXPERIMENT_DIRECTORY_NAME: &str = "lab002-experiment";
 const ENROLLMENT_RESULT_DIRECTORY: &str = "enrollment-result";
 const RECEIPT_NAME: &str = "signed-enrollment-receipt.json";
 const SELECTION_NAME: &str = "device-selection-confirmation.json";
@@ -424,6 +425,11 @@ fn exact_inventory(directory: &File, expected: &[&str]) -> Result<(), String> {
         return Err("operator directory does not contain the exact expected entries".into());
     }
     Ok(())
+}
+
+fn require_empty_output_root(root: &PrivateOutputRoot) -> Result<(), String> {
+    exact_inventory(&root.directory, &[])
+        .map_err(|_| "operator enrollment output root must be empty".into())
 }
 
 fn open_owner_directory(parent: &File, name: &str) -> Result<File, String> {
@@ -1615,6 +1621,7 @@ fn start_enrollment(
     let output = held_root(output_path, output_identity, output_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
     let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
+    require_empty_output_root(&output)?;
     let request: StartEnrollmentRequest = read_request(io::stdin().lock())?;
     if request.schema != START_ENROLLMENT_SCHEMA {
         return Err("operator enrollment request schema is invalid".into());
@@ -1639,10 +1646,13 @@ fn start_enrollment(
     let acknowledgement =
         AuthorizationAcknowledgement::from_canonical_bytes(&control.acknowledgement)
             .map_err(|error| error.to_string())?;
-    let final_name = format!("lab002-experiment-{}", acknowledgement.experiment_id);
-    publish_prebuild_directory(
+    let mut publication_guard = |only_name: &str| {
+        exact_inventory(&output.directory, &[only_name])
+            .map_err(|_| "operator enrollment output root changed before publication".into())
+    };
+    publish_prebuild_directory_guarded(
         &output,
-        &final_name,
+        EXPERIMENT_DIRECTORY_NAME,
         &[
             (SOURCE_MANIFEST_NAME, &source.manifest),
             (SOURCE_ORACLE_NAME, &source.oracle),
@@ -1651,6 +1661,7 @@ fn start_enrollment(
             (INSTALL_ENVELOPE_NAME, &control.authorization_envelope),
         ],
         &mut arm_publication,
+        &mut publication_guard,
     )?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
@@ -2100,9 +2111,10 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::{
-        EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME,
-        RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle, UploadResult, derive_prebuild_bindings,
-        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence,
+        RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle, UploadResult,
+        derive_prebuild_bindings, exact_inventory, has_exact_derived_prebuild_bindings,
+        next_run_ordinal, open_run_ordinal, require_empty_output_root,
         require_retained_source_match, require_unchanged_source_artifact,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
         verify_frozen_archive, verify_frozen_ipa_entries,
@@ -2320,6 +2332,22 @@ mod tests {
 
         File::create(temporary.path().join("unexpected.json")).unwrap();
         assert!(exact_inventory(&directory, &expected).is_err());
+    }
+
+    #[test]
+    fn enrollment_output_root_cannot_be_reused() {
+        let temporary = tempdir().unwrap();
+        let root = super::super::PrivateOutputRoot {
+            canonical_path: temporary.path().to_owned(),
+            directory: File::open(temporary.path()).unwrap(),
+        };
+        assert!(require_empty_output_root(&root).is_ok());
+
+        fs::create_dir(temporary.path().join(EXPERIMENT_DIRECTORY_NAME)).unwrap();
+        assert_eq!(
+            require_empty_output_root(&root),
+            Err("operator enrollment output root must be empty".into())
+        );
     }
 
     #[test]

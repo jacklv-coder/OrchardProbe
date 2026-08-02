@@ -294,3 +294,11 @@ Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随�
 并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。
 Format、锁定依赖且拒绝警告的 Clippy、全部 281 项 Workspace 测试、Ruby 语法、Diff 检查和
 明确的无测量 Hook 检查也均通过。合并前只剩一次最终干净 CR；真机保持不操作。
+
+该次最终完整 Diff CR 发现一个 P1 生命周期状态缺口：Enrollment 可以在复用的非空输出根
+下再次发布随机命名的实验目录，使放弃或失败的实验被绕过而非按约束保留。修复后会在读取
+请求之前，要求持有 Descriptor 的输出根具有精确空清单；使用唯一固定实验槽，并在原子
+No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清单。回归测试固定拒绝
+含保留实验子目录的根，并在发布边界出现其他子项时回滚。由于这会改变 Rust Helper，合并前仍需两次新的独立可复现性
+测量、替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和另一轮最终干净 CR。真机保持
+不操作。

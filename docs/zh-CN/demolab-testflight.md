@@ -252,7 +252,10 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 ```
 
 开始 Enrollment 只接受冻结 Prebuild/Candidate Tuple，在仓库外已存在的 `0700` 输出根
-下排他发布一个随机实验目录，并保留全新 15 分钟确认/信封。通过 TestFlight Provision
+下排他发布固定 `lab002-experiment` 目录。该根目录必须为空；只要存在任何保留的既有实验
+就会失败关闭，因此不能在放弃或失败的生命周期旁重新发布 Enrollment 来绕过保留约束。
+Helper 会紧邻原子 No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清单。
+它会保留全新 15 分钟确认/信封。通过 TestFlight Provision
 已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
 关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
 显示的全部 64 位小写十六进制 Fingerprint。开始 Run 自动选择唯一合法的下一 Ordinal，

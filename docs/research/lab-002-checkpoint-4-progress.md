@@ -467,3 +467,15 @@ the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
 all 281 Workspace tests, Ruby syntax, the diff check, and the explicit
 no-measurement-hook check also pass. One final clean CR remains required before
 merge; the phone remains untouched.
+
+That final complete-diff CR found one P1 lifecycle-state gap: enrollment could
+publish another randomly named experiment below a reused non-empty output root,
+allowing an abandoned or failed experiment to be bypassed instead of retained.
+The remediation requires the held output-root descriptor to have an exact empty
+inventory before reading the request, uses one fixed experiment slot, and
+rechecks the exact one-entry staging/final inventory on both sides of the atomic
+no-replace rename. Regressions reject a retained experiment child and roll back
+a publication if a sibling appears at that boundary. Because this changes the
+Rust Helper, two fresh independent reproducibility measurements, a replacement
+sole allowlist tuple, the normal gate, all local gates, and another clean final
+CR are required before merge. The phone remains untouched.

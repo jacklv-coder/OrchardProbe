@@ -264,9 +264,13 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 ```
 
 `start_enrollment` accepts only the frozen prebuild/candidate tuple and creates
-a new `lab002-experiment-<random-id>` child below an already existing mode
-`0700` operator output root. It retains the exact source controls and a fresh
-15-minute acknowledgement/envelope. Provisioning the already processed build
+the fixed `lab002-experiment` child below an already existing mode-`0700`
+operator output root. The root must be empty: any retained prior experiment
+makes the command fail closed, so an abandoned or failed lifecycle cannot be
+bypassed by publishing another enrollment beside it. The Helper checks the
+exact one-entry staging/final inventory immediately before and after its atomic
+no-replace rename. It retains the exact source controls and a fresh 15-minute
+acknowledgement/envelope. Provisioning the already processed build
 through TestFlight remains a separate operator action outside OrchardProbe;
 only the fixed installation envelope is imported afterward.
 
