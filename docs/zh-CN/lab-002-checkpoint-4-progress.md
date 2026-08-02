@@ -302,3 +302,13 @@ No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清�
 含保留实验子目录的根，并在发布边界出现其他子项时回滚。由于这会改变 Rust Helper，合并前仍需两次新的独立可复现性
 测量、替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和另一轮最终干净 CR。真机保持
 不操作。
+
+提交生命周期修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source
+Snapshot 为 `87ae31a61d40199e20d3d9e50644660dbd6ebe6fe1ada9d0469e3d3174d27858`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,284,016`、
+SHA-256 `c6050562a0e036bda25fb36e7e51a9e90b3a7df01202de2e30402261a77bde91`、
+CodeDirectory CDHash `8b5f62771adf5fe02828201e41f13a90459e0f7f`。临时缺失 Tuple
+测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。之后的正常非测量门禁已重新
+构建并接纳该精确 Tuple，格式化、Clippy、Ruby 语法、Diff Hygiene、Fixture 与全部 283 项
+本地测试均通过。Push 与合并前仅剩一次最终干净 CR；真机保持不操作。

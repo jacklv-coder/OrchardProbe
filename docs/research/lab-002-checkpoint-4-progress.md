@@ -479,3 +479,18 @@ a publication if a sibling appears at that boundary. Because this changes the
 Rust Helper, two fresh independent reproducibility measurements, a replacement
 sole allowlist tuple, the normal gate, all local gates, and another clean final
 CR are required before merge. The phone remains untouched.
+
+After committing the lifecycle remediation, two independent complete Fastlane
+gates each rebuilt three Helpers from source snapshot
+`87ae31a61d40199e20d3d9e50644660dbd6ebe6fe1ada9d0469e3d3174d27858`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,284,016`, SHA-256
+`c6050562a0e036bda25fb36e7e51a9e90b3a7df01202de2e30402261a77bde91`,
+and CodeDirectory CDHash `8b5f62771adf5fe02828201e41f13a90459e0f7f`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate subsequently rebuilt and admitted the exact tuple, and
+formatting, Clippy, Ruby syntax, diff hygiene, the fixture, and all 283 local
+tests passed. One final clean CR remains required before push and merge; the
+phone remains untouched.
