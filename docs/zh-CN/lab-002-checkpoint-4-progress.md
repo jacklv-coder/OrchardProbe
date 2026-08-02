@@ -243,3 +243,12 @@ Observer 的精确签名未检查 Tuple；包含其他失败证据门禁、但�
 Validator 身份、Revision、Outcome 或 Reasons 仍然无效。新增回归把 Invalid Tuple 与已评审
 Go、有界 Unchecked、Ad-hoc、Absent、保护态和摘要失败情形一起固定。4B PR 前仍执行同一组
 可复现性、Allowlist、正常门禁、本地门禁和干净 CR 要求。
+
+提交该失败结果保留修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source
+Snapshot 为 `c562abef73db2ef844582793a80883c1ee64b88087c4abd607f1ac72e32fffa1`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,271,056`、
+SHA-256 `6ee4fd9ee2def07fad6dd512337a52d6a3ea30a3bbb9a3890dd743794f297a0f`、
+CodeDirectory CDHash `5d6319d37d5bdc0852fbb8631cf7e7179e86ba6f`。临时缺失 Tuple
+测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。4B PR 前还需正常非测量
+门禁、全部本地门禁和一次新的干净 Codex CR。

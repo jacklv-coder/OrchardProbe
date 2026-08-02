@@ -391,3 +391,16 @@ tuple beside the reviewed Go, bounded unchecked, ad-hoc, absent, protection,
 and digest-failure cases. The follow-up remediation CR found no actionable
 correctness issue. The same reproducibility, allowlist, normal-gate,
 local-gate, and clean-CR requirements remain in force before the 4B PR.
+
+After committing that result-retention remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`c562abef73db2ef844582793a80883c1ee64b88087c4abd607f1ac72e32fffa1`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,271,056`, SHA-256
+`6ee4fd9ee2def07fad6dd512337a52d6a3ea30a3bbb9a3890dd743794f297a0f`,
+and CodeDirectory CDHash `5d6319d37d5bdc0852fbb8631cf7e7179e86ba6f`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate, all local gates, and a fresh clean CR remain required
+before the 4B PR.
