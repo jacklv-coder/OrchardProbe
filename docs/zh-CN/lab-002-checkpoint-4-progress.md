@@ -272,3 +272,14 @@ Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随�
 并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。Format、锁定依赖且拒绝警告的
 Clippy、全部 281 项 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均
 通过。4B PR 前只剩一次新的干净 Codex CR。
+
+随后的合并前 CR 发现一个 P1 Oracle 来源缺口：Operator 会把保留 Archive/IPA 报告的
+UUID 与 Oracle 对照，却没有从精确冻结二进制重新推导完整 Oracle Role/Slice Tuple。
+修复后会解析并以密码学方式验证刚刚 Hash 的精确 Archive 内存快照和有界 IPA 内存快照中
+持有的精确 Entry；验证两套 `Info.plist` 身份、CMS Trust、签名身份与 Entitlements；从
+已签名 Manifest 重算每个 Target Binding；并要求完整重推导的 Oracle Role 与保留 Role
+结构完全相等。每次加载或重新验证 Source Tuple 都执行同一检查。后续 CR 还要求身份值必须
+从已签名报告重算，且 Parser 必须消费与 Hash 相同的内存字节；两个 P2 均已增加负向回归。
+第二轮未提交 CR 未发现其他正确性问题。由于这会改变 Rust Helper，合并前仍需两次新的独立
+可复现性测量、替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和一次最终干净 CR。
+4B 尚未合并期间，真机保持不操作。

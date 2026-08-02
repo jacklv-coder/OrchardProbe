@@ -2528,6 +2528,27 @@ fn close_oracle_role(
     })
 }
 
+fn verify_oracle_role_against_reports(
+    oracle_role: &OracleRole,
+    archive: &FixedSectionReport,
+    ipa: &FixedSectionReport,
+    expected_target_identity_binding_sha256: String,
+) -> Result<(), String> {
+    let derived = close_oracle_role(
+        oracle_role.role,
+        expected_target_identity_binding_sha256,
+        archive,
+        ipa,
+    )?;
+    if &derived != oracle_role {
+        return Err(format!(
+            "frozen Oracle {} slice tuple does not derive from the frozen Archive and IPA",
+            oracle_role.role.fixture_relative_path()
+        ));
+    }
+    Ok(())
+}
+
 fn closed_archive_ipa_export_extents(
     archive: &FixedSectionReport,
     ipa: &FixedSectionReport,
@@ -4628,6 +4649,35 @@ mod tests {
         assert_eq!(role.slices[0].ipa_section_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].code_signature_sha256, "66".repeat(32));
         assert_eq!(role.slices[0].slice_file_size, 4160);
+        verify_oracle_role_against_reports(
+            &role,
+            &archive,
+            &ipa,
+            role.target_identity_binding_sha256.clone(),
+        )
+        .unwrap();
+        assert!(
+            verify_oracle_role_against_reports(&role, &archive, &ipa, "88".repeat(32)).is_err()
+        );
+
+        for mutate in [
+            |role: &mut OracleRole| role.slices[0].expected_plaintext_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].ipa_section_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].code_signature_sha256 = "aa".repeat(32),
+            |role: &mut OracleRole| role.slices[0].section_file_offset += 1,
+        ] {
+            let mut tampered = role.clone();
+            mutate(&mut tampered);
+            assert!(
+                verify_oracle_role_against_reports(
+                    &tampered,
+                    &archive,
+                    &ipa,
+                    role.target_identity_binding_sha256.clone(),
+                )
+                .is_err()
+            );
+        }
 
         let mut unbound_growth = ipa.clone();
         unbound_growth.slices[0].code_signature_size = Some(512);

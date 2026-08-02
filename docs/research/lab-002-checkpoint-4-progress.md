@@ -434,3 +434,20 @@ the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
 all 280 Workspace tests, Ruby syntax, the diff check, and the explicit
 no-measurement-hook check also pass. A fresh clean Codex CR remains required
 before the 4B PR.
+
+The subsequent pre-merge CR found one P1 Oracle-provenance gap. The operator
+matched retained Archive/IPA report UUIDs against the Oracle but did not
+re-derive the complete Oracle role/slice tuple from the exact frozen binaries.
+The remediation now parses and cryptographically verifies the exact Archive
+snapshots that were hashed and the exact entries held in the bounded IPA
+snapshot; validates both sets of `Info.plist` identities, CMS trust, signing
+identity, and entitlements; recomputes each target binding from the signed
+manifest; and requires the fully re-derived Oracle role to be structurally
+identical to the retained role. The same check runs whenever the source tuple
+is loaded or revalidated. Follow-up CR also required identity values to be
+recomputed from the signed reports and parsing to use the same in-memory bytes
+that were hashed; both P2 gaps now have negative regressions. The second
+uncommitted CR found no further correctness issue. Because this changes the
+Rust Helper, two new independent reproducibility measurements, a replacement
+sole allowlist tuple, the normal gate, all local gates, and one clean final CR
+remain required before merge. The phone remains untouched while 4B is open.

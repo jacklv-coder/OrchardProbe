@@ -21,7 +21,7 @@ use orchardprobe_core::lab002::operator::{
     create_installation_control, create_run_control,
 };
 use orchardprobe_core::lab002::{
-    BuildBindingInput, build_binding_sha256, target_identity_binding_sha256,
+    BuildBindingInput, build_binding_sha256, parse_fixed_sections, target_identity_binding_sha256,
     target_identity_set_sha256,
 };
 use rand_core::OsRng;
@@ -258,7 +258,6 @@ struct FrozenEvidenceInputs<'a> {
     oracle_sha256: &'a str,
     ipa_size: u64,
     ipa_sha256: &'a str,
-    ipa_bytes: &'a [u8],
 }
 
 struct SourceBundle {
@@ -646,6 +645,114 @@ fn verify_frozen_ipa_entries(
     Ok(())
 }
 
+fn frozen_ipa_reports(
+    ipa_bytes: &[u8],
+    ipa_size: u64,
+) -> Result<Vec<super::CryptographicallyVerifiedReport>, String> {
+    let mut ipa = Cursor::new(ipa_bytes);
+    let inventory = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("frozen IPA inventory is invalid: {error}"))?;
+    let expected_paths = EVIDENCE_BINARY_SPECS
+        .iter()
+        .map(|(_, path)| format!("Payload/{path}"))
+        .collect::<Vec<_>>();
+    let mut reports = Vec::with_capacity(expected_paths.len());
+    for path in &expected_paths {
+        let entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == *path)
+            .ok_or_else(|| format!("frozen IPA is missing fixed executable {path}"))?;
+        let mut copied_file = tempfile::tempfile()
+            .map_err(|error| format!("could not create private IPA parser file: {error}"))?;
+        let copied = copy_ipa_entry_bounded(
+            &mut ipa,
+            ipa_size,
+            path,
+            super::MAX_EXECUTABLE_BYTES.min(MAX_IPA_ENTRY_COPY_BYTES),
+            &mut copied_file,
+        )
+        .map_err(|error| format!("could not parse frozen IPA executable {path}: {error}"))?;
+        if copied.inventory != inventory || copied.bytes_written != entry.uncompressed_size {
+            return Err(format!(
+                "frozen IPA inventory changed while parsing executable {path}"
+            ));
+        }
+        copied_file
+            .seek(SeekFrom::Start(0))
+            .map_err(|error| format!("could not rewind frozen IPA executable {path}: {error}"))?;
+        let report = parse_fixed_sections(&mut copied_file)
+            .map_err(|error| format!("frozen IPA executable {path} is invalid: {error}"))?;
+        if report.file_size != entry.uncompressed_size {
+            return Err(format!(
+                "frozen IPA executable {path} parser size does not match its retained bytes"
+            ));
+        }
+        reports.push(super::cryptographically_verify_report(
+            report,
+            "frozen IPA",
+        )?);
+    }
+    let confirmed = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("could not revalidate frozen IPA inventory: {error}"))?;
+    if confirmed != inventory {
+        return Err("frozen IPA inventory changed during Oracle derivation".into());
+    }
+    Ok(reports)
+}
+
+fn frozen_ipa_identities(
+    ipa_bytes: &[u8],
+    ipa_size: u64,
+) -> Result<Vec<super::ParsedInfoPlist>, String> {
+    let mut ipa = Cursor::new(ipa_bytes);
+    let inventory = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("frozen IPA inventory is invalid: {error}"))?;
+    let paths = [
+        "Payload/DemoLab.app/Info.plist",
+        "Payload/DemoLab.app/Frameworks/DemoFramework.framework/Info.plist",
+        "Payload/DemoLab.app/PlugIns/DemoShareExtension.appex/Info.plist",
+    ];
+    let mut identities = Vec::with_capacity(paths.len());
+    for path in paths {
+        let entry = inventory
+            .entries
+            .iter()
+            .find(|entry| entry.path == path)
+            .ok_or_else(|| format!("frozen IPA is missing fixed Info.plist {path}"))?;
+        if entry.uncompressed_size == 0 || entry.uncompressed_size > super::MAX_INFO_PLIST_BYTES {
+            return Err(format!("frozen IPA Info.plist {path} has an invalid size"));
+        }
+        let mut bytes = Vec::with_capacity(
+            usize::try_from(entry.uncompressed_size)
+                .map_err(|_| format!("frozen IPA Info.plist {path} size does not fit memory"))?,
+        );
+        let copied = copy_ipa_entry_bounded(
+            &mut ipa,
+            ipa_size,
+            path,
+            super::MAX_INFO_PLIST_BYTES.min(MAX_IPA_ENTRY_COPY_BYTES),
+            &mut bytes,
+        )
+        .map_err(|error| format!("could not read frozen IPA Info.plist {path}: {error}"))?;
+        if copied.inventory != inventory || copied.bytes_written != entry.uncompressed_size {
+            return Err(format!(
+                "frozen IPA inventory changed while reading Info.plist {path}"
+            ));
+        }
+        identities.push(
+            super::parse_info_plist(&bytes)
+                .map_err(|error| format!("frozen IPA Info.plist {path} is invalid: {error}"))?,
+        );
+    }
+    let confirmed = inspect_ipa(&mut ipa, ipa_size)
+        .map_err(|error| format!("could not revalidate frozen IPA inventory: {error}"))?;
+    if confirmed != inventory {
+        return Err("frozen IPA inventory changed during identity validation".into());
+    }
+    Ok(identities)
+}
+
 fn validate_complete_evidence(
     evidence: &PreuploadEvidence,
     inputs: &FrozenEvidenceInputs<'_>,
@@ -735,7 +842,7 @@ fn validate_complete_evidence(
         inputs.oracle_size,
         inputs.oracle_sha256,
     )?;
-    verify_frozen_ipa_entries(inputs.ipa_bytes, inputs.ipa_size, evidence)
+    Ok(())
 }
 
 struct DerivedPrebuildBindings {
@@ -881,7 +988,8 @@ fn verify_frozen_archive_files(
     archive_app: &File,
     evidence: &PreuploadEvidence,
     expected_executables: &[&str],
-) -> Result<(), String> {
+) -> Result<Vec<super::CryptographicallyVerifiedReport>, String> {
+    let mut reports = Vec::with_capacity(expected_executables.len());
     for (binary, relative_path) in evidence
         .artifacts
         .archive_binaries
@@ -890,33 +998,63 @@ fn verify_frozen_archive_files(
     {
         let components = relative_path.split('/').collect::<Vec<_>>();
         let label = format!("frozen Archive binary {relative_path}");
-        let mut file = super::open_regular_beneath(
+        let file = super::open_regular_beneath(
             archive_app,
             &components,
             super::MAX_EXECUTABLE_BYTES,
             &label,
         )?;
-        let identity = super::stable_file_identity(&file, super::MAX_EXECUTABLE_BYTES, &label)?;
-        let digest =
-            super::hash_stable_file(&mut file, &identity, super::MAX_EXECUTABLE_BYTES, &label)?;
-        if identity.size != binary.size || digest != binary.sha256 {
+        let (report, mut measurement) = super::measure_archive_executable(file, relative_path)?;
+        if measurement.identity.size != binary.size || measurement.sha256 != binary.sha256 {
             return Err(format!("{label} does not match the pre-upload evidence"));
         }
-        super::reopen_verified_regular_source(
+        measurement.verify_current_path(archive_app)?;
+        reports.push(super::cryptographically_verify_report(
+            report,
+            "frozen Archive",
+        )?);
+    }
+    Ok(reports)
+}
+
+fn verify_frozen_archive_identities(
+    archive_app: &File,
+) -> Result<Vec<super::ParsedInfoPlist>, String> {
+    let paths = [
+        "Info.plist",
+        "Frameworks/DemoFramework.framework/Info.plist",
+        "PlugIns/DemoShareExtension.appex/Info.plist",
+    ];
+    let mut identities = Vec::with_capacity(paths.len());
+    for path in paths {
+        let components = path.split('/').collect::<Vec<_>>();
+        let label = format!("frozen Archive Info.plist {path}");
+        let file = super::open_regular_beneath(
             archive_app,
             &components,
-            &identity,
-            &digest,
+            super::MAX_INFO_PLIST_BYTES,
             &label,
         )?;
+        let (bytes, mut measurement) =
+            super::measure_archive_file(file, super::MAX_INFO_PLIST_BYTES, path)?;
+        let identity = super::parse_info_plist(&bytes)
+            .map_err(|error| format!("{label} is invalid: {error}"))?;
+        measurement.verify_current_path(archive_app)?;
+        identities.push(identity);
     }
-    Ok(())
+    Ok(identities)
 }
 
 fn verify_frozen_archive(
     candidate: &PrivateOutputRoot,
     evidence: &PreuploadEvidence,
-) -> Result<(), String> {
+) -> Result<
+    (
+        Vec<super::CryptographicallyVerifiedReport>,
+        Vec<super::ParsedInfoPlist>,
+    ),
+    String,
+> {
     let archive_app = super::open_archive_app_beneath(&candidate.directory)?;
     let archive_identity = super::stable_directory_identity(&archive_app, "frozen Archive app")?;
     let expected_executables = EVIDENCE_BINARY_SPECS
@@ -933,12 +1071,104 @@ fn verify_frozen_archive(
     ) {
         return Err("frozen Archive executable inventory is not the exact three roles".into());
     }
-    verify_frozen_archive_files(&archive_app, evidence, &expected_executables)?;
+    let reports = verify_frozen_archive_files(&archive_app, evidence, &expected_executables)?;
+    let identities = verify_frozen_archive_identities(&archive_app)?;
     let final_archive = super::reopen_expected_archive_app(&candidate.directory, archive_identity)?;
     if super::archive_executable_inventory(&final_archive)? != inventory {
         return Err("frozen Archive executable inventory changed during validation".into());
     }
-    verify_frozen_archive_files(&final_archive, evidence, &expected_executables)
+    let confirmed_reports =
+        verify_frozen_archive_files(&final_archive, evidence, &expected_executables)?;
+    let confirmed_identities = verify_frozen_archive_identities(&final_archive)?;
+    if confirmed_reports
+        .iter()
+        .map(|value| &value.report)
+        .ne(reports.iter().map(|value| &value.report))
+        || confirmed_identities != identities
+    {
+        return Err("frozen Archive reports changed during validation".into());
+    }
+    Ok((confirmed_reports, confirmed_identities))
+}
+
+fn verify_frozen_binary_oracle(
+    candidate: &PrivateOutputRoot,
+    evidence: &PreuploadEvidence,
+    oracle: &LabOracle,
+    ipa: &super::ReadPrivateArtifact,
+    manifest: &AuthorizedTargetManifest,
+) -> Result<(), String> {
+    let (archive_reports, archive_identities) = verify_frozen_archive(candidate, evidence)?;
+    verify_frozen_ipa_entries(&ipa.bytes, ipa.size, evidence)?;
+    let ipa_reports = frozen_ipa_reports(&ipa.bytes, ipa.size)?;
+    let ipa_identities = frozen_ipa_identities(&ipa.bytes, ipa.size)?;
+    if archive_reports.len() != oracle.roles.len()
+        || ipa_reports.len() != oracle.roles.len()
+        || archive_identities.len() != oracle.roles.len()
+        || ipa_identities.len() != oracle.roles.len()
+        || manifest.targets.len() != oracle.roles.len()
+    {
+        return Err("frozen binary report inventory does not match the Oracle roles".into());
+    }
+    for (index, oracle_role) in oracle.roles.iter().enumerate() {
+        let target = &manifest.targets[index];
+        let archive_identity = &archive_identities[index];
+        let ipa_identity = &ipa_identities[index];
+        if target.role != oracle_role.role {
+            return Err("frozen Oracle role order does not match the authorized manifest".into());
+        }
+        super::validate_bundle_identity(
+            archive_identity,
+            target,
+            oracle_role.role,
+            &oracle.marketing_version,
+            &oracle.build_number,
+            "frozen Archive",
+        )?;
+        super::validate_bundle_identity(
+            ipa_identity,
+            target,
+            oracle_role.role,
+            &oracle.marketing_version,
+            &oracle.build_number,
+            "frozen IPA",
+        )?;
+        if archive_identity != ipa_identity {
+            return Err(format!(
+                "frozen Archive/IPA {} Info.plist identities differ",
+                oracle_role.role.fixture_relative_path()
+            ));
+        }
+        let expected_input = super::target_identity_input(&manifest.identity_nonce, target)?;
+        let expected_binding =
+            target_identity_binding_sha256(&expected_input).map_err(|error| error.to_string())?;
+        if oracle_role.target_identity_binding_sha256 != expected_binding {
+            return Err("frozen Oracle target identity is outside the authorized manifest".into());
+        }
+        super::verify_report_signing_identity(
+            &archive_reports[index],
+            target,
+            &archive_identity.bundle_identifier,
+            &manifest.identity_nonce,
+            &expected_binding,
+            "frozen Archive",
+        )?;
+        super::verify_report_signing_identity(
+            &ipa_reports[index],
+            target,
+            &ipa_identity.bundle_identifier,
+            &manifest.identity_nonce,
+            &expected_binding,
+            "frozen IPA",
+        )?;
+        super::verify_oracle_role_against_reports(
+            oracle_role,
+            &archive_reports[index].report,
+            &ipa_reports[index].report,
+            expected_binding,
+        )?;
+    }
+    Ok(())
 }
 
 fn require_unchanged_source_artifact(
@@ -967,6 +1197,7 @@ fn revalidate_frozen_source_tuple(
     candidate: &PrivateOutputRoot,
     artifacts: &FrozenSourceArtifacts<'_>,
     evidence: &PreuploadEvidence,
+    manifest: &AuthorizedTargetManifest,
 ) -> Result<(), String> {
     verify_private_artifact_inventory(&prebuild.directory)?;
     require_unchanged_source_artifact(
@@ -1034,7 +1265,9 @@ fn revalidate_frozen_source_tuple(
         artifacts.upload,
         "upload audit record",
     )?;
-    verify_frozen_archive(candidate, evidence)?;
+    let oracle = LabOracle::from_canonical_bytes(&artifacts.oracle.bytes)
+        .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
+    verify_frozen_binary_oracle(candidate, evidence, &oracle, artifacts.ipa, manifest)?;
     candidate_inventory(&candidate.directory)
 }
 
@@ -1075,6 +1308,8 @@ fn load_source_bundle(
     )?;
     let oracle_value = LabOracle::from_canonical_bytes(&oracle.bytes)
         .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
+    let manifest_value = AuthorizedTargetManifest::from_canonical_bytes(&manifest.bytes)
+        .map_err(|error| format!("authorized-target manifest is invalid: {error}"))?;
     let evidence_value: PreuploadEvidence = serde_json::from_slice(&evidence.bytes)
         .map_err(|error| format!("pre-upload evidence is invalid: {error}"))?;
     let upload_value: UploadResult = serde_json::from_slice(&upload.bytes)
@@ -1107,10 +1342,15 @@ fn load_source_bundle(
             oracle_sha256: &oracle_sha256,
             ipa_size: ipa.size,
             ipa_sha256: &ipa_sha256,
-            ipa_bytes: &ipa.bytes,
         },
     )?;
-    verify_frozen_archive(candidate, &evidence_value)?;
+    verify_frozen_binary_oracle(
+        candidate,
+        &evidence_value,
+        &oracle_value,
+        &ipa,
+        &manifest_value,
+    )?;
     if oracle_value.profile != record.profile
         || oracle_value.source_commit != record.source_commit
         || oracle_value.fixture_source_root != record.fixture_source_root
@@ -1156,6 +1396,7 @@ fn load_source_bundle(
             upload: &upload,
         },
         &evidence_value,
+        &manifest_value,
     )?;
     Ok(SourceBundle {
         signing_key,

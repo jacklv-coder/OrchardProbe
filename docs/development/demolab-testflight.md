@@ -289,8 +289,14 @@ source change cannot leave a successful result based on stale in-memory data.
 The second close applies the same final source revalidation before returning
 its closed disposition and rechecks run 1's retained Intent against the frozen
 pre-upload evidence before accepting the two-run chain.
-Every
-signed role report must then match the Oracle's exact role/slice identity,
+For every operation, the Helper parses and cryptographically verifies the exact
+Archive executable snapshots it hashed and the exact executable entries held
+in the bounded IPA snapshot. It independently validates each Archive/IPA
+`Info.plist`, signing identity, entitlements, CMS trust, and the target binding
+recomputed from the signed manifest, then re-derives the complete Oracle role
+and slice tuple. Structural equality with the retained Oracle is mandatory;
+UUID-only or self-consistent but substituted reports are insufficient. Every
+signed role report must therefore match the Oracle's exact role/slice identity,
 initial encryption coverage, and expected mapped plaintext digest. The second
 close evaluates byte-identical normalized observations across the ordered
 two-run chain before publishing run 2; a mismatch is atomically retained as
