@@ -596,3 +596,21 @@ same candidate-directory lock through atomic replacement and archival. A
 regression proves the existing controlled-writer lock and the new operator
 source lock exclude each other. Reproducibility and final gates remain required;
 the phone remains untouched.
+
+After committing the complete operator publication-boundary remediation, two
+independent complete Fastlane gates each rebuilt three Helpers from source
+snapshot
+`e44ca6351bb9a9c69a0b5489e09faac97f90309dc5e2a0b9f90eae8cf3b93a21`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,303,744`, SHA-256
+`11c78291e0d733c7355b8411c28376ef08ec129e43685bc7a9eb5db946f38951`,
+and CodeDirectory CDHash `62aa4cabf5507bee36567b03d4766b8fa12e8c70`.
+The temporary absent-tuple measurement hook was then removed completely and
+the explicit no-hook search passed before the exact sole product tuple was
+added to the reviewed source-snapshot allowlist. Both measurement gates passed
+the unsigned Simulator fixture. The normal non-measurement gate then rebuilt
+and admitted the exact allowlisted Helper and passed the fixture. Formatting,
+locked Clippy with warnings denied, all 287 Workspace tests, Ruby syntax, diff
+hygiene, and the explicit no-measurement-hook check also pass. The allowlist
+commit and final complete-diff CR remain required before push and merge; the
+phone remains untouched.

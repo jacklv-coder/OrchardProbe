@@ -378,3 +378,15 @@ Device/Inode 顺序，为每个绑定目录获取非阻塞排他锁，并在完�
 与 Candidate 锁；对账会在原子替换和归档期间持续持有同一个 Candidate 目录锁。新增回归证明
 既有受控 Writer 锁与新的 Operator Source 锁会相互排斥。可复现测量与最终门禁仍然必需；
 真机继续不操作。
+
+提交完整的 Operator 发布边界修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；
+Source Snapshot 为
+`e44ca6351bb9a9c69a0b5489e09faac97f90309dc5e2a0b9f90eae8cf3b93a21`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,303,744`、
+SHA-256 `11c78291e0d733c7355b8411c28376ef08ec129e43685bc7a9eb5db946f38951`、
+CodeDirectory CDHash `62aa4cabf5507bee36567b03d4766b8fa12e8c70`。随后已完整删除临时
+缺失 Tuple 测量 Hook，并在精确的唯一产物 Tuple 加入已评审 Source Snapshot Allowlist 前，
+通过明确的无 Hook 搜索；两轮测量门禁的无签名 Simulator Fixture 均通过。随后正常非测量
+门禁重新构建并接纳该精确 Helper，Fixture 也通过。Format、锁定依赖且拒绝警告的 Clippy、
+全部 287 项 Workspace 测试、Ruby 语法、Diff Hygiene 与明确的无测量 Hook 检查也均通过。
+Push 与合并前仅剩 Allowlist 提交和最终完整 Diff CR；真机继续不操作。
