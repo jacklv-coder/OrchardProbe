@@ -3081,10 +3081,12 @@ fn publish_prebuild_directory(
     files: &[(&str, &[u8])],
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
 ) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
     publish_prebuild_directory_with_arm(
         output_root,
         final_name,
         files,
+        &mut no_generated_files,
         arm_publication,
         &mut allow_any_publication_inventory,
         File::sync_all,
@@ -3098,10 +3100,31 @@ fn publish_prebuild_directory_guarded(
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
     publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
 ) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
     publish_prebuild_directory_with_arm(
         output_root,
         final_name,
         files,
+        &mut no_generated_files,
+        arm_publication,
+        publication_guard,
+        File::sync_all,
+    )
+}
+
+fn publish_prebuild_directory_guarded_with_generated_files(
+    output_root: &PrivateOutputRoot,
+    final_name: &str,
+    files: &[(&str, &[u8])],
+    generated_files: &mut impl FnMut((u64, u64)) -> Result<Vec<(String, Vec<u8>)>, String>,
+    arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
+    publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
+) -> Result<(u64, u64), String> {
+    publish_prebuild_directory_with_arm(
+        output_root,
+        final_name,
+        files,
+        generated_files,
         arm_publication,
         publication_guard,
         File::sync_all,
@@ -3115,10 +3138,12 @@ fn publish_prebuild_directory_with(
     files: &[(&str, &[u8])],
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
 ) -> Result<(u64, u64), String> {
+    let mut no_generated_files = |_| Ok(Vec::new());
     publish_prebuild_directory_with_arm(
         output_root,
         final_name,
         files,
+        &mut no_generated_files,
         &mut |_, _| Ok(()),
         &mut allow_any_publication_inventory,
         &mut sync_parent,
@@ -3133,6 +3158,7 @@ fn publish_prebuild_directory_with_arm(
     output_root: &PrivateOutputRoot,
     final_name: &str,
     files: &[(&str, &[u8])],
+    generated_files_for_identity: &mut impl FnMut((u64, u64)) -> Result<Vec<(String, Vec<u8>)>, String>,
     arm_publication: &mut impl FnMut(&str, (u64, u64)) -> Result<(), String>,
     publication_guard: &mut impl FnMut(&str) -> Result<(), String>,
     mut sync_parent: impl FnMut(&File) -> io::Result<()>,
@@ -3234,10 +3260,15 @@ fn publish_prebuild_directory_with_arm(
         return Err(format!("could not arm prebuild rollback: {error}"));
     }
 
+    let mut generated_files = Vec::new();
     let mut publication_renamed_back = false;
     let mut publication_may_be_live = false;
     let result = (|| {
+        generated_files = generated_files_for_identity(staging_identity)?;
         for (name, bytes) in files {
+            drop(write_private_file(&staging, name, bytes)?);
+        }
+        for (name, bytes) in &generated_files {
             drop(write_private_file(&staging, name, bytes)?);
         }
         staging
@@ -3282,10 +3313,19 @@ fn publish_prebuild_directory_with_arm(
     })();
 
     if result.is_err() {
+        let cleanup_files = files
+            .iter()
+            .copied()
+            .chain(
+                generated_files
+                    .iter()
+                    .map(|(name, bytes)| (name.as_str(), bytes.as_slice())),
+            )
+            .collect::<Vec<_>>();
         if let Err(cleanup_error) = cleanup_staging_directory_durably(
             &staging,
             staging_identity,
-            files,
+            &cleanup_files,
             parent,
             &staging_name,
             publication_may_be_live.then_some(final_name),
@@ -4271,6 +4311,7 @@ mod tests {
             &root,
             "lab002-prebuild-test",
             &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
             &mut |_, _| Err("injected rollback-arm failure".into()),
             &mut |_| Ok(()),
             File::sync_all,
@@ -4296,6 +4337,7 @@ mod tests {
             &root,
             "lab002-experiment",
             &[("private.bin", b"private")],
+            &mut |_| Ok(Vec::new()),
             &mut |_, _| Ok(()),
             &mut |only_name| {
                 let mut names = fs::read_dir(&root_path)

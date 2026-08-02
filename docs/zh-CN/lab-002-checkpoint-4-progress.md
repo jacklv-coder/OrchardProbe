@@ -390,3 +390,16 @@ CodeDirectory CDHash `62aa4cabf5507bee36567b03d4766b8fa12e8c70`。随后已完�
 门禁重新构建并接纳该精确 Helper，Fixture 也通过。Format、锁定依赖且拒绝警告的 Clippy、
 全部 287 项 Workspace 测试、Ruby 语法、Diff Hygiene 与明确的无测量 Hook 检查也均通过。
 Push 与合并前仅剩 Allowlist 提交和最终完整 Diff CR；真机继续不操作。
+
+该次最终完整 Diff CR 发现一个 P1 生命周期身份缺口：后续 Lane 会接受任何包含结构有效阶段
+副本的 Owner-only 实验目录，因此复制目录可以被关闭，而最初固定生命周期仍保持打开。现在
+Enrollment 发布会在原子 Rename 前，于同一个 Staging 目录中生成规范绑定，记录所持有输出根、
+新实验目录的 Device/Inode 身份及 Enrollment Experiment ID，并由冻结 Host 授权密钥签名。
+后续每个操作都会用独立重新打开的冻结 Source 验证该签名，要求固定子目录名，并在入口以及
+每次发布边界的前后，重新核对持久化 Parent、所持有 Experiment 与当前路径身份。后续未提交
+CR 拒绝了最初未签名的 Binding；回归现在证明原始目录可接受，而位于另一个 Parent 下的未改
+副本和由 Owner 重写 Binding 的副本都会被拒绝。签名修复后的第二轮未提交 CR 未发现 Diff
+范围内的正确性问题；全部 55 项 Helper 测试、锁定依赖且拒绝警告的 Clippy、Format、Ruby
+语法和 Diff Hygiene 均通过。由于 Rust Helper 再次变化，Push 与合并前仍需两次新的独立
+可复现性测量、替换唯一 Allowlist Tuple、正常及完整本地门禁，以及一轮新的最终干净 CR。
+真机继续不操作。

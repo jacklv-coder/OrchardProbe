@@ -255,7 +255,11 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 下排他发布固定 `lab002-experiment` 目录。该根目录必须为空；只要存在任何保留的既有实验
 就会失败关闭，因此不能在放弃或失败的生命周期旁重新发布 Enrollment 来绕过保留约束。
 Helper 会紧邻原子 No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清单。
-它会保留全新 15 分钟确认/信封。通过 TestFlight Provision
+同一次原子发布还会写入私有绑定，记录所持有的输出根与实验目录身份及 Enrollment Experiment
+ID，并由冻结 Host 授权密钥签名。后续每个 Lane 都会用独立重新打开的冻结 Source 验证签名，
+要求固定子目录名，并在阶段发布前后把持久身份与当前持有的 Parent、Experiment 及路径再次
+比对。复制目录树后重写 Binding、仅移动实验子目录或替换任一路径，都不能产生第二条可用
+生命周期；后续必须原地使用最初发布的目录。它会保留全新 15 分钟确认/信封。通过 TestFlight Provision
 已处理 Build 仍是 OrchardProbe 之外的独立操作；之后只向 DemoLab 导入固定安装信封。
 关闭 Enrollment 只接受一份有界设备签名 Receipt，并要求操作者逐字比较 Mac/iPhone
 显示的全部 64 位小写十六进制 Fingerprint。关闭或发布 Enrollment 前，Helper 还会同时

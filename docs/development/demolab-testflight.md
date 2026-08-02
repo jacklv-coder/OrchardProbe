@@ -269,7 +269,16 @@ operator output root. The root must be empty: any retained prior experiment
 makes the command fail closed, so an abandoned or failed lifecycle cannot be
 bypassed by publishing another enrollment beside it. The Helper checks the
 exact one-entry staging/final inventory immediately before and after its atomic
-no-replace rename. It retains the exact source controls and a fresh 15-minute
+no-replace rename. During that same atomic publication it writes a private
+binding for the held output-root and experiment directory identities, the
+Enrollment experiment ID, and a signature made by the frozen Host authorization
+key. Every later lane authenticates that binding against the independently
+reopened frozen source, requires the fixed child name, and revalidates both
+persisted identities against the held parent, held experiment, and current path
+before and around phase publication. Copying the tree and rewriting its binding,
+moving only the experiment child, or substituting either path cannot create a
+second usable lifecycle; keep using the originally published directory in
+place. It retains the exact source controls and a fresh 15-minute
 acknowledgement/envelope. Provisioning the already processed build
 through TestFlight remains a separate operator action outside OrchardProbe;
 only the fixed installation envelope is imported afterward.
@@ -360,7 +369,8 @@ The operator lanes use these additional private environment values:
 - `DEMO_LAB_LAB002_PREBUILD_DIRECTORY`: exact frozen 3A prebuild directory;
 - `DEMO_LAB_BUILD_OUTPUT_DIRECTORY`: exact frozen candidate directory;
 - `DEMO_LAB_LAB002_EXPERIMENT_DIRECTORY`: the exclusively published experiment
-  child used by every later lane;
+  child used in place by every later lane; do not copy it or rewrite its signed
+  directory-binding artifact;
 - `DEMO_LAB_LAB002_HARDWARE_MODEL`, `DEMO_LAB_LAB002_IOS_PRODUCT_VERSION`, and
   `DEMO_LAB_LAB002_IOS_BUILD`: sanitized expected environment for the selected
   owned iPhone, with no stable device identifier;

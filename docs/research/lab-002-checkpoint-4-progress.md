@@ -614,3 +614,24 @@ locked Clippy with warnings denied, all 287 Workspace tests, Ruby syntax, diff
 hygiene, and the explicit no-measurement-hook check also pass. The allowlist
 commit and final complete-diff CR remain required before push and merge; the
 phone remains untouched.
+
+That final complete-diff CR found one P1 lifecycle-identity gap. Later lanes
+accepted any owner-only experiment directory containing a structurally valid
+copy of the retained phases, so a copied directory could be closed while the
+original fixed lifecycle remained open. Enrollment publication now creates a
+canonical binding for the held output-root and newly published experiment
+device/inode identities plus the Enrollment experiment ID inside the same
+staging directory before the atomic rename. The frozen Host authorization key
+signs that binding. Every later operation authenticates it against the
+independently reopened frozen source, requires the fixed child name, and
+revalidates the persisted parent, held experiment, and current path identities
+at entry and on both sides of each publication boundary. A follow-up
+uncommitted CR rejected the initially unsigned binding; the regression now
+proves that the original directory is accepted while both an unchanged copy
+and an owner-rewritten copy under another parent are rejected. A second
+uncommitted CR found no diff-scoped correctness issue after the signed-binding
+remediation; all 55 Helper tests, locked Clippy with warnings denied, formatting,
+Ruby syntax, and diff hygiene pass. Because the Rust Helper changed, two new
+independent reproducibility measurements, replacement of the sole allowlist
+tuple, the normal and complete local gates, and a new clean final CR remain
+required before push and merge. The phone remains untouched.

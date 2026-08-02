@@ -5,7 +5,7 @@ use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signature, Signer, SigningKey};
 use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
 use orchardprobe_core::lab002::LAB002_PROFILE;
 use orchardprobe_core::lab002::artifacts::{
@@ -34,9 +34,9 @@ use super::{
     ORACLE_NAME, PREBUILD_NAME, PREBUILD_SCHEMA, PRIVATE_SEED_NAME, PrivateOutputRoot,
     RECONCILED_UPLOAD_NOTE, ReconciledUploadRecord, canonical_json, is_bounded_utc_timestamp,
     is_lower_hex, lower_hex, open_directory_entry, parse_identity_component,
-    publish_prebuild_directory_guarded, read_private_artifact, read_private_file_with_mode,
-    read_request, sha256_hex, validate_bound_private_output_root,
-    verify_private_artifact_inventory,
+    publish_prebuild_directory_guarded, publish_prebuild_directory_guarded_with_generated_files,
+    read_private_artifact, read_private_file_with_mode, read_request, sha256_hex,
+    validate_bound_private_output_root, verify_private_artifact_inventory,
 };
 
 const START_ENROLLMENT_SCHEMA: &str = "orchardprobe.lab002.operator-start-enrollment.v1";
@@ -50,6 +50,11 @@ const SOURCE_EVIDENCE_NAME: &str = "preupload-evidence.json";
 const INSTALL_ACK_NAME: &str = "installation-acknowledgement.json";
 const INSTALL_ENVELOPE_NAME: &str = "installation-envelope.json";
 const EXPERIMENT_DIRECTORY_NAME: &str = "lab002-experiment";
+const EXPERIMENT_DIRECTORY_BINDING_NAME: &str = "experiment-directory-binding.json";
+const EXPERIMENT_DIRECTORY_BINDING_SCHEMA: &str =
+    "orchardprobe.lab002.experiment-directory-binding.v1";
+const SIGNED_EXPERIMENT_DIRECTORY_BINDING_SCHEMA: &str =
+    "orchardprobe.lab002.signed-experiment-directory-binding.v1";
 const ENROLLMENT_RESULT_DIRECTORY: &str = "enrollment-result";
 const RECEIPT_NAME: &str = "signed-enrollment-receipt.json";
 const SELECTION_NAME: &str = "device-selection-confirmation.json";
@@ -295,6 +300,27 @@ struct RunFiles {
     binding: Vec<u8>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ExperimentDirectoryBinding {
+    schema: String,
+    parent_device: String,
+    parent_inode: String,
+    experiment_device: String,
+    experiment_inode: String,
+    experiment_name: String,
+    experiment_id: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SignedExperimentDirectoryBinding {
+    schema: String,
+    binding: ExperimentDirectoryBinding,
+    authorization_public_key: String,
+    signature: String,
+}
+
 fn assertions(
     confirmed: bool,
     owns_or_explicitly_authorized_target: bool,
@@ -365,6 +391,159 @@ fn held_root(
     descriptor: File,
 ) -> Result<PrivateOutputRoot, String> {
     validate_bound_private_output_root(&path, descriptor, identity)
+}
+
+fn signed_experiment_directory_binding(
+    parent_identity: (u64, u64),
+    experiment_identity: (u64, u64),
+    experiment_id: &str,
+    signing_key: &SigningKey,
+) -> Result<Vec<u8>, String> {
+    let binding = ExperimentDirectoryBinding {
+        schema: EXPERIMENT_DIRECTORY_BINDING_SCHEMA.into(),
+        parent_device: parent_identity.0.to_string(),
+        parent_inode: parent_identity.1.to_string(),
+        experiment_device: experiment_identity.0.to_string(),
+        experiment_inode: experiment_identity.1.to_string(),
+        experiment_name: EXPERIMENT_DIRECTORY_NAME.into(),
+        experiment_id: experiment_id.into(),
+    };
+    let message = canonical_json(&binding)
+        .map_err(|error| format!("could not encode experiment directory binding: {error}"))?;
+    canonical_json(&SignedExperimentDirectoryBinding {
+        schema: SIGNED_EXPERIMENT_DIRECTORY_BINDING_SCHEMA.into(),
+        binding,
+        authorization_public_key: lower_hex(signing_key.verifying_key().as_bytes()),
+        signature: lower_hex(&signing_key.sign(&message).to_bytes()),
+    })
+    .map_err(|error| format!("could not bind published experiment directory: {error}"))
+}
+
+fn decode_experiment_binding_signature(value: &str) -> Result<[u8; 64], String> {
+    if !is_lower_hex(value, 128) {
+        return Err("experiment directory binding signature is invalid".into());
+    }
+    let mut decoded = [0_u8; 64];
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let nibble = |byte: u8| match byte {
+            b'0'..=b'9' => byte - b'0',
+            b'a'..=b'f' => byte - b'a' + 10,
+            _ => 0,
+        };
+        decoded[index] = (nibble(pair[0]) << 4) | nibble(pair[1]);
+    }
+    Ok(decoded)
+}
+
+fn verify_experiment_directory_binding(
+    root: &PrivateOutputRoot,
+    source: &SourceBundle,
+    expected_experiment_id: &str,
+) -> Result<(), String> {
+    if root.canonical_path.file_name() != Some(OsStr::new(EXPERIMENT_DIRECTORY_NAME)) {
+        return Err("experiment is not the fixed published directory".into());
+    }
+    let parent_path = root
+        .canonical_path
+        .parent()
+        .ok_or_else(|| "published experiment parent is missing".to_owned())?;
+    let parent_path_metadata = std::fs::symlink_metadata(parent_path)
+        .map_err(|error| format!("could not inspect published experiment parent: {error}"))?;
+    let parent = rustix::fs::open(
+        parent_path,
+        rustix::fs::OFlags::RDONLY
+            | rustix::fs::OFlags::DIRECTORY
+            | rustix::fs::OFlags::NOFOLLOW
+            | rustix::fs::OFlags::CLOEXEC,
+        rustix::fs::Mode::empty(),
+    )
+    .map(File::from)
+    .map_err(|error| format!("could not hold published experiment parent: {error}"))?;
+    let parent_metadata = parent
+        .metadata()
+        .map_err(|error| format!("could not inspect held experiment parent: {error}"))?;
+    let experiment_metadata = root
+        .directory
+        .metadata()
+        .map_err(|error| format!("could not inspect held experiment directory: {error}"))?;
+    let experiment_path_metadata = std::fs::symlink_metadata(&root.canonical_path)
+        .map_err(|error| format!("could not rebind published experiment path: {error}"))?;
+    let bytes = read_root_artifact(root, EXPERIMENT_DIRECTORY_BINDING_NAME)?;
+    let signed: SignedExperimentDirectoryBinding = serde_json::from_slice(&bytes)
+        .map_err(|error| format!("experiment directory binding is invalid: {error}"))?;
+    let binding = &signed.binding;
+    let parent_identity = (
+        parse_identity_component(
+            OsStr::new(&binding.parent_device),
+            "experiment parent device",
+        )?,
+        parse_identity_component(OsStr::new(&binding.parent_inode), "experiment parent inode")?,
+    );
+    let experiment_identity = (
+        parse_identity_component(
+            OsStr::new(&binding.experiment_device),
+            "published experiment device",
+        )?,
+        parse_identity_component(
+            OsStr::new(&binding.experiment_inode),
+            "published experiment inode",
+        )?,
+    );
+    let expected_public_key = lower_hex(source.signing_key.verifying_key().as_bytes());
+    let message = canonical_json(binding).map_err(|error| error.to_string())?;
+    let signature = Signature::from_bytes(&decode_experiment_binding_signature(&signed.signature)?);
+    if canonical_json(&signed).map_err(|error| error.to_string())? != bytes
+        || signed.schema != SIGNED_EXPERIMENT_DIRECTORY_BINDING_SCHEMA
+        || signed.authorization_public_key != expected_public_key
+        || source
+            .signing_key
+            .verifying_key()
+            .verify_strict(&message, &signature)
+            .is_err()
+        || binding.schema != EXPERIMENT_DIRECTORY_BINDING_SCHEMA
+        || binding.experiment_name != EXPERIMENT_DIRECTORY_NAME
+        || binding.experiment_id != expected_experiment_id
+        || !parent_path_metadata.is_dir()
+        || parent_path_metadata.file_type().is_symlink()
+        || parent_path_metadata.uid() != rustix::process::geteuid().as_raw()
+        || parent_path_metadata.mode() & 0o777 != 0o700
+        || !parent_metadata.is_dir()
+        || parent_metadata.uid() != rustix::process::geteuid().as_raw()
+        || parent_metadata.mode() & 0o777 != 0o700
+        || (parent_path_metadata.dev(), parent_path_metadata.ino()) != parent_identity
+        || (parent_metadata.dev(), parent_metadata.ino()) != parent_identity
+        || !experiment_path_metadata.is_dir()
+        || experiment_path_metadata.file_type().is_symlink()
+        || experiment_path_metadata.uid() != rustix::process::geteuid().as_raw()
+        || experiment_path_metadata.mode() & 0o777 != 0o700
+        || (
+            experiment_path_metadata.dev(),
+            experiment_path_metadata.ino(),
+        ) != experiment_identity
+        || (experiment_metadata.dev(), experiment_metadata.ino()) != experiment_identity
+    {
+        return Err("experiment is not the originally published fixed directory".into());
+    }
+    Ok(())
+}
+
+fn verify_retained_experiment_directory(
+    root: &PrivateOutputRoot,
+    source: &SourceBundle,
+) -> Result<(), String> {
+    verify_experiment_directory_binding(root, source, &experiment_id(root)?)
+}
+
+fn held_experiment_root(
+    path: PathBuf,
+    identity: (u64, u64),
+    descriptor: File,
+) -> Result<PrivateOutputRoot, String> {
+    let root = held_root(path, identity, descriptor)?;
+    if root.canonical_path.file_name() != Some(OsStr::new(EXPERIMENT_DIRECTORY_NAME)) {
+        return Err("experiment is not the fixed published directory".into());
+    }
+    Ok(root)
 }
 
 fn read_raw(maximum: usize) -> Result<Vec<u8>, String> {
@@ -1572,6 +1751,7 @@ fn exact_experiment_inventory(
         SOURCE_EVIDENCE_NAME.to_owned(),
         INSTALL_ACK_NAME.to_owned(),
         INSTALL_ENVELOPE_NAME.to_owned(),
+        EXPERIMENT_DIRECTORY_BINDING_NAME.to_owned(),
     ];
     expected.extend_from_slice(phase_directories);
     let expected_refs = expected.iter().map(String::as_str).collect::<Vec<_>>();
@@ -1779,7 +1959,23 @@ fn start_enrollment(
         exact_inventory(&output.directory, &[only_name])
             .map_err(|_| "operator enrollment output root changed before publication".to_owned())
     };
-    publish_prebuild_directory_guarded(
+    let output_metadata = output
+        .directory
+        .metadata()
+        .map_err(|error| format!("could not inspect operator enrollment output root: {error}"))?;
+    let parent_identity = (output_metadata.dev(), output_metadata.ino());
+    let mut generated_files = |experiment_identity| {
+        Ok(vec![(
+            EXPERIMENT_DIRECTORY_BINDING_NAME.to_owned(),
+            signed_experiment_directory_binding(
+                parent_identity,
+                experiment_identity,
+                &acknowledgement.experiment_id,
+                &source.signing_key,
+            )?,
+        )])
+    };
+    publish_prebuild_directory_guarded_with_generated_files(
         &output,
         EXPERIMENT_DIRECTORY_NAME,
         &[
@@ -1789,6 +1985,7 @@ fn start_enrollment(
             (INSTALL_ACK_NAME, &control.acknowledgement),
             (INSTALL_ENVELOPE_NAME, &control.authorization_envelope),
         ],
+        &mut generated_files,
         &mut arm_publication,
         &mut publication_guard,
     )?;
@@ -1820,7 +2017,7 @@ fn close_enrollment_phase(
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
     let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
     let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
-    let root = held_root(path, identity, experiment_descriptor)?;
+    let root = held_experiment_root(path, identity, experiment_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
     let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     exact_inventory(
@@ -1831,9 +2028,11 @@ fn close_enrollment_phase(
             SOURCE_EVIDENCE_NAME,
             INSTALL_ACK_NAME,
             INSTALL_ENVELOPE_NAME,
+            EXPERIMENT_DIRECTORY_BINDING_NAME,
         ],
     )?;
     let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    verify_retained_experiment_directory(&root, &source)?;
     let (fingerprint, receipt) = read_fingerprint_and_receipt()?;
     let manifest = read_root_artifact(&root, SOURCE_MANIFEST_NAME)?;
     let acknowledgement = read_root_artifact(&root, INSTALL_ACK_NAME)?;
@@ -1855,13 +2054,15 @@ fn close_enrollment_phase(
         &source.evidence,
     )?;
     let mut source_guard = || {
+        verify_retained_experiment_directory(&root, &source)?;
         let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
         require_retained_source_match(
             &current_source,
             &source.manifest,
             &source.oracle,
             &source.evidence,
-        )
+        )?;
+        verify_retained_experiment_directory(&root, &source)
     };
     publish_operator_phase(
         &root,
@@ -1875,6 +2076,7 @@ fn close_enrollment_phase(
         &mut source_guard,
         &mut arm_publication,
     )?;
+    verify_retained_experiment_directory(&root, &source)?;
     let binding = DeviceEnrollmentBinding::from_canonical_bytes(&closure.device_enrollment_binding)
         .map_err(|error| error.to_string())?;
     drop(verified);
@@ -1907,7 +2109,7 @@ fn start_run(
         parse_bound(arguments, 1, "--experiment-directory")?;
     let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
     let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
-    let root = held_root(experiment_path, experiment_identity, experiment_descriptor)?;
+    let root = held_experiment_root(experiment_path, experiment_identity, experiment_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
     let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     let request: StartRunRequest = read_request(io::stdin().lock())?;
@@ -1916,6 +2118,7 @@ fn start_run(
     }
     let (_, enrollment) = verified_enrollment(&root)?;
     let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    verify_retained_experiment_directory(&root, &source)?;
     let run_one_control = phase_exists(&root, &run_directory_name(1, "control"))?;
     let run_one_result = phase_exists(&root, &run_directory_name(1, "result"))?;
     let run_two_control = phase_exists(&root, &run_directory_name(2, "control"))?;
@@ -1979,13 +2182,15 @@ fn start_run(
     .map_err(|error| format!("could not create run control: {error}"))?;
     let phase = run_directory_name(ordinal, "control");
     let mut source_guard = || {
+        verify_retained_experiment_directory(&root, &source)?;
         let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
         require_retained_source_match(
             &current_source,
             &source.manifest,
             &source.oracle,
             &source.evidence,
-        )
+        )?;
+        verify_retained_experiment_directory(&root, &source)
     };
     publish_operator_phase(
         &root,
@@ -1999,6 +2204,7 @@ fn start_run(
         &mut source_guard,
         &mut arm_publication,
     )?;
+    verify_retained_experiment_directory(&root, &source)?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: "control_published",
@@ -2027,10 +2233,11 @@ fn close_run_phase(
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
     let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
     let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
-    let root = held_root(path, identity, experiment_descriptor)?;
+    let root = held_experiment_root(path, identity, experiment_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
     let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    verify_retained_experiment_directory(&root, &source)?;
     let one_control_name = run_directory_name(1, "control");
     let one_result_name = run_directory_name(1, "result");
     let two_control_name = run_directory_name(2, "control");
@@ -2109,13 +2316,15 @@ fn close_run_phase(
     };
     let result_name = run_directory_name(ordinal, "result");
     let mut source_guard = || {
+        verify_retained_experiment_directory(&root, &source)?;
         let current_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
         require_retained_source_match(
             &current_source,
             &source.manifest,
             &source.oracle,
             &source.evidence,
-        )
+        )?;
+        verify_retained_experiment_directory(&root, &source)
     };
     publish_operator_phase(
         &root,
@@ -2128,6 +2337,7 @@ fn close_run_phase(
         &mut source_guard,
         &mut arm_publication,
     )?;
+    verify_retained_experiment_directory(&root, &source)?;
     let final_source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
     require_retained_source_match(
         &final_source,
@@ -2135,6 +2345,7 @@ fn close_run_phase(
         &source.oracle,
         &source.evidence,
     )?;
+    verify_retained_experiment_directory(&root, &source)?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: if ordinal == 2 {
@@ -2165,10 +2376,11 @@ fn verify_complete(
     let (path, identity) = parse_bound(arguments, 1, "--experiment-directory")?;
     let (prebuild_path, prebuild_identity) = parse_bound(arguments, 7, "--prebuild-directory")?;
     let (candidate_path, candidate_identity) = parse_bound(arguments, 13, "--candidate-directory")?;
-    let root = held_root(path, identity, experiment_descriptor)?;
+    let root = held_experiment_root(path, identity, experiment_descriptor)?;
     let prebuild = held_root(prebuild_path, prebuild_identity, prebuild_descriptor)?;
     let candidate = held_root(candidate_path, candidate_identity, candidate_descriptor)?;
     let source = verify_retained_source_bundle(&root, &prebuild, &candidate)?;
+    verify_retained_experiment_directory(&root, &source)?;
     exact_experiment_inventory(
         &root,
         &[
@@ -2219,6 +2431,7 @@ fn verify_complete(
         &source.oracle,
         &source.evidence,
     )?;
+    verify_retained_experiment_directory(&root, &source)?;
     Ok(OperatorOutput {
         schema: OPERATOR_RESULT_SCHEMA,
         status: "two_run_chain_verified",
@@ -2282,6 +2495,7 @@ mod tests {
     use std::cell::Cell;
     use std::fs::{self, File};
     use std::io::{Cursor, Write};
+    use std::os::unix::fs::MetadataExt;
 
     use ed25519_dalek::SigningKey;
     use orchardprobe_core::lab002::artifacts::{
@@ -2295,16 +2509,17 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::{
-        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, INSTALL_ACK_NAME,
-        INSTALL_ENVELOPE_NAME, MANIFEST_NAME, PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME,
-        RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME, SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME,
-        SourceBundle, UPLOAD_RESULT_NAME, UploadResult, candidate_inventory,
-        derive_prebuild_bindings, exact_inventory, has_exact_derived_prebuild_bindings,
-        next_run_ordinal, open_run_ordinal, publish_operator_phase,
-        read_candidate_reconciled_upload_records, require_empty_output_root,
-        require_retained_source_match, require_unchanged_source_artifact,
+        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_BINDING_NAME, EXPERIMENT_DIRECTORY_NAME,
+        EvidenceArtifactIdentity, INSTALL_ACK_NAME, INSTALL_ENVELOPE_NAME, MANIFEST_NAME,
+        PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME,
+        SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME, SignedExperimentDirectoryBinding, SourceBundle,
+        UPLOAD_RESULT_NAME, UploadResult, candidate_inventory, derive_prebuild_bindings,
+        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        publish_operator_phase, read_candidate_reconciled_upload_records,
+        require_empty_output_root, require_retained_source_match,
+        require_unchanged_source_artifact, signed_experiment_directory_binding,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
-        verify_frozen_archive, verify_frozen_ipa_entries,
+        verify_experiment_directory_binding, verify_frozen_archive, verify_frozen_ipa_entries,
     };
 
     fn test_ipa() -> (Vec<u8>, Vec<Vec<u8>>) {
@@ -2622,6 +2837,101 @@ mod tests {
     }
 
     #[test]
+    fn copied_experiment_directory_cannot_continue_the_lifecycle() {
+        let original_parent = tempdir().unwrap();
+        fs::set_permissions(
+            original_parent.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let original_path = original_parent.path().join(EXPERIMENT_DIRECTORY_NAME);
+        fs::create_dir(&original_path).unwrap();
+        fs::set_permissions(
+            &original_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let parent_metadata = fs::metadata(original_parent.path()).unwrap();
+        let experiment_metadata = fs::metadata(&original_path).unwrap();
+        let experiment_id = "11".repeat(32);
+        let source = SourceBundle {
+            signing_key: SigningKey::from_bytes(&[7; 32]),
+            manifest: Vec::new(),
+            oracle: Vec::new(),
+            evidence: Vec::new(),
+            build_binding_sha256: "22".repeat(32),
+        };
+        let binding = signed_experiment_directory_binding(
+            (parent_metadata.dev(), parent_metadata.ino()),
+            (experiment_metadata.dev(), experiment_metadata.ino()),
+            &experiment_id,
+            &source.signing_key,
+        )
+        .unwrap();
+        let original_binding = original_path.join(EXPERIMENT_DIRECTORY_BINDING_NAME);
+        fs::write(&original_binding, &binding).unwrap();
+        fs::set_permissions(
+            &original_binding,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        let original = super::super::PrivateOutputRoot {
+            canonical_path: original_path.canonicalize().unwrap(),
+            directory: File::open(&original_path).unwrap(),
+        };
+        assert!(verify_experiment_directory_binding(&original, &source, &experiment_id).is_ok());
+
+        let copied_parent = tempdir().unwrap();
+        fs::set_permissions(
+            copied_parent.path(),
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let copied_path = copied_parent.path().join(EXPERIMENT_DIRECTORY_NAME);
+        fs::create_dir(&copied_path).unwrap();
+        fs::set_permissions(
+            &copied_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o700),
+        )
+        .unwrap();
+        let copied_binding = copied_path.join(EXPERIMENT_DIRECTORY_BINDING_NAME);
+        fs::write(&copied_binding, &binding).unwrap();
+        fs::set_permissions(
+            &copied_binding,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        let copied = super::super::PrivateOutputRoot {
+            canonical_path: copied_path.canonicalize().unwrap(),
+            directory: File::open(&copied_path).unwrap(),
+        };
+        assert_eq!(
+            verify_experiment_directory_binding(&copied, &source, &experiment_id),
+            Err("experiment is not the originally published fixed directory".into())
+        );
+
+        let copied_parent_metadata = fs::metadata(copied_parent.path()).unwrap();
+        let copied_experiment_metadata = fs::metadata(&copied_path).unwrap();
+        let mut rewritten: SignedExperimentDirectoryBinding =
+            serde_json::from_slice(&binding).unwrap();
+        rewritten.binding.parent_device = copied_parent_metadata.dev().to_string();
+        rewritten.binding.parent_inode = copied_parent_metadata.ino().to_string();
+        rewritten.binding.experiment_device = copied_experiment_metadata.dev().to_string();
+        rewritten.binding.experiment_inode = copied_experiment_metadata.ino().to_string();
+        fs::remove_file(&copied_binding).unwrap();
+        fs::write(&copied_binding, super::canonical_json(&rewritten).unwrap()).unwrap();
+        fs::set_permissions(
+            &copied_binding,
+            std::os::unix::fs::PermissionsExt::from_mode(0o400),
+        )
+        .unwrap();
+        assert_eq!(
+            verify_experiment_directory_binding(&copied, &source, &experiment_id),
+            Err("experiment is not the originally published fixed directory".into())
+        );
+    }
+
+    #[test]
     fn operator_phase_publication_rejects_a_boundary_inventory_change() {
         let temporary = tempdir().unwrap();
         fs::set_permissions(
@@ -2635,6 +2945,7 @@ mod tests {
             SOURCE_EVIDENCE_NAME,
             INSTALL_ACK_NAME,
             INSTALL_ENVELOPE_NAME,
+            EXPERIMENT_DIRECTORY_BINDING_NAME,
         ] {
             File::create(temporary.path().join(name)).unwrap();
         }
@@ -2681,6 +2992,7 @@ mod tests {
             SOURCE_EVIDENCE_NAME,
             INSTALL_ACK_NAME,
             INSTALL_ENVELOPE_NAME,
+            EXPERIMENT_DIRECTORY_BINDING_NAME,
         ] {
             File::create(temporary.path().join(name)).unwrap();
         }
@@ -2732,6 +3044,7 @@ mod tests {
             SOURCE_EVIDENCE_NAME,
             INSTALL_ACK_NAME,
             INSTALL_ENVELOPE_NAME,
+            EXPERIMENT_DIRECTORY_BINDING_NAME,
         ] {
             File::create(temporary.path().join(name)).unwrap();
         }
