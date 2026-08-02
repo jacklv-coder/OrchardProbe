@@ -417,3 +417,13 @@ Snapshot Allowlist 前通过明确的无 Hook 搜索。随后正常非测量门�
 Helper，无签名 Simulator Fixture 通过。Format、锁定依赖且拒绝警告的全 Workspace Clippy、
 全部 288 项 Workspace 测试、Ruby 语法、Diff Hygiene 及明确的无测量 Hook 搜索也均通过。
 Push 与合并前仅剩 Allowlist 提交和一轮干净的最终完整 Diff CR。真机继续不操作。
+
+该次最终完整 Diff CR 发现一个 P1 兼容性回归：把通用上传操作移入 LAB-002 Source Lock Block
+后，合法的既有 DemoLab Evidence 会走非 Checkpoint 提前返回但不执行 Block，Lane 因而可能在
+没有上传、也没有记录结果的情况下结束。现在该绕过路径会明确执行通用上传 Block，保留既有
+行为；Checkpoint `1.0 (3)` 仍会在上传和终态结果发布期间持续持有三个 Source Lock。新增
+Fastlane 回归要求非 Checkpoint Evidence 必须执行该 Block。此修复只改变 Fastlane 控制流，
+已测量的 Rust Source Snapshot 与 Helper Tuple 不变。修复后的完整 Fastlane Gate、全部 288 项
+Workspace 测试、锁定依赖且拒绝警告的全 Target Clippy、Rust Format、Ruby 语法、Diff Hygiene
+及明确的无测量 Hook 搜索均通过。Push 与合并前仅剩修复提交和一轮新的干净最终 CR；真机继续
+不操作。

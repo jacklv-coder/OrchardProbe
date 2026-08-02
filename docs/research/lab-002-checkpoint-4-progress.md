@@ -657,3 +657,17 @@ warnings denied, all 288 Workspace tests, Ruby syntax, diff hygiene, and the
 explicit no-measurement-hook search also pass. The allowlist commit and a clean
 final complete-diff CR remain required before push and merge. The phone remains
 untouched.
+
+That final complete-diff CR found one P1 compatibility regression. Moving the
+generic upload attempt inside the LAB-002 source-lock block meant valid earlier
+DemoLab evidence took the gate's non-checkpoint early return without yielding,
+so the lane could finish without uploading or recording a result. The bypass
+now explicitly yields the generic upload block, preserving the prior path while
+checkpoint `1.0 (3)` still holds its three source locks through upload and
+terminal-result publication. A Fastlane regression requires non-checkpoint
+evidence to execute that block. Because this changes only Fastlane control flow,
+the measured Rust source snapshot and Helper tuple are unchanged. The complete
+Fastlane gate, all 288 Workspace tests, locked all-target Clippy with warnings
+denied, Rust formatting, Ruby syntax, diff hygiene, and the explicit
+no-measurement-hook search pass after the fix. A fix commit and a new clean
+final CR remain required; the phone remains untouched.

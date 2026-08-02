@@ -6159,9 +6159,13 @@ end
 def verify_lab002_upload_gate!(evidence_path, evidence, xcode_toolchain:)
   marketing_version = evidence.dig("build", "marketing_version")
   build_number = evidence.dig("build", "build_number")
-  return true unless marketing_version ==
-                     DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
-                     build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+  checkpoint_3 =
+    marketing_version == DEMO_LAB_LAB002_CHECKPOINT_3_MARKETING_VERSION &&
+    build_number == DEMO_LAB_LAB002_CHECKPOINT_3_BUILD_NUMBER
+  unless checkpoint_3
+    yield if block_given?
+    return true
+  end
 
   source_commit = evidence.dig("source", "commit")
   binding = evidence.fetch("lab002")
@@ -10088,6 +10092,23 @@ platform :ios do
       end
       unless gym_override_rejected
         UI.user_error!("Fastlane Gym environment override was accepted.")
+      end
+
+      generic_upload_yielded = false
+      verify_lab002_upload_gate!(
+        "unused-for-non-lab002-evidence",
+        {
+          "build" => {
+            "marketing_version" => "1.0",
+            "build_number" => "2",
+          },
+        },
+        xcode_toolchain: nil
+      ) do
+        generic_upload_yielded = true
+      end
+      unless generic_upload_yielded
+        UI.user_error!("The non-LAB-002 upload path skipped its upload block.")
       end
 
       oversized_evidence = File.join(workspace, "oversized-evidence.json")
