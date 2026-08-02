@@ -6,7 +6,7 @@
 
 激活 PR：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-当前分支状态：**检查点 4 active；4A 完成；4B 实现正在进行 Codex CR 修复**
+当前分支状态：**检查点 4 active；4A 完成；PR #74 正在执行 4B 最终评审与合并门禁**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -489,3 +489,22 @@ Diff Hygiene 及明确的无测量 Hook 搜索。Push 与合并前仍需 Allowli
 其聚焦测试、Clippy、Ruby 语法及 Diff 校验均通过，独立执行的正常本地门禁仍保持全部 292 项
 Workspace 测试通过。检查点 4B 现在可以依次执行 SSH Push、远端 PR/CI 检查、合并前 CR 与
 合并。真机继续不操作。
+
+远端评审在合并前又发现一个 P2 跨时钟顺序问题。只要仍在授权窗口内，iPhone 签名的 Receipt
+或已完成 Session 可以在有界时钟容差内领先 Mac 观测时间；Host 先前会把 Mac 的 `now()`
+直接写入 Selection/Binding，导致完整验证器可能因为 Host 关闭时间早于手机签名事件而拒绝
+合法链。现在两条关闭路径都会使用 Host 观测时间与已验证手机签名事件时间中的较晚值。既有
+完整链验证器仍继续约束签名授权截止时间，因此该修复只恢复因果顺序，不会扩大任何授权窗口。
+确定性回归覆盖 iPhone 事件领先 120 秒，并证明较晚的 Host 观测时间不会被向前回拨。
+
+由于该修复改变 Rust Helper，两次独立完整 Fastlane 门禁分别从 Source Snapshot
+`35af1682b7d2b7a98769ed64e5c4aa4bc7f227d60b5a7d4f2a2a745871a63d22` 重建三份产物。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,381,696`、
+SHA-256 `127f2821f48835dfd74aea409043dc0cb6abcd366d9fb29d3968e485438cecfc`、
+CodeDirectory CDHash `9eee8288d796fa943a6e308f8d98268e846ecea8`；两轮无签名 Simulator Fixture
+均通过。临时缺失 Source 测量 Hook 已在该精确唯一产物 Tuple 加入已评审 Source Snapshot
+Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门禁重新构建并只接纳 Allowlist
+中的 Helper，Fixture 通过。完整本地门禁也通过：Rust Format、锁定依赖且拒绝警告的全 Target
+Workspace Clippy、全部 294 项 Workspace 测试、Ruby 语法、Diff Hygiene 及无 Hook 搜索。
+后续仍严格依次执行 Allowlist/进度提交、干净完整 Diff Codex CR、SSH Push、远端 CI 与评审
+检查、合并前 CR 及合并。真机继续不操作。

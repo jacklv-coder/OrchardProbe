@@ -6,8 +6,8 @@ Tracking Issue: [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55)
 
 Activation PR: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
-Current branch status: **checkpoint 4 active; 4A complete; 4B implementation
-under Codex CR remediation**
+Current branch status: **checkpoint 4 active; 4A complete; PR #74 is in final
+4B review and merge gates**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -761,3 +761,34 @@ found no actionable correctness issue. Its focused tests, Clippy, Ruby syntax,
 and diff validation passed; the separately executed normal local gate remains
 green with all 292 Workspace tests. Checkpoint 4B is ready for its SSH push,
 remote PR/CI inspection, pre-merge CR, and merge. The phone remains untouched.
+
+Remote review of the pushed head then identified one P2 cross-clock ordering
+failure before merge. A signed iPhone Receipt or completed Session may be up to
+the bounded clock allowance ahead of the Mac observation while still remaining
+inside its authorization window. The Host previously wrote the Mac `now()`
+directly into its Selection/Binding, so the complete verifier could reject a
+lawful chain because the Host closure appeared earlier than the signed device
+event. Both closure paths now use the later of the Host observation and the
+already verified signed device event. The existing complete-chain verifiers
+continue to enforce the signed authorization deadline, so this preserves
+causal order without widening any authorization window. Deterministic
+regressions cover an iPhone event 120 seconds ahead and prove that a later Host
+observation is never moved backward.
+
+Because that fix changed the Rust Helper, two independent complete Fastlane
+gates each rebuilt three products from source snapshot
+`35af1682b7d2b7a98769ed64e5c4aa4bc7f227d60b5a7d4f2a2a745871a63d22`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,381,696`, SHA-256
+`127f2821f48835dfd74aea409043dc0cb6abcd366d9fb29d3968e485438cecfc`,
+and CodeDirectory CDHash `9eee8288d796fa943a6e308f8d98268e846ecea8`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist, and the explicit no-hook
+search passes. A normal non-measurement gate rebuilt and admitted only the
+allowlisted Helper and passed the fixture. The complete local gates pass with
+Rust formatting, locked all-target Workspace Clippy with warnings denied, all
+294 Workspace tests, Ruby syntax, diff hygiene, and the no-hook search. The
+allowlist/progress commit, clean complete-diff Codex CR, SSH push, remote CI and
+review inspection, pre-merge CR, and merge remain strictly ordered. The phone
+remains untouched.
