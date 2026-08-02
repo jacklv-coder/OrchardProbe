@@ -635,3 +635,25 @@ Ruby syntax, and diff hygiene pass. Because the Rust Helper changed, two new
 independent reproducibility measurements, replacement of the sole allowlist
 tuple, the normal and complete local gates, and a new clean final CR remain
 required before push and merge. The phone remains untouched.
+
+The authenticated lifecycle remediation was then committed locally. The first
+measurement attempt proved the temporary absent-tuple gate was too broad when
+Fastlane's deliberate substituted-SHA regression reached it; that attempt
+failed before a current Helper build and contributed no measurement. The gate
+was narrowed to sources with no existing allowlist entry. Two subsequent,
+independent complete Fastlane gates each rebuilt three Helpers from source
+snapshot
+`29bcf258ce3bb2a8ada0798ae65b6de1adaeed7c1c4c9cc97be38194eb645f67`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,360,384`, SHA-256
+`3d9a39ad38ace5856c662120d867491cf53d81aa57bdf437a498ca3d6f1241fb`,
+and CodeDirectory CDHash `95a4b27a75f08ac1337174dddac460aeb17ae028`;
+both unsigned Simulator fixtures passed. The temporary gate was removed
+completely and the explicit no-hook search passed before this exact sole
+product tuple was added to the reviewed source-snapshot allowlist. The normal
+non-measurement gate then rebuilt and admitted the exact Helper and passed the
+unsigned Simulator fixture. Formatting, locked full-Workspace Clippy with
+warnings denied, all 288 Workspace tests, Ruby syntax, diff hygiene, and the
+explicit no-measurement-hook search also pass. The allowlist commit and a clean
+final complete-diff CR remain required before push and merge. The phone remains
+untouched.

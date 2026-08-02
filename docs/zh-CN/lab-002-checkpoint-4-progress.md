@@ -403,3 +403,17 @@ CR 拒绝了最初未签名的 Binding；回归现在证明原始目录可接受
 语法和 Diff Hygiene 均通过。由于 Rust Helper 再次变化，Push 与合并前仍需两次新的独立
 可复现性测量、替换唯一 Allowlist Tuple、正常及完整本地门禁，以及一轮新的最终干净 CR。
 真机继续不操作。
+
+随后已在本地提交通过认证的生命周期修复。第一次测量尝试证明临时缺失 Tuple 门禁范围过宽：
+Fastlane 故意替换 SHA 的回归测试触发该入口，因此该次在构建当前 Helper 前失败，不计入测量。
+入口收紧为仅允许尚无任何 Allowlist 项的 Source 后，两次独立完整 Fastlane 门禁分别重新构建
+三份 Helper；Source Snapshot 为
+`29bcf258ce3bb2a8ada0798ae65b6de1adaeed7c1c4c9cc97be38194eb645f67`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,360,384`、
+SHA-256 `3d9a39ad38ace5856c662120d867491cf53d81aa57bdf437a498ca3d6f1241fb`、
+CodeDirectory CDHash `95a4b27a75f08ac1337174dddac460aeb17ae028`；两轮无签名 Simulator
+Fixture 均通过。临时门禁随后被完整删除，并在此精确唯一产物 Tuple 加入已评审 Source
+Snapshot Allowlist 前通过明确的无 Hook 搜索。随后正常非测量门禁重新构建并接纳该精确
+Helper，无签名 Simulator Fixture 通过。Format、锁定依赖且拒绝警告的全 Workspace Clippy、
+全部 288 项 Workspace 测试、Ruby 语法、Diff Hygiene 及明确的无测量 Hook 搜索也均通过。
+Push 与合并前仅剩 Allowlist 提交和一轮干净的最终完整 Diff CR。真机继续不操作。
