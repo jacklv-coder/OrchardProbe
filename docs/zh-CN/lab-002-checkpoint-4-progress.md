@@ -312,3 +312,13 @@ CodeDirectory CDHash `8b5f62771adf5fe02828201e41f13a90459e0f7f`。临时缺失 T
 Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。之后的正常非测量门禁已重新
 构建并接纳该精确 Tuple，格式化、Clippy、Ruby 语法、Diff Hygiene、Fixture 与全部 283 项
 本地测试均通过。Push 与合并前仅剩一次最终干净 CR；真机保持不操作。
+
+该次完整 Diff CR 发现一个 P2 重试生命周期兼容缺口：一次有效的上传不确定结果对账会按
+设计在下一份 Active 上传结果旁保留最多 32 份审计记录，但 Operator Source Loader 只允许
+五个当前 Candidate 项。修复后仅接受既有封闭的对账文件名格式与数量上限，按封闭 Schema
+解析每份保留记录，将其绑定到同一 Source Commit 与 IPA Digest，并验证时间戳、Destination、
+Status、Note 和操作员对账决定；最终 Source 复核还会按身份重新打开每份记录。未知、畸形、
+权限放宽、Tuple 不匹配、新增、删除或替换的记录仍会 Fail Closed。回归测试覆盖有效保留历史
+流程、无效名称和错误 Tuple。由于这会改变 Rust Helper，Push 与合并前仍需两次新的独立可
+复现测量、替换唯一 Allowlist Tuple、正常与完整本地门禁，以及另一轮最终干净 CR。真机保持
+不操作。

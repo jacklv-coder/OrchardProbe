@@ -30,12 +30,13 @@ use sha2::{Digest, Sha256};
 
 use super::{
     CHECKPOINT_BUILD_NUMBER, CHECKPOINT_MARKETING_VERSION, MANIFEST_NAME, MAX_IPA_BYTES,
-    MAX_PRIVATE_ARTIFACT_BYTES, MAX_UPLOAD_RESULT_BYTES, ORACLE_NAME, PREBUILD_NAME,
-    PREBUILD_SCHEMA, PRIVATE_SEED_NAME, PrivateOutputRoot, canonical_json,
-    is_bounded_utc_timestamp, is_lower_hex, lower_hex, open_directory_entry,
-    parse_identity_component, publish_prebuild_directory, publish_prebuild_directory_guarded,
-    read_private_artifact, read_private_file_with_mode, read_request, sha256_hex,
-    validate_bound_private_output_root, verify_private_artifact_inventory,
+    MAX_PRIVATE_ARTIFACT_BYTES, MAX_RECONCILED_UPLOAD_RECORDS, MAX_UPLOAD_RESULT_BYTES,
+    ORACLE_NAME, PREBUILD_NAME, PREBUILD_SCHEMA, PRIVATE_SEED_NAME, PrivateOutputRoot,
+    RECONCILED_UPLOAD_NOTE, ReconciledUploadRecord, canonical_json, is_bounded_utc_timestamp,
+    is_lower_hex, lower_hex, open_directory_entry, parse_identity_component,
+    publish_prebuild_directory, publish_prebuild_directory_guarded, read_private_artifact,
+    read_private_file_with_mode, read_request, sha256_hex, validate_bound_private_output_root,
+    verify_private_artifact_inventory,
 };
 
 const START_ENROLLMENT_SCHEMA: &str = "orchardprobe.lab002.operator-start-enrollment.v1";
@@ -968,17 +969,43 @@ fn private_seed_and_record(prebuild: &PrivateOutputRoot) -> Result<PrebuildSourc
     })
 }
 
-fn candidate_inventory(directory: &File) -> Result<(), String> {
-    exact_inventory(
-        directory,
-        &[
-            "DemoLab.xcarchive",
-            "DemoLab-3.ipa",
-            EVIDENCE_NAME,
-            UPLOAD_RESULT_NAME,
-            ORACLE_NAME,
-        ],
-    )?;
+fn candidate_inventory(directory: &File) -> Result<Vec<String>, String> {
+    let mut observed = Vec::with_capacity(5 + MAX_RECONCILED_UPLOAD_RECORDS);
+    for entry in rustix::fs::Dir::read_from(directory)
+        .map_err(|error| format!("could not enumerate frozen candidate: {error}"))?
+    {
+        let entry = entry.map_err(|error| format!("frozen candidate entry is invalid: {error}"))?;
+        let name = entry.file_name().to_bytes();
+        if matches!(name, b"." | b"..") {
+            continue;
+        }
+        observed.push(
+            String::from_utf8(name.to_vec()).map_err(|_| "frozen candidate entry is not UTF-8")?,
+        );
+        if observed.len() > 5 + MAX_RECONCILED_UPLOAD_RECORDS {
+            return Err("frozen candidate contains an unexpected entry".into());
+        }
+    }
+    observed.sort();
+    let mut expected = vec![
+        "DemoLab.xcarchive".to_owned(),
+        "DemoLab-3.ipa".to_owned(),
+        EVIDENCE_NAME.to_owned(),
+        UPLOAD_RESULT_NAME.to_owned(),
+        ORACLE_NAME.to_owned(),
+    ];
+    let mut reconciled = observed
+        .iter()
+        .filter(|name| super::reconciled_upload_record_name(name))
+        .cloned()
+        .collect::<Vec<_>>();
+    expected.extend(reconciled.iter().cloned());
+    expected.sort();
+    if observed != expected {
+        return Err("frozen candidate does not contain the exact upload tuple".into());
+    }
+    reconciled.sort();
+
     let archive = open_directory_entry(directory, "DemoLab.xcarchive")
         .map_err(|error| format!("could not open frozen Archive: {error}"))?;
     let metadata = archive
@@ -987,7 +1014,38 @@ fn candidate_inventory(directory: &File) -> Result<(), String> {
     if !metadata.is_dir() || metadata.uid() != rustix::process::geteuid().as_raw() {
         return Err("frozen Archive is not an owned directory".into());
     }
-    Ok(())
+    Ok(reconciled)
+}
+
+fn read_candidate_reconciled_upload_records(
+    directory: &File,
+    names: &[String],
+    upload: &UploadResult,
+) -> Result<Vec<(String, super::ReadPrivateArtifact)>, String> {
+    let mut artifacts = Vec::with_capacity(names.len());
+    for name in names {
+        let artifact =
+            read_private_file_with_mode(directory, name, MAX_UPLOAD_RESULT_BYTES, 0o600)?;
+        let record: ReconciledUploadRecord = serde_json::from_slice(&artifact.bytes)
+            .map_err(|error| format!("reconciled upload audit record is invalid: {error}"))?;
+        if record.schema_version != 1
+            || record.source_commit != upload.source_commit
+            || record.ipa_sha256 != upload.ipa_sha256
+            || !is_bounded_utc_timestamp(&record.attempt_started_at)
+            || record.destination != "TestFlight internal preparation"
+            || record.external_distribution
+            || record.status != "reconciled_absent"
+            || record.note != RECONCILED_UPLOAD_NOTE
+            || !is_bounded_utc_timestamp(&record.reconciled_at)
+            || record.reconciliation != "operator_confirmed_absent_in_app_store_connect"
+        {
+            return Err(
+                "reconciled upload audit record does not match this candidate tuple".into(),
+            );
+        }
+        artifacts.push((name.clone(), artifact));
+    }
+    Ok(artifacts)
 }
 
 fn verify_frozen_archive_files(
@@ -1196,6 +1254,7 @@ struct FrozenSourceArtifacts<'a> {
     evidence: &'a super::ReadPrivateArtifact,
     ipa: &'a super::ReadPrivateArtifact,
     upload: &'a super::ReadPrivateArtifact,
+    reconciled_uploads: &'a [(String, super::ReadPrivateArtifact)],
 }
 
 fn revalidate_frozen_source_tuple(
@@ -1231,7 +1290,16 @@ fn revalidate_frozen_source_tuple(
     )?;
     verify_private_artifact_inventory(&prebuild.directory)?;
 
-    candidate_inventory(&candidate.directory)?;
+    let reconciled_names = candidate_inventory(&candidate.directory)?;
+    if reconciled_names
+        != artifacts
+            .reconciled_uploads
+            .iter()
+            .map(|(name, _)| name.clone())
+            .collect::<Vec<_>>()
+    {
+        return Err("frozen candidate reconciliation inventory changed".into());
+    }
     require_unchanged_source_artifact(
         read_private_artifact(
             &candidate.directory,
@@ -1271,10 +1339,25 @@ fn revalidate_frozen_source_tuple(
         artifacts.upload,
         "upload audit record",
     )?;
+    for (name, expected) in artifacts.reconciled_uploads {
+        require_unchanged_source_artifact(
+            read_private_file_with_mode(
+                &candidate.directory,
+                name,
+                MAX_UPLOAD_RESULT_BYTES,
+                0o600,
+            )?,
+            expected,
+            "reconciled upload audit record",
+        )?;
+    }
     let oracle = LabOracle::from_canonical_bytes(&artifacts.oracle.bytes)
         .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
     verify_frozen_binary_oracle(candidate, evidence, &oracle, artifacts.ipa, manifest)?;
-    candidate_inventory(&candidate.directory)
+    if candidate_inventory(&candidate.directory)? != reconciled_names {
+        return Err("frozen candidate reconciliation inventory changed".into());
+    }
+    Ok(())
 }
 
 fn load_source_bundle(
@@ -1288,7 +1371,7 @@ fn load_source_bundle(
         record_artifact,
         record,
     } = private_seed_and_record(prebuild)?;
-    candidate_inventory(&candidate.directory)?;
+    let reconciled_names = candidate_inventory(&candidate.directory)?;
     let oracle = read_private_artifact(
         &candidate.directory,
         ORACLE_NAME,
@@ -1320,6 +1403,11 @@ fn load_source_bundle(
         .map_err(|error| format!("pre-upload evidence is invalid: {error}"))?;
     let upload_value: UploadResult = serde_json::from_slice(&upload.bytes)
         .map_err(|error| format!("upload audit record is invalid: {error}"))?;
+    let reconciled_uploads = read_candidate_reconciled_upload_records(
+        &candidate.directory,
+        &reconciled_names,
+        &upload_value,
+    )?;
     let oracle_targets_match = record.targets.len() == oracle_value.roles.len()
         && record
             .targets
@@ -1400,6 +1488,7 @@ fn load_source_bundle(
             evidence: &evidence,
             ipa: &ipa,
             upload: &upload,
+            reconciled_uploads: &reconciled_uploads,
         },
         &evidence_value,
         &manifest_value,
@@ -2111,10 +2200,11 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::{
-        EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, MANIFEST_NAME, PreuploadEvidence,
-        RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle, UploadResult,
-        derive_prebuild_bindings, exact_inventory, has_exact_derived_prebuild_bindings,
-        next_run_ordinal, open_run_ordinal, require_empty_output_root,
+        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_NAME, EvidenceArtifactIdentity, MANIFEST_NAME,
+        PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SourceBundle,
+        UPLOAD_RESULT_NAME, UploadResult, candidate_inventory, derive_prebuild_bindings,
+        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
+        read_candidate_reconciled_upload_records, require_empty_output_root,
         require_retained_source_match, require_unchanged_source_artifact,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
         verify_frozen_archive, verify_frozen_ipa_entries,
@@ -2332,6 +2422,70 @@ mod tests {
 
         File::create(temporary.path().join("unexpected.json")).unwrap();
         assert!(exact_inventory(&directory, &expected).is_err());
+    }
+
+    #[test]
+    fn candidate_inventory_accepts_only_validated_reconciliation_history() {
+        let temporary = tempdir().unwrap();
+        fs::create_dir(temporary.path().join("DemoLab.xcarchive")).unwrap();
+        for name in [
+            "DemoLab-3.ipa",
+            EVIDENCE_NAME,
+            UPLOAD_RESULT_NAME,
+            super::ORACLE_NAME,
+        ] {
+            File::create(temporary.path().join(name)).unwrap();
+        }
+        let reconciled_name = "demolab-upload-result-reconciled-0123456789abcdef01234567.json";
+        let reconciled_path = temporary.path().join(reconciled_name);
+        let upload = UploadResult {
+            schema_version: 1,
+            source_commit: "11".repeat(20),
+            ipa_sha256: "22".repeat(32),
+            attempt_started_at: "2026-08-01T00:06:00Z".into(),
+            uploaded_at: Some("2026-08-01T00:07:00Z".into()),
+            destination: "TestFlight internal preparation".into(),
+            external_distribution: false,
+            status: "accepted".into(),
+            note: super::UPLOAD_ACCEPTED_NOTE.into(),
+        };
+        let reconciled = super::super::ReconciledUploadRecord {
+            schema_version: 1,
+            source_commit: upload.source_commit.clone(),
+            ipa_sha256: upload.ipa_sha256.clone(),
+            attempt_started_at: "2026-08-01T00:00:00Z".into(),
+            destination: "TestFlight internal preparation".into(),
+            external_distribution: false,
+            status: "reconciled_absent".into(),
+            note: super::super::RECONCILED_UPLOAD_NOTE.into(),
+            reconciled_at: "2026-08-01T00:05:00Z".into(),
+            reconciliation: "operator_confirmed_absent_in_app_store_connect".into(),
+        };
+        fs::write(&reconciled_path, serde_json::to_vec(&reconciled).unwrap()).unwrap();
+        fs::set_permissions(
+            &reconciled_path,
+            std::os::unix::fs::PermissionsExt::from_mode(0o600),
+        )
+        .unwrap();
+
+        let directory = File::open(temporary.path()).unwrap();
+        let names = candidate_inventory(&directory).unwrap();
+        assert_eq!(names, [reconciled_name]);
+        assert!(read_candidate_reconciled_upload_records(&directory, &names, &upload).is_ok());
+
+        let mut wrong_tuple = upload;
+        wrong_tuple.ipa_sha256 = "33".repeat(32);
+        assert!(
+            read_candidate_reconciled_upload_records(&directory, &names, &wrong_tuple).is_err()
+        );
+
+        File::create(
+            temporary
+                .path()
+                .join("demolab-upload-result-reconciled-not-a-valid-random-component.json"),
+        )
+        .unwrap();
+        assert!(candidate_inventory(&directory).is_err());
     }
 
     #[test]

@@ -494,3 +494,19 @@ non-measurement gate subsequently rebuilt and admitted the exact tuple, and
 formatting, Clippy, Ruby syntax, diff hygiene, the fixture, and all 283 local
 tests passed. One final clean CR remains required before push and merge; the
 phone remains untouched.
+
+That complete-diff CR found one P2 retry-lifecycle compatibility gap. A valid
+indeterminate-upload reconciliation deliberately retains up to 32 audit
+records beside the next active upload result, but the operator source loader
+required an inventory containing only the five active candidate entries. The
+remediation admits only the existing closed reconciliation filename shape and
+bound, parses every retained record with the closed schema, binds it to the
+same source commit and IPA digest, validates its timestamps, destination,
+status, note, and operator reconciliation decision, and reopens every record
+by identity during the final source revalidation. Unknown, malformed,
+permission-relaxed, tuple-mismatched, added, removed, or replaced records still
+fail closed. A regression covers the valid retained-history lifecycle and the
+invalid-name and wrong-tuple cases. Because this changes the Rust Helper, two
+fresh independent reproducibility measurements, replacement of the sole
+allowlist tuple, the normal and complete local gates, and another clean final
+CR remain required before push and merge. The phone remains untouched.
