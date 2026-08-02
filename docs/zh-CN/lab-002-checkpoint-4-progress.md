@@ -283,3 +283,14 @@ UUID 与 Oracle 对照，却没有从精确冻结二进制重新推导完整 Ora
 第二轮未提交 CR 未发现其他正确性问题。由于这会改变 Rust Helper，合并前仍需两次新的独立
 可复现性测量、替换唯一 Allowlist Tuple、正常门禁、全部本地门禁和一次最终干净 CR。
 4B 尚未合并期间，真机保持不操作。
+
+提交该 Oracle 来源修复后，两次独立完整 Fastlane 门禁各自重新构建三份 Helper；Source
+Snapshot 为 `690aa31e3d0da4d562b974b8e368fbb13c44c37c59a045e2a304c4ed8b7e25ec`。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,283,408`、
+SHA-256 `ba8bb79ac2f3bbf7ad3120b79f27e17c285aabcb3e784a5a1f2db818bce70246`、
+CodeDirectory CDHash `25138be1efb9132acaa555d4bf561ce52b0ff8ea`。临时缺失 Tuple
+测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建
+并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。
+Format、锁定依赖且拒绝警告的 Clippy、全部 281 项 Workspace 测试、Ruby 语法、Diff 检查和
+明确的无测量 Hook 检查也均通过。合并前只剩一次最终干净 CR；真机保持不操作。

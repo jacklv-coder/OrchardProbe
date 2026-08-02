@@ -451,3 +451,19 @@ uncommitted CR found no further correctness issue. Because this changes the
 Rust Helper, two new independent reproducibility measurements, a replacement
 sole allowlist tuple, the normal gate, all local gates, and one clean final CR
 remain required before merge. The phone remains untouched while 4B is open.
+
+After committing that Oracle-provenance remediation, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`690aa31e3d0da4d562b974b8e368fbb13c44c37c59a045e2a304c4ed8b7e25ec`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,283,408`, SHA-256
+`ba8bb79ac2f3bbf7ad3120b79f27e17c285aabcb3e784a5a1f2db818bce70246`,
+and CodeDirectory CDHash `25138be1efb9132acaa555d4bf561ce52b0ff8ea`.
+The temporary absent-tuple measurement hook was removed completely before the
+exact sole product tuple was added to the reviewed source-snapshot allowlist.
+Both measurement gates also passed the unsigned Simulator fixture. The normal
+non-measurement gate then rebuilt and admitted the allowlisted Helper and passed
+the unsigned Simulator fixture. Formatting, locked Clippy with warnings denied,
+all 281 Workspace tests, Ruby syntax, the diff check, and the explicit
+no-measurement-hook check also pass. One final clean CR remains required before
+merge; the phone remains untouched.
