@@ -461,3 +461,13 @@ Ruby 语法、Diff Hygiene 及明确的无测量 Hook 搜索也均通过。Push 
 锁定依赖且拒绝警告的 Helper Clippy、Rust Format 与 Diff Hygiene 均通过。由于 Rust Helper
 再次变化，Push 与合并前仍需两次独立完整可复现性测量、替换唯一 Allowlist Tuple、正常及完整
 本地门禁，以及一轮新的最终干净 CR。真机继续不操作。
+
+发布修复后的第一次测量尝试虽产生两份完全一致的候选 Helper 身份，但完整门禁在 Simulator
+Fixture 前停止，因此不计入测量。当前所选 Xcode 26.6 工具链报告 iPhoneOS SDK Build
+`23F81a`；Artifact Schema 与 Artifact Validator 已允许 Apple 使用大写 Train 字母及
+字母数字后缀，但独立实现的 Build Binding Validator 错误拒绝了全部小写后缀。现在 Binding
+与 Device Environment Validator 统一采用关闭的 Schema 语法：数字前缀、一个大写 Train
+字母及非空字母数字后缀。回归接受真实 SDK 拼写，同时继续拒绝小写 Train 字母。Core、Schema、
+Fixture 与 Helper 测试、锁定依赖且拒绝警告的全 Target Workspace Clippy、Rust Format 与
+Diff Hygiene 均通过。该 Rust 变化需要新的提交，并使两次独立可复现性测量从零重新开始。
+真机继续不操作。

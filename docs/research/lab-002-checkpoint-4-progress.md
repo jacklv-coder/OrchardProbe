@@ -722,3 +722,18 @@ pass. Because the Rust Helper changed, two independent complete reproducibility
 measurements, replacement of the sole allowlist tuple, normal and complete
 local gates, and a new clean final CR remain required before push and merge.
 The phone remains untouched.
+
+The first post-fix measurement attempt produced two identical candidate Helper
+identities but is not counted because the complete gate stopped before its
+Simulator fixture. The selected Xcode 26.6 toolchain reports iPhoneOS SDK build
+`23F81a`; the artifact schema and artifact validator already accept Apple's
+uppercase train letter with an alphanumeric suffix, while the independently
+implemented build-binding validator incorrectly rejected every lowercase
+suffix. The binding and device-environment validators now share the closed
+schema grammar: numeric prefix, one uppercase train letter, and a nonempty
+alphanumeric suffix. Regressions accept the real SDK spelling while preserving
+rejection of a lowercase train letter. Core, schema, fixture, and Helper tests,
+locked all-target Workspace Clippy with warnings denied, Rust formatting, and
+diff hygiene pass. This Rust change requires a new commit and restarts both
+independent reproducibility measurements from zero. The phone remains
+untouched.

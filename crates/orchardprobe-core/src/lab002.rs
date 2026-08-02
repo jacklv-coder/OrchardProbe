@@ -318,13 +318,7 @@ fn validate_device_environment(
         });
     }
 
-    validate_ascii_token("ios_build", ios_build, b"")?;
-    if !ios_build.bytes().any(|byte| byte.is_ascii_uppercase())
-        || ios_build.bytes().any(|byte| byte.is_ascii_lowercase())
-    {
-        return Err(Lab002Error::InvalidFieldGrammar { field: "ios_build" });
-    }
-    Ok(())
+    validate_apple_build("ios_build", ios_build)
 }
 
 fn validate_dotted_numeric_version(
@@ -348,12 +342,17 @@ fn validate_dotted_numeric_version(
 
 fn validate_apple_build(field: &'static str, value: &str) -> Result<(), Lab002Error> {
     validate_ascii_token(field, value, b"")?;
-    if !value
-        .bytes()
-        .next()
-        .is_some_and(|byte| byte.is_ascii_digit())
-        || !value.bytes().any(|byte| byte.is_ascii_uppercase())
-        || value.bytes().any(|byte| byte.is_ascii_lowercase())
+    let bytes = value.as_bytes();
+    let letter = bytes
+        .iter()
+        .position(|byte| !byte.is_ascii_digit())
+        .ok_or(Lab002Error::InvalidFieldGrammar { field })?;
+    if letter == 0
+        || !bytes[letter].is_ascii_uppercase()
+        || letter + 1 == bytes.len()
+        || !bytes[letter + 1..]
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric())
     {
         return Err(Lab002Error::InvalidFieldGrammar { field });
     }
@@ -4095,6 +4094,11 @@ mod tests {
         let input = build_input();
         let digest = build_binding_sha256(&input).unwrap();
         assert_eq!(digest.len(), 64);
+        let lowercase_suffix = BuildBindingInput {
+            iphoneos_sdk_build: "23F81a".into(),
+            ..input.clone()
+        };
+        assert_ne!(digest, build_binding_sha256(&lowercase_suffix).unwrap());
         let mut changed = input.clone();
         changed.xcode_build = "17A101".into();
         assert_ne!(digest, build_binding_sha256(&changed).unwrap());
@@ -4223,6 +4227,14 @@ mod tests {
             ios_build: "23A100".into(),
         };
         let digest = device_installation_binding_sha256(&base).unwrap();
+        let lowercase_suffix = DeviceInstallationInput {
+            ios_build: "23F81a".into(),
+            ..base.clone()
+        };
+        assert_ne!(
+            digest,
+            device_installation_binding_sha256(&lowercase_suffix).unwrap()
+        );
         for changed in [
             DeviceInstallationInput {
                 installation_nonce_hex: "44".repeat(32),
