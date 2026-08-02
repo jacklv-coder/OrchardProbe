@@ -250,5 +250,7 @@ Snapshot 为 `c562abef73db2ef844582793a80883c1ee64b88087c4abd607f1ac72e32fffa1`�
 SHA-256 `6ee4fd9ee2def07fad6dd512337a52d6a3ea30a3bbb9a3890dd743794f297a0f`、
 CodeDirectory CDHash `5d6319d37d5bdc0852fbb8631cf7e7179e86ba6f`。临时缺失 Tuple
 测量 Hook 已完整删除，然后才把该 Source Snapshot 下唯一的精确产物 Tuple 加入已评审
-Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。4B PR 前还需正常非测量
-门禁、全部本地门禁和一次新的干净 Codex CR。
+Allowlist；两轮测量门禁的无签名 Simulator Fixture 也都通过。随后正常非测量门禁重新构建
+并接受 Allowlist Helper，无签名 Simulator Fixture 也通过。Format、锁定依赖且拒绝警告的
+Clippy、全部 280 项 Workspace 测试、Ruby 语法、Diff 检查和明确的无测量 Hook 检查也均
+通过。4B PR 前只剩一次新的干净 Codex CR。
