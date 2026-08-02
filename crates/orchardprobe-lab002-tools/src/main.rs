@@ -15,14 +15,15 @@ use ed25519_dalek::SigningKey;
 use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, inspect_ipa};
 use orchardprobe_core::ipa_app::{ParsedInfoPlist, parse_info_plist};
 use orchardprobe_core::lab002::artifacts::{
-    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, LabOracle, OracleRole, OracleSlice,
-    Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
+    AuthorizedTarget, AuthorizedTargetManifest, ClosedArtifact, ContainerKind, LabOracle,
+    OracleRole, OracleSlice, Presence, RequiredAppGroups, RequiredEntitlement, Toolchain,
 };
 use orchardprobe_core::lab002::{
     AppGroups, BuildBindingInput, EntitlementValue, FixedSectionReport, LAB002_PROFILE, LabRole,
     PreuploadSigningMetadata, TargetIdentityInput, build_binding_sha256, canonical_json,
     parse_fixed_sections, target_identity_binding_sha256, target_identity_set_sha256,
 };
+use orchardprobe_core::macho::MachOContainer;
 use rand_core::{OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -2526,6 +2527,11 @@ fn close_oracle_role(
         role,
         fixture_relative_path: role.fixture_relative_path().into(),
         target_identity_binding_sha256,
+        container_kind: match archive.container {
+            MachOContainer::Thin => ContainerKind::Thin,
+            MachOContainer::Fat32 => ContainerKind::Fat32,
+            MachOContainer::Fat64 => ContainerKind::Fat64,
+        },
         slices,
     })
 }
@@ -3955,6 +3961,7 @@ mod tests {
                 role: target.role,
                 fixture_relative_path: target.role.fixture_relative_path().into(),
                 target_identity_binding_sha256: target.target_identity_binding_sha256.clone(),
+                container_kind: ContainerKind::Thin,
                 slices: vec![OracleSlice {
                     ordinal: 0,
                     cpu_type: 0x0100000c,
@@ -4777,6 +4784,7 @@ mod tests {
         ipa.slices[0].slice_file_size += 64;
         ipa.slices[0].code_signature_size = Some(576);
         let role = close_oracle_role(LabRole::MainApp, "77".repeat(32), &archive, &ipa).unwrap();
+        assert_eq!(role.container_kind, ContainerKind::Thin);
         assert_eq!(role.slices[0].expected_plaintext_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].ipa_section_sha256, "44".repeat(32));
         assert_eq!(role.slices[0].code_signature_sha256, "66".repeat(32));
@@ -4793,6 +4801,7 @@ mod tests {
         );
 
         for mutate in [
+            |role: &mut OracleRole| role.container_kind = ContainerKind::Fat32,
             |role: &mut OracleRole| role.slices[0].expected_plaintext_sha256 = "aa".repeat(32),
             |role: &mut OracleRole| role.slices[0].ipa_section_sha256 = "aa".repeat(32),
             |role: &mut OracleRole| role.slices[0].code_signature_sha256 = "aa".repeat(32),

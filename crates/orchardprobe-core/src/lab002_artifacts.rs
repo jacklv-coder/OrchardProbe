@@ -1295,6 +1295,7 @@ pub struct OracleRole {
     pub role: LabRole,
     pub fixture_relative_path: String,
     pub target_identity_binding_sha256: String,
+    pub container_kind: ContainerKind,
     pub slices: Vec<OracleSlice>,
 }
 

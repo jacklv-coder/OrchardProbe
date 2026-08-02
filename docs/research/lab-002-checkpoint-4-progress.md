@@ -671,3 +671,17 @@ Fastlane gate, all 288 Workspace tests, locked all-target Clippy with warnings
 denied, Rust formatting, Ruby syntax, diff hygiene, and the explicit
 no-measurement-hook search pass after the fix. A fix commit and a new clean
 final CR remain required; the phone remains untouched.
+
+The next complete-diff CR found one P2 representation-binding gap. The frozen
+Oracle retained the complete slice tuples but omitted the source Mach-O
+container kind, so Host comparison inferred only thin versus multi-slice and
+could accept `fat32` evidence for a frozen `fat64` executable, or vice versa.
+Each Oracle role now retains the exact `thin`, `fat32`, or `fat64` kind derived
+from the mutually matching frozen Archive/IPA reports, and Host closure compares
+that value exactly. Schema negatives reject a missing or unknown kind, the
+generator regression binds it to the frozen binaries, and the Host regression
+rejects FAT-kind substitution with an otherwise identical multi-slice
+inventory. Because this changes the Rust Helper, two new independent complete
+reproducibility measurements, a replacement sole allowlist tuple, the normal
+and complete local gates, and a new clean final CR are required before push and
+merge. The phone remains untouched.

@@ -690,10 +690,7 @@ fn verify_report_against_oracle(
         || report.fixture_relative_path != oracle_role.fixture_relative_path
         || report.target_identity_binding_sha256 != oracle_role.target_identity_binding_sha256
         || report.slices.len() != oracle_role.slices.len()
-        || match oracle_role.slices.len() {
-            1 => report.container_kind != ContainerKind::Thin,
-            _ => report.container_kind == ContainerKind::Thin,
-        }
+        || report.container_kind != oracle_role.container_kind
     {
         return Err(Lab002Error::InvalidEvidence(
             "role identity, signature, outcome, or complete slice inventory does not match the oracle",
@@ -1765,6 +1762,7 @@ mod tests {
                         role,
                         fixture_relative_path: role.fixture_relative_path().into(),
                         target_identity_binding_sha256: target_identity_binding_sha256.clone(),
+                        container_kind: ContainerKind::Thin,
                         slices: vec![OracleSlice {
                             ordinal: 0,
                             cpu_type: 16_777_228,
@@ -2231,14 +2229,23 @@ mod tests {
         assert!(verify_report_against_oracle(&truncated_file, &oracle.roles[0]).is_err());
 
         let mut multi_slice_oracle = oracle.roles[0].clone();
+        multi_slice_oracle.container_kind = ContainerKind::Fat32;
         let mut second_expected = multi_slice_oracle.slices[0].clone();
         second_expected.ordinal = 1;
         multi_slice_oracle.slices.push(second_expected);
-        let mut contradictory_thin = report;
-        let mut second_observed = contradictory_thin.slices[0].clone();
+        let mut multi_slice_report = report;
+        multi_slice_report.container_kind = ContainerKind::Fat32;
+        let mut second_observed = multi_slice_report.slices[0].clone();
         second_observed.ordinal = 1;
-        contradictory_thin.slices.push(second_observed);
+        multi_slice_report.slices.push(second_observed);
+
+        let mut contradictory_thin = multi_slice_report.clone();
+        contradictory_thin.container_kind = ContainerKind::Thin;
         assert!(verify_report_against_oracle(&contradictory_thin, &multi_slice_oracle).is_err());
+
+        let mut wrong_fat_kind = multi_slice_report;
+        wrong_fat_kind.container_kind = ContainerKind::Fat64;
+        assert!(verify_report_against_oracle(&wrong_fat_kind, &multi_slice_oracle).is_err());
     }
 
     #[test]

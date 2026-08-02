@@ -543,7 +543,7 @@ pub fn close_run(
 mod tests {
     use super::*;
     use crate::lab002::artifacts::{
-        AuthorizedTarget, OracleRole, OracleSlice, Presence, RequiredAppGroups,
+        AuthorizedTarget, ContainerKind, OracleRole, OracleSlice, Presence, RequiredAppGroups,
         RequiredEntitlement, Toolchain, UnsignedEnrollmentReceipt,
     };
     use crate::lab002::{LabRole, host::sign_enrollment_receipt};
@@ -664,6 +664,7 @@ mod tests {
                 target_identity_binding_sha256: enrollment.target_identity_bindings[index]
                     .1
                     .clone(),
+                container_kind: ContainerKind::Thin,
                 slices: vec![OracleSlice {
                     ordinal: 0,
                     cpu_type: 16_777_228,

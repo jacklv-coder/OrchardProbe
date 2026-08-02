@@ -47,10 +47,11 @@ Bundle 是自包含的 Draft 2020-12 JSON Schema。每个允许的顶层工件�
   数据类别与运行计数器取值全部闭合。
 - 安装确认必须带固定设备环境与安装动作序列；运行确认必须带登记绑定与固定的
   观察、导出、清理动作序列。
-- Oracle 的 Role 顺序固定为主 App、Framework、Share Extension；每个 Role 只能有
-  1 至 4 个按 Ordinal 排序的 Slice，每个可执行文件区间最大 100 MiB，构建配置固定
-  为 `Release`。签名 Export 条目顺序固定为 Session、主 App、Framework、
-  Share Extension。
+- Oracle 的 Role 顺序固定为主 App、Framework、Share Extension；每个 Role 会保留
+  冻结的精确 `thin`、`fat32` 或 `fat64` 容器类型，并只能有 1 至 4 个按 Ordinal
+  排序的 Slice。Host 关闭时必须精确匹配该容器表示，不能只凭 Slice 数量把一种 FAT
+  编码替换为另一种。每个可执行文件区间最大 100 MiB，构建配置固定为 `Release`。
+  签名 Export 条目顺序固定为 Session、主 App、Framework、Share Extension。
 - 每个已观察 Slice 都显式记录固定 `__TEXT` Segment 与 `__oprobe` Section。
   `pass` Role 不得带原因；`fail` 与 `inconclusive` Role 至少需要一个闭合原因码。
 - Schema 只允许安全范围整数和有界字符串。运行时字节限制更严格：确认书/操作 Core

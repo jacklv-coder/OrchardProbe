@@ -397,6 +397,7 @@ fn lab002_schema_closes_every_artifact_family_and_fixed_order() {
             "role": role,
             "fixture_relative_path": path,
             "target_identity_binding_sha256": digest(byte),
+            "container_kind": "thin",
             "slices": [{
                 "ordinal": 0,
                 "cpu_type": 16777228,
@@ -948,6 +949,17 @@ fn lab002_schema_closes_every_artifact_family_and_fixed_order() {
     oracle_slices.push(second_slice);
     oracle_slices.swap(0, 1);
     assert!(validator.validate(&reordered_oracle).is_err());
+
+    let mut missing_container_kind = artifact_by_schema("orchardprobe.lab002.oracle.v1");
+    missing_container_kind["roles"][0]
+        .as_object_mut()
+        .expect("oracle role is an object")
+        .remove("container_kind");
+    assert!(validator.validate(&missing_container_kind).is_err());
+
+    let mut unknown_container_kind = artifact_by_schema("orchardprobe.lab002.oracle.v1");
+    unknown_container_kind["roles"][0]["container_kind"] = json!("fat128");
+    assert!(validator.validate(&unknown_container_kind).is_err());
 
     for (schema_name, pointer) in [
         (

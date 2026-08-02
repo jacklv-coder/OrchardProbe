@@ -427,3 +427,12 @@ Fastlane 回归要求非 Checkpoint Evidence 必须执行该 Block。此修复�
 Workspace 测试、锁定依赖且拒绝警告的全 Target Clippy、Rust Format、Ruby 语法、Diff Hygiene
 及明确的无测量 Hook 搜索均通过。Push 与合并前仅剩修复提交和一轮新的干净最终 CR；真机继续
 不操作。
+
+下一轮完整 Diff CR 发现一个 P2 容器表示绑定缺口：冻结 Oracle 虽保留完整 Slice Tuple，
+却没有保留来源 Mach-O 容器类型，因此 Host 只能推断 Thin 或多 Slice，可能把 `fat32`
+证据接受为冻结 `fat64` 可执行文件，反之亦然。现在每个 Oracle Role 都会保留由彼此匹配的
+冻结 Archive/IPA Report 派生出的精确 `thin`、`fat32` 或 `fat64` 类型，Host 关闭时会
+精确比较该值。Schema 负向测试拒绝缺失或未知类型，Generator 回归把类型绑定到冻结
+二进制，Host 回归则拒绝其他字段完全相同的多 Slice FAT 类型替换。由于这会改变 Rust
+Helper，Push 与合并前必须重新完成两次独立完整可复现性测量、替换唯一 Allowlist Tuple、
+正常及完整本地门禁，以及一轮新的最终干净 CR。真机继续不操作。
