@@ -755,3 +755,9 @@ warnings denied, all 292 Workspace tests, Ruby syntax, diff hygiene, and the
 explicit no-measurement-hook search. The allowlist/progress commit and a new
 clean complete-diff CR remain required before push and merge. The phone remains
 untouched.
+
+The final complete-diff Codex CR against the unchanged reviewed `origin/main`
+found no actionable correctness issue. Its focused tests, Clippy, Ruby syntax,
+and diff validation passed; the separately executed normal local gate remains
+green with all 292 Workspace tests. Checkpoint 4B is ready for its SSH push,
+remote PR/CI inspection, pre-merge CR, and merge. The phone remains untouched.
