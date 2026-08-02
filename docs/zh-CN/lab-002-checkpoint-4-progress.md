@@ -471,3 +471,16 @@ Fixture 前停止，因此不计入测量。当前所选 Xcode 26.6 工具链报
 Fixture 与 Helper 测试、锁定依赖且拒绝警告的全 Target Workspace Clippy、Rust Format 与
 Diff Hygiene 均通过。该 Rust 变化需要新的提交，并使两次独立可复现性测量从零重新开始。
 真机继续不操作。
+
+提交 Apple Build 语法修复后，两次独立完整 Fastlane 门禁分别从 Source Snapshot
+`ba0cff84503f0ae35344420c3efdc60df6992fbf08336315d6948079a6457438` 重新构建三份
+Helper。全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size
+`3,381,712`、SHA-256
+`e3c354cf9e4a15de0afd7a886802d09066d3c6c7496096f3379a0cb8279f1047`、CodeDirectory
+CDHash `b114a781ed4799057138f237f8d334bf04aecbd7`；两轮无签名 Simulator Fixture
+均通过。随后已完整删除临时缺失 Source 测量 Hook，并在明确的无 Hook 搜索通过后，才把这个
+精确唯一产物 Tuple 加入已评审 Source Snapshot Allowlist。正常非测量门禁重新构建并接纳
+Allowlist 中的 Helper，无签名 Simulator Fixture 通过。完整本地门禁也均通过：Rust Format、
+锁定依赖且拒绝警告的全 Target Workspace Clippy、全部 292 项 Workspace 测试、Ruby 语法、
+Diff Hygiene 及明确的无测量 Hook 搜索。Push 与合并前仍需 Allowlist/进度提交及一轮新的
+干净完整 Diff CR。真机继续不操作。

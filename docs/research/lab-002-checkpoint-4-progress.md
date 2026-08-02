@@ -737,3 +737,21 @@ locked all-target Workspace Clippy with warnings denied, Rust formatting, and
 diff hygiene pass. This Rust change requires a new commit and restarts both
 independent reproducibility measurements from zero. The phone remains
 untouched.
+
+After committing the Apple-build grammar correction, two independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`ba0cff84503f0ae35344420c3efdc60df6992fbf08336315d6948079a6457438`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,381,712`, SHA-256
+`e3c354cf9e4a15de0afd7a886802d09066d3c6c7496096f3379a0cb8279f1047`,
+and CodeDirectory CDHash `b114a781ed4799057138f237f8d334bf04aecbd7`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was then removed completely, and the explicit no-hook search
+passed before this exact sole product tuple was added to the reviewed
+source-snapshot allowlist. A normal non-measurement gate rebuilt and admitted
+the allowlisted Helper and passed the unsigned Simulator fixture. The complete
+local gates also pass: Rust formatting, locked all-target Workspace Clippy with
+warnings denied, all 292 Workspace tests, Ruby syntax, diff hygiene, and the
+explicit no-measurement-hook search. The allowlist/progress commit and a new
+clean complete-diff CR remain required before push and merge. The phone remains
+untouched.
