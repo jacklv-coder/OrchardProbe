@@ -11,9 +11,11 @@ Host workflow PR: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 Publication-pipe remediation PR: [#76](https://github.com/jacklv-coder/OrchardProbe/pull/76)
 
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
-fail-closed publication-pipe diagnostic remediation is merged; 4C is now
-implementing an exact-digest compatibility fix for the immutable checkpoint-3
-Oracle before another fresh RFC-0001 acknowledgement or any device action**
+fail-closed publication-pipe diagnostic remediation is merged; the 4C
+exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
+has passed its complete local gate and clean complete-diff Codex CR and is
+ready for SSH push, PR, CI, pre-merge CR, and merge before another fresh
+RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -925,3 +927,15 @@ local gates pass with Rust formatting, locked all-target Workspace Clippy with
 warnings denied, all 295 Workspace tests, Ruby syntax, diff hygiene, and the
 no-hook search. The allowlist/progress commit and a new clean complete-diff
 Codex CR remain next; the phone remains untouched.
+
+That new complete-diff Codex CR traced the bounded, full-digest-pinned adapter
+through every frozen Host/Operator caller and found no actionable defect or
+P1/P2. Its isolated Workspace run could not create the CLI Unix-socket fixture
+because the review sandbox denied that OS operation; the same test and all 295
+Workspace tests had already passed in the normal local gate. Core and LAB-002
+tool tests, locked all-target Clippy with warnings denied, Rust formatting,
+Ruby syntax, diff hygiene, and the no-hook search all passed. The next ordered
+steps are SSH push, PR and remote CI/review closure, a fresh pre-merge Codex CR
+at the exact head, and merge. Only after that merge may Host request a new
+fresh 4C acknowledgement; the failed attempt's prior acknowledgement is not
+reused, and the phone remains untouched.
