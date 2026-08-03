@@ -249,7 +249,11 @@ fresh installation acknowledgement was supplied, but the next Host start also
 failed before publication because the immutable checkpoint-3 Oracle predates
 the required `container_kind` field. Its exact-digest compatibility remediation
 merged through [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78);
-another fresh acknowledgement is now required before any device action.
+the next acknowledged Host start was interrupted by operator command-session
+orchestration before Helper publication, leaving its root empty and the phone
+untouched. A terminal reconciliation found no surviving Fastlane/operator
+process, reacquired all three bound-directory locks, and rechecked the retained
+root as empty. Another fresh acknowledgement is now required before any device action.
 Installation and device observation have not occurred. LAB-002 evaluates
 a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in

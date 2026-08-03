@@ -618,3 +618,17 @@ Diff Hygiene，未发现可执行缺陷或 P1/P2。完整 Workspace 重跑唯一
 TestFlight 安装、App 导入、Enrollment 或观察。失败尝试的旧确认保持已消费；4C 下一项且
 唯一开放门禁，是在创建新的 Owner-only 输出根和一次性安装信封前紧邻地取得另一份全新
 RFC-0001 确认。
+
+PR #79 将上述关闭记录合并到 `main` 后，操作员提供了下一份全新 4C 确认。Host 重新验证了
+干净已合并源码、精确冻结 Prebuild/Candidate Pair、已发布 Oracle Digest，以及所选
+`iPhone15,2` / iOS `26.6`（`23G5065a`）环境。Mac 也建立了 iPhone 镜像，但未打开
+TestFlight。随后启动 `demolab_operator_start_enrollment` 的编排把仍在运行的 Fastlane
+会话误判为终态并丢弃继续句柄，之后无法恢复该句柄。在授权任何重试前，终态对账确认没有
+Fastlane 进程或 `demolab_operator_start_enrollment` 进程，全部三个绑定的
+Output/Prebuild/Candidate 目录均可重新取得独占非阻塞锁，并再次确认独立的新 Owner-only
+输出根为 `0700` 且条目数为零。因此孤立会话无法迟到发布或继续占用 Operator Binding；
+没有安装信封、Experiment、TestFlight 操作、App 导入、Enrollment Key、Receipt 或观察。
+相同合并源码随后通过完整无设备 `demolab_check`，包括私有 Helper Allowlist
+及未签名 Simulator Fixture。这是操作端会话中断，不是产品或设备结果。本次确认保持已消费，
+空根保留为失败证据，4C 再次要求新的全新确认。下一次编排必须保留并轮询任何已 Yield 的
+Fastlane 会话，直至取得真实终态。

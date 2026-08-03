@@ -109,8 +109,12 @@ fresh RFC-0001 acknowledgement was supplied, but the next Host start again
 failed closed before publication because the immutable checkpoint-3 Oracle
 predates the required `container_kind` field. The exact-digest compatibility
 remediation merged through [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78).
-Another fresh acknowledgement and signed one-shot envelope must now immediately
-precede installation enrollment. A separate fresh
+The next fresh acknowledgement was consumed by an operator-session interruption
+before the Helper published any artifact; its new owner-only root remained empty
+and no phone action occurred. A terminal reconciliation found no Fastlane or
+operator-lane process, reacquired every bound-directory lock, and rechecked the
+retained root as empty. Another fresh acknowledgement and signed one-shot
+envelope must now immediately precede installation enrollment. A separate fresh
 acknowledgement remains required before each run. `DEVICE-001`
 remains blocked and inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
