@@ -2547,6 +2547,7 @@ def prepare_lab002_private_inputs!(
     helper_stderr = ""
     status = nil
     publication_state = nil
+    acknowledgement_delivered = false
     Open3.popen3(
       sanitized_dynamic_loader_environment,
       binary,
@@ -2580,15 +2581,18 @@ def prepare_lab002_private_inputs!(
                               ],
                             }
                           end
-      if publication_state
+      acknowledgement_value = if publication_state
         verify_running_lab002_private_tool!(wait_thread.pid, tool_identity)
         yield(publication_state) if block_given?
-        acknowledgement_writer.write("A")
+        "A"
       else
-        acknowledgement_writer.write("X")
+        "X"
       end
-      acknowledgement_writer.flush
-      acknowledgement_writer.close
+      acknowledgement_delivered =
+        deliver_lab002_publication_acknowledgement(
+          acknowledgement_writer,
+          acknowledgement_value
+        )
       result_json =
         stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
       helper_stderr =
@@ -2606,6 +2610,11 @@ def prepare_lab002_private_inputs!(
     unless status.success?
       UI.user_error!(
         "LAB-002 private input preparation failed: #{helper_stderr.to_s.strip}"
+      )
+    end
+    unless acknowledgement_delivered
+      UI.user_error!(
+        "LAB-002 private input tool closed its publication acknowledgement pipe."
       )
     end
     unless publication_state && !result_json.to_s.empty?
@@ -7421,6 +7430,16 @@ def verify_distinct_lab002_operator_bindings!(bindings)
   end
 end
 
+def deliver_lab002_publication_acknowledgement(writer, value)
+  writer.write(value)
+  writer.flush
+  true
+rescue Errno::EPIPE
+  false
+ensure
+  writer.close unless writer.closed?
+end
+
 def run_lab002_operator_helper!(
   operation:,
   bindings:,
@@ -7471,6 +7490,8 @@ def run_lab002_operator_helper!(
     stdout_content = nil
     helper_stderr = nil
     status = nil
+    acknowledgement_delivered = !publishes
+    publication_identity_matched = !publishes
     spawn_options = descriptor_map.merge(
       chdir: repository_root,
       close_others: true
@@ -7491,10 +7512,12 @@ def run_lab002_operator_helper!(
           DEMO_LAB_LAB002_PUBLICATION_IDENTITY_SCHEMA
         )} (\.lab002-prebuild-[0-9a-f]{32}) (0|[1-9][0-9]*) (0|[1-9][0-9]*)\z/
           .match(identity_line.to_s)
-        acknowledgement_writer.write(match ? "A" : "X")
-        acknowledgement_writer.flush
-        acknowledgement_writer.close
-        UI.user_error!("LAB-002 operator publication identity is missing.") unless match
+        acknowledgement_delivered =
+          deliver_lab002_publication_acknowledgement(
+            acknowledgement_writer,
+            match ? "A" : "X"
+          )
+        publication_identity_matched = !match.nil?
       end
       stdout_content = stdout.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
       helper_stderr = error_stream.read(DEMO_LAB_MAX_LAB002_HELPER_OUTPUT_BYTES + 1)
@@ -7508,6 +7531,14 @@ def run_lab002_operator_helper!(
     end
     unless status&.success?
       UI.user_error!("LAB-002 operator failed: #{helper_stderr.to_s.strip}")
+    end
+    unless acknowledgement_delivered
+      UI.user_error!(
+        "LAB-002 operator closed its publication acknowledgement pipe."
+      )
+    end
+    unless publication_identity_matched
+      UI.user_error!("LAB-002 operator publication identity is missing.")
     end
     result = JSON.parse(stdout_content)
     allowed = %w[
@@ -7919,6 +7950,38 @@ platform :ios do
 
   desc "Build the unsigned DemoLab simulator fixture without Apple credentials"
   lane :demolab_check do
+    acknowledgement_reader, acknowledgement_writer = IO.pipe
+    begin
+      delivered = deliver_lab002_publication_acknowledgement(
+        acknowledgement_writer,
+        "A"
+      )
+      unless delivered &&
+             acknowledgement_writer.closed? &&
+             acknowledgement_reader.read == "A"
+        UI.user_error!(
+          "LAB-002 publication acknowledgement delivery regression failed."
+        )
+      end
+    ensure
+      acknowledgement_reader.close unless acknowledgement_reader.closed?
+      acknowledgement_writer.close unless acknowledgement_writer.closed?
+    end
+
+    closed_reader, closed_writer = IO.pipe
+    begin
+      closed_reader.close
+      if deliver_lab002_publication_acknowledgement(closed_writer, "X") ||
+         !closed_writer.closed?
+        UI.user_error!(
+          "LAB-002 closed publication acknowledgement regression failed."
+        )
+      end
+    ensure
+      closed_reader.close unless closed_reader.closed?
+      closed_writer.close unless closed_writer.closed?
+    end
+
     xcode_toolchain = selected_xcode_toolchain
     xcodegen_selection = selected_xcodegen
     Dir.mktmpdir(

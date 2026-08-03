@@ -8,9 +8,10 @@ Activation PR: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73)
 
 Host workflow PR: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
-Current branch status: **checkpoint 4 active; 4A and 4B complete; 4C is next
-and requires a fresh RFC-0001 installation acknowledgement before any device
-action**
+Current branch status: **checkpoint 4 active; 4A and 4B complete; 4C remains
+active while its fail-closed publication-pipe diagnostic fix passes review and
+merge; a new fresh RFC-0001 acknowledgement is required afterward before any
+device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -53,7 +54,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `next — fresh acknowledgement required` | Record the fresh installation acknowledgement and sign its one-shot envelope; independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — diagnostic remediation in review` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; merge the reviewed diagnostic fix, then record a new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -816,3 +817,29 @@ reject the legitimate first-party TestFlight installation. Checkpoint 4B is
 therefore complete without a production change. No installation, enrollment,
 or observation occurred; 4C remains gated on the immediately preceding fresh
 RFC-0001 acknowledgement and one-shot installation envelope.
+
+On 2026-08-03 the operator supplied the required fresh 4C acknowledgement for
+the exact owned `Jack iPhone` and first-party DemoLab `1.0 (3)` tuple. The Host
+locked the selected environment to `iPhone15,2`, iOS `26.6` build `23G5065a`
+and validated the frozen candidate/prebuild structure. The first
+`demolab_operator_start_enrollment` invocation then failed closed before any
+publication: the Helper exited before emitting its staged-directory identity,
+which closed the acknowledgement pipe, and Fastlane surfaced an unhandled
+`Errno::EPIPE` instead of the Helper's bounded stderr. The new owner-only output
+root remained empty; no envelope, experiment, TestFlight installation, app
+import, enrollment key, receipt, or device observation was created. The root is
+retained as failure evidence. The remediation preserves fail-closed behavior,
+records whether the one-byte acknowledgement was delivered, continues bounded
+stdout/stderr collection after `EPIPE`, and reports the Helper failure before a
+secondary pipe diagnostic. Regression coverage exercises both successful
+delivery and a reader that closes early. Because the original acknowledgement
+was tied to the failed immediate attempt, 4C must receive a new fresh
+acknowledgement after this fix passes CR, CI, PR, and merge; the failed attempt
+must not be retried from unreviewed source.
+
+The remediation's local gate passes: Ruby syntax and diff hygiene, Rust format,
+locked all-target Clippy with warnings denied, all 294 Workspace tests, and the
+complete device-free `demolab_check` including both acknowledgement-pipe
+regressions and the unsigned Simulator fixture. Codex CR, SSH push, remote CI
+and review inspection, a fresh pre-merge CR, and merge remain ordered before a
+new acknowledgement can be requested.

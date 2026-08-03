@@ -102,8 +102,10 @@ as compliant or retried. No installation or device observation followed it.
 Checkpoint 4 became `active` through activation PR #73, and the reviewed Host
 operator artifact chain merged through PR #74. Its
 [ordered progress ledger](docs/research/lab-002-checkpoint-4-progress.md) now
-places 4C next and requires a fresh RFC-0001 acknowledgement and signed one-shot
-envelope immediately before installation enrollment; a separate fresh
+places 4C next. Its first authorized Host start failed closed before publication
+and exposed a masked acknowledgement-pipe diagnostic; the remediation must pass
+review and merge before a new fresh RFC-0001 acknowledgement and signed one-shot
+envelope immediately preceding installation enrollment. A separate fresh
 acknowledgement remains required before each run. `DEVICE-001`
 remains blocked and inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
@@ -120,7 +122,7 @@ containing PR is on `main`.
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
 | 2 | Device-free implementation and synthetic/Simulator verification | `done` | Merged [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; all required CI, review threads, and pre-merge Codex CR were clean |
 | 3 | Exact signed DemoLab build and pre-upload oracle | `done` | From clean merged PR #71 source, exactly one verified local DemoLab `1.0 (3)` signed candidate/frozen-oracle pair has been published. The [checkpoint-3 progress ledger](docs/research/lab-002-checkpoint-3-progress.md) and [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527) record its non-secret evidence; [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) is the completion-record implementation PR whose merge makes this row authoritative. The authorization still excludes upload, installation, and device observation |
-| 4 | Installation enrollment and two clean device observations | `active — 4C awaits fresh acknowledgement` | The bounded exact-build workflow is authorized, the one internal upload is remotely reconciled, and the closed Host operator workflow merged through PR #74. Follow the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md): retain a fresh acknowledgement/envelope immediately before enrollment and each clean run |
+| 4 | Installation enrollment and two clean device observations | `active — 4C diagnostic remediation in review` | The bounded exact-build workflow is authorized, the one internal upload is remotely reconciled, and the closed Host operator workflow merged through PR #74. The first 4C Host start failed closed before publication and exposed a masked acknowledgement-pipe diagnostic. Follow the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md): merge the remediation, then retain a new fresh acknowledgement/envelope immediately before enrollment and each clean run |
 | 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
 
 Checkpoint 2 completion evidence is retained in the
