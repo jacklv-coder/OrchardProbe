@@ -1826,6 +1826,16 @@ mod tests {
             crate::lab002::artifacts::decode_frozen_oracle_with_test_digest(&changed, &digest)
                 .is_err()
         );
+
+        let oversized = vec![b' '; LabOracle::MAX_BYTES + 1];
+        let oversized_digest = sha256_hex(&oversized);
+        assert!(
+            crate::lab002::artifacts::decode_frozen_oracle_with_test_digest(
+                &oversized,
+                &oversized_digest,
+            )
+            .is_err()
+        );
     }
 
     struct OwnedRunChain {

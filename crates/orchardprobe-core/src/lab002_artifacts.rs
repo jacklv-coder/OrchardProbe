@@ -1405,7 +1405,7 @@ fn decode_frozen_oracle_with_legacy_digest(
         Ok(oracle) => return Ok(oracle),
         Err(error) => error,
     };
-    if sha256_hex(bytes) != legacy_sha256 {
+    if bytes.len() > LabOracle::MAX_BYTES || sha256_hex(bytes) != legacy_sha256 {
         return Err(strict_error);
     }
 

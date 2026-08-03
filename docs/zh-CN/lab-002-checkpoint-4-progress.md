@@ -579,3 +579,10 @@ Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门�
 且拒绝警告的全 Target Workspace Clippy、全部 295 项 Workspace 测试、Ruby 语法、Diff
 Hygiene 及无 Hook 搜索。下一项依次执行的门禁是 Allowlist/进度提交与完整 Diff Codex CR；
 真机继续不操作。
+
+该轮完整 Diff Codex CR 找到一个 P2 有界输入回归：严格解码拒绝超限 Oracle 后，兼容分支会在
+有界解码器运行前先 Hash 整段输入。兼容分支现在会在计算兼容 Digest 前先拒绝超过 Oracle
+固定 16-KiB 上限的字节；回归覆盖一份超限且所提供 Digest 原本匹配的输入。该 Rust Helper
+变化使上一组产物测量不再适用于新的 Source Snapshot；必须从零重新完成两轮独立完整可复现
+测量、新的唯一 Allowlist Tuple、正常及完整本地门禁和一轮新的干净完整 Diff CR。真机继续
+不操作。

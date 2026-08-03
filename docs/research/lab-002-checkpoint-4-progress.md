@@ -897,3 +897,14 @@ local gates pass with Rust formatting, locked all-target Workspace Clippy with
 warnings denied, all 295 Workspace tests, Ruby syntax, diff hygiene, and the
 no-hook search. The allowlist/progress commit and complete-diff Codex CR remain
 the next ordered gates; the phone remains untouched.
+
+That complete-diff Codex CR found one P2 bounded-input regression: after strict
+decoding rejected an oversized Oracle, the compatibility fallback hashed the
+entire input before its bounded decoder ran. The fallback now rejects bytes
+above the Oracle's fixed 16-KiB limit before computing the compatibility
+digest, and a regression supplies an oversized input whose supplied digest
+otherwise matches. This Rust Helper change invalidates the preceding product
+measurement for the new source snapshot; two fresh independent complete
+reproducibility measurements, a new sole allowlist tuple, the normal and
+complete local gates, and a new clean complete-diff CR are required from zero.
+The phone remains untouched.
