@@ -11,8 +11,9 @@ Host workflow PR: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 Publication-pipe remediation PR: [#76](https://github.com/jacklv-coder/OrchardProbe/pull/76)
 
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
-fail-closed publication-pipe diagnostic remediation is merged; 4C now waits for
-a new fresh RFC-0001 acknowledgement before any device action**
+fail-closed publication-pipe diagnostic remediation is merged; 4C is now
+implementing an exact-digest compatibility fix for the immutable checkpoint-3
+Oracle before another fresh RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -55,7 +56,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — waiting for a new acknowledgement` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged the reviewed fail-closed diagnostic remediation. Record a new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — frozen-Oracle compatibility remediation` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged that remediation. The next freshly acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field. Merge the exact-digest-only compatibility remediation, then record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -849,3 +850,33 @@ No phone, TestFlight installation, app import, enrollment, or observation action
 occurred during remediation. The next and only open 4C gate is a new fresh
 RFC-0001 acknowledgement immediately before creating a new owner-only output
 root and installation envelope.
+
+After that new acknowledgement was supplied on 2026-08-03, the Host again
+locked the same authorized device environment and revalidated the exact frozen
+prebuild/candidate structure. It created a distinct empty owner-only output
+root and invoked `demolab_operator_start_enrollment` from merged `main`. The
+pipe remediation worked as intended and exposed the bounded Helper error:
+the frozen Oracle could not decode as the current typed v1 artifact. The attempt
+failed before publication, the new root remained empty and is retained as
+failure evidence, and no phone, TestFlight installation, app import, enrollment
+key, receipt, or observation action occurred.
+
+Read-only diagnosis found no artifact mutation. The Oracle has the exact
+checkpoint-3 ledger SHA-256
+`326d7a3260600f13dd65c518fdbeafebbfb119deb31dced15eb4745ced5f9472`,
+is exact canonical JSON without duplicate keys or trailing bytes, and contains
+the frozen three-role/slice tuple. It was created before PR #74 made each v1
+Oracle Role's `container_kind` mandatory. All three frozen Archive executables
+independently identify as thin arm64 Mach-O files. The remediation therefore
+keeps current Oracle decoding strict and admits only those exact historical
+bytes by their full published digest, injects only `container_kind = thin` into
+the typed in-memory projection, and still requires the operator to re-derive
+the same complete Role/Slice/container tuple from both frozen Archive and IPA
+before publication. A digest mismatch, noncanonical document, non-Thin binary,
+or any other tuple change remains fail-closed. A regression proves strict
+current decoding, rejection by the production pin of an arbitrary legacy
+document, positive adaptation only under its exact digest, and rejection after
+one-byte mutation. Because the Rust Helper changes, two independent complete
+reproducibility measurements, replacement of its sole allowlist tuple, all
+normal local/CI/CR/PR gates, and merge are required before requesting another
+fresh acknowledgement.

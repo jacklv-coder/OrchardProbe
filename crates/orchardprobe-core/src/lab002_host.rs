@@ -18,7 +18,7 @@ use super::{
         InstallationEnrollmentCore, LabOracle, LogicalFilename, Outcome, Presence, ReasonCode,
         RoleReport, SessionReport, SessionState, SignatureKind, SignaturePresence,
         SignatureValidation, SignedEnrollmentReceipt, SignedSessionExport,
-        UnsignedEnrollmentReceipt, UnsignedSessionExport,
+        UnsignedEnrollmentReceipt, UnsignedSessionExport, decode_frozen_oracle,
     },
     canonical_json, decode_hex, lower_hex, sha256_hex, target_identity_binding_sha256,
     target_identity_set_sha256,
@@ -881,7 +881,8 @@ pub fn verify_run_chain(
     enrollment: &VerifiedEnrollment,
     files: RunArtifactBytes<'_>,
 ) -> Result<VerifiedRun, Lab002Error> {
-    let (oracle, oracle_sha256) = verified_artifact_sha256::<LabOracle>(files.frozen_oracle)?;
+    let oracle = decode_frozen_oracle(files.frozen_oracle)?;
+    let oracle_sha256 = sha256_hex(files.frozen_oracle);
     verify_oracle_target_bindings(enrollment, &oracle)?;
     let (acknowledgement, acknowledgement_sha256) =
         verified_artifact_sha256::<AuthorizationAcknowledgement>(files.run_acknowledgement)?;
@@ -1784,6 +1785,47 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn frozen_legacy_oracle_adapter_is_exact_digest_pinned() {
+        let enrollment = enrollment_fixture();
+        let oracle = run_oracle(&enrollment, &SigningKey::from_bytes(&[0x81; 32]));
+        let current = oracle.to_canonical_bytes().unwrap();
+        assert_eq!(
+            crate::lab002::artifacts::decode_frozen_oracle(&current).unwrap(),
+            oracle
+        );
+
+        let mut legacy_value = serde_json::to_value(&oracle).unwrap();
+        for role in legacy_value
+            .get_mut("roles")
+            .and_then(serde_json::Value::as_array_mut)
+            .unwrap()
+        {
+            assert!(
+                role.as_object_mut()
+                    .unwrap()
+                    .remove("container_kind")
+                    .is_some()
+            );
+        }
+        let legacy = canonical_json(&legacy_value).unwrap();
+        assert!(LabOracle::from_canonical_bytes(&legacy).is_err());
+        assert!(crate::lab002::artifacts::decode_frozen_oracle(&legacy).is_err());
+
+        let digest = sha256_hex(&legacy);
+        let decoded =
+            crate::lab002::artifacts::decode_frozen_oracle_with_test_digest(&legacy, &digest)
+                .unwrap();
+        assert_eq!(decoded, oracle);
+
+        let mut changed = legacy;
+        *changed.last_mut().unwrap() = b' ';
+        assert!(
+            crate::lab002::artifacts::decode_frozen_oracle_with_test_digest(&changed, &digest)
+                .is_err()
+        );
     }
 
     struct OwnedRunChain {

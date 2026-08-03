@@ -10,7 +10,7 @@ use super::{
     AUTHORIZATION_POLICY_VERSION, Lab002Error, LabRole, MAX_AUTHORIZATION_ENVELOPE_BYTES,
     MAX_AUTHORIZATION_OBJECT_BYTES, MAX_INTERNAL_REPORT_BYTES, MAX_JCS_SAFE_INTEGER,
     MAX_LAB002_EXECUTABLE_BYTES, MAX_SESSION_EXPORT_BYTES, canonical_json_with_limit,
-    decode_canonical_json_with_limit, decode_counter, decode_hex,
+    decode_canonical_json_with_limit, decode_counter, decode_hex, sha256_hex,
 };
 
 pub const MAX_STATE_BYTES: usize = 1024;
@@ -1392,6 +1392,65 @@ impl ClosedArtifact for LabOracle {
         }
         Ok(())
     }
+}
+
+const CHECKPOINT_3_LEGACY_ORACLE_SHA256: &str =
+    "326d7a3260600f13dd65c518fdbeafebbfb119deb31dced15eb4745ced5f9472";
+
+fn decode_frozen_oracle_with_legacy_digest(
+    bytes: &[u8],
+    legacy_sha256: &str,
+) -> Result<LabOracle, Lab002Error> {
+    let strict_error = match LabOracle::from_canonical_bytes(bytes) {
+        Ok(oracle) => return Ok(oracle),
+        Err(error) => error,
+    };
+    if sha256_hex(bytes) != legacy_sha256 {
+        return Err(strict_error);
+    }
+
+    let mut value: serde_json::Value =
+        decode_canonical_json_with_limit(bytes, LabOracle::MAX_BYTES)?;
+    let roles = value
+        .get_mut("roles")
+        .and_then(serde_json::Value::as_array_mut)
+        .ok_or(Lab002Error::InvalidJson)?;
+    if roles.len() != LabRole::ALL.len() {
+        return Err(Lab002Error::InvalidJson);
+    }
+    for role in roles {
+        let object = role.as_object_mut().ok_or(Lab002Error::InvalidJson)?;
+        if object
+            .insert(
+                "container_kind".into(),
+                serde_json::Value::String("thin".into()),
+            )
+            .is_some()
+        {
+            return Err(strict_error);
+        }
+    }
+    let upgraded = canonical_json_with_limit(&value, LabOracle::MAX_BYTES)?;
+    LabOracle::from_canonical_bytes(&upgraded)
+}
+
+/// Decode the frozen Oracle used by the closed Host chain.
+///
+/// Current artifacts remain strict. The sole compatibility path is pinned to
+/// the already published checkpoint-3 DemoLab `1.0 (3)` Oracle bytes. That
+/// artifact predates the required `container_kind` field; its three frozen
+/// Archive/IPA executables are independently re-derived as thin Mach-O files
+/// by the operator before any control artifact can be published.
+pub fn decode_frozen_oracle(bytes: &[u8]) -> Result<LabOracle, Lab002Error> {
+    decode_frozen_oracle_with_legacy_digest(bytes, CHECKPOINT_3_LEGACY_ORACLE_SHA256)
+}
+
+#[cfg(test)]
+pub(crate) fn decode_frozen_oracle_with_test_digest(
+    bytes: &[u8],
+    legacy_sha256: &str,
+) -> Result<LabOracle, Lab002Error> {
+    decode_frozen_oracle_with_legacy_digest(bytes, legacy_sha256)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
