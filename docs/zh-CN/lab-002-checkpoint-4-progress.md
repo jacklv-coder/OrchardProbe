@@ -10,8 +10,12 @@ Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
 发布管道修复 PR：[#76](https://github.com/jacklv-coder/OrchardProbe/pull/76)
 
+冻结 Oracle 兼容 PR：[#78](https://github.com/jacklv-coder/OrchardProbe/pull/78)
+
 当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
-4C 现在等待新的全新 RFC-0001 确认，之后才能执行任何真机操作**
+不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过完整本地门禁和干净的完整 Diff
+Codex CR；PR #78 已打开，下一步依次关闭 CI 与远端评审、执行合并前 CR 并合并；在此之前
+不得再次取得新的全新 RFC-0001 确认或执行任何真机操作**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -43,7 +47,7 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 |---:|---|---|---|
 | 4A | 激活并关闭提前上传/对账治理偏差 | `完成 — PR #73` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
 | 4B | 闭合 Host 操作流程 | `完成 — PR #74` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前要求的无设备测试、Codex CR、CI、PR 与合并均已通过 |
-| 4C | 精确安装与 Enrollment | `active — 等待新的确认` | 第一次获授权启动在发布前失败关闭：Helper 提前退出并关闭确认管道，Fastlane 又以 `EPIPE` 遮蔽了有界 Helper 错误；[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 已合并评审后的失败关闭诊断修复。记录新的全新安装确认并签署一次性信封。在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
+| 4C | 精确安装与 Enrollment | `active — 冻结 Oracle 兼容修复` | 第一次获授权启动在发布前失败关闭：Helper 提前退出并关闭确认管道，Fastlane 又以 `EPIPE` 遮蔽了有界 Helper 错误；[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 已合并该修复。下一次获全新确认启动也在发布前失败，因为不可变的检查点 3 Oracle 早于必需的 `container_kind` 字段。合并仅限精确 Digest 的兼容修复后，再记录另一份全新安装确认并签署一次性信封。在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
 | 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
 | 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
 | 4F | 检查点关闭 | `blocked on 4E` | 以冻结 Manifest、IPA 证据和外部 Oracle 验证完整 Enrollment 加两轮链；发布脱敏 Go/No-Go，不能通过重试掩盖失败或不完整运行 |
@@ -548,3 +552,60 @@ Simulator Fixture 的完整无设备 `demolab_check`。Push 前与全新合并�
 `1d617d63fabd576765b28a8ba88fb02e117ecf5a` Squash Merge 进入 `main`。修复期间没有操作手机，
 也没有发生 TestFlight 安装、App 导入、Enrollment 或观察。4C 唯一开放的下一门禁，是在创建
 新的 Owner-only 输出根与安装信封前紧邻地重新取得一份全新 RFC-0001 确认。
+
+2026-08-03 取得上述新确认后，Host 再次锁定相同的授权设备环境并重新验证精确冻结的
+Prebuild/Candidate 结构。它创建了另一个完全独立且为空的 Owner-only 输出根，并从已合并
+`main` 调用 `demolab_operator_start_enrollment`。管道修复按预期工作，暴露了有界 Helper
+真实错误：冻结 Oracle 无法按当前 v1 类型解码。该尝试在发布前失败关闭，新根仍为空并作为
+失败证据保留；没有发生手机操作、TestFlight 安装、App 导入、Enrollment Key、Receipt 或观察。
+
+只读诊断没有发现工件变更。Oracle SHA-256 与检查点 3 台账中的
+`326d7a3260600f13dd65c518fdbeafebbfb119deb31dced15eb4745ced5f9472` 完全一致，是没有重复键或
+尾随字节的精确规范 JSON，并包含冻结的三个 Role/Slice Tuple。它生成于 PR #74 把每个 v1
+Oracle Role 的 `container_kind` 设为必需字段之前；三份冻结 Archive 可执行文件均独立识别为
+Thin arm64 Mach-O。修复因此继续严格解码当前 Oracle，只允许上述完整公开 Digest 的历史字节
+进入兼容路径，仅在内存类型投影中补入 `container_kind = thin`，并且在任何发布前仍要求操作
+Helper 从冻结 Archive 与 IPA 重新派生相同的完整 Role/Slice/Container Tuple。Digest 不同、
+文档不规范、二进制不是 Thin 或任一 Tuple 变化都会继续失败关闭。回归验证当前严格解码、
+Production Pin 拒绝任意历史文档、只有精确 Digest 才能正向适配，以及一字节变化后拒绝。
+由于 Rust Helper 改变，必须先完成两轮独立完整可复现测量、替换其唯一 Allowlist Tuple，并依次
+通过正常本地/CI/CR/PR 与合并门禁，之后才能再次请求新的全新确认。
+
+随后两次独立完整 Fastlane 门禁分别从 Source Snapshot
+`8718d9b88e496d4944e2c25a0186c9cd426f7aa3cdc7f69fa5555d7dd6d4c101` 重建三份产物。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,382,320`、
+SHA-256 `1b6b26a3d5a743c20d6836700b5ac42ff6d09262f0eae20b5ba4fda6252bf944`、
+CodeDirectory CDHash `265eae5cecd0812c582c09b84211722d83bae6e4`；两轮无签名 Simulator Fixture
+均通过。临时缺失 Source 测量 Hook 已在该精确唯一产物 Tuple 加入已评审 Source Snapshot
+Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门禁重新构建并仅接纳 Allowlist
+中的 Helper，无签名 Simulator Fixture 通过。完整本地门禁也均通过：Rust Format、锁定依赖
+且拒绝警告的全 Target Workspace Clippy、全部 295 项 Workspace 测试、Ruby 语法、Diff
+Hygiene 及无 Hook 搜索。下一项依次执行的门禁是 Allowlist/进度提交与完整 Diff Codex CR；
+真机继续不操作。
+
+该轮完整 Diff Codex CR 找到一个 P2 有界输入回归：严格解码拒绝超限 Oracle 后，兼容分支会在
+有界解码器运行前先 Hash 整段输入。兼容分支现在会在计算兼容 Digest 前先拒绝超过 Oracle
+固定 16-KiB 上限的字节；回归覆盖一份超限且所提供 Digest 原本匹配的输入。该 Rust Helper
+变化使上一组产物测量不再适用于新的 Source Snapshot；必须从零重新完成两轮独立完整可复现
+测量、新的唯一 Allowlist Tuple、正常及完整本地门禁和一轮新的干净完整 Diff CR。真机继续
+不操作。
+
+提交该上限修复后，两次全新独立完整 Fastlane 门禁分别从 Source Snapshot
+`1c57b49686812fa59d7e4e76dd6b343150329153c565ff3ad6d99b05a2cf6706` 重建三份产物。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,382,320`、
+SHA-256 `9f6836b922b4b71961a59acf01d8701632f0b3ff8c971fe7be54d1d289c61d26`、
+CodeDirectory CDHash `c447cb4b4f1e597f1f5ffc47fa4cac93753f9119`；两轮无签名 Simulator
+Fixture 均通过。临时缺失 Source 测量 Hook 已在该精确唯一产物 Tuple 加入已评审 Source
+Snapshot Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门禁重新构建并仅接纳
+Allowlist 中的 Helper，无签名 Simulator Fixture 通过。完整本地门禁也均通过：Rust Format、
+锁定依赖且拒绝警告的全 Target Workspace Clippy、全部 295 项 Workspace 测试、Ruby 语法、
+Diff Hygiene 及无 Hook 搜索。下一项依次执行 Allowlist/进度提交和一轮新的干净完整 Diff
+Codex CR；真机继续不操作。
+
+新的完整 Diff Codex CR 已沿全部冻结 Host/Operator 调用方追踪有界且完整 Digest 固定的适配
+路径，未发现可执行缺陷或 P1/P2。评审隔离环境运行 Workspace 测试时因系统策略拒绝创建 CLI
+Unix Socket Fixture；相同测试及全部 295 项 Workspace 测试此前已在正常本地门禁通过。
+Core 与 LAB-002 Tool 测试、锁定依赖且拒绝警告的全 Target Clippy、Rust Format、Ruby
+语法、Diff Hygiene 和无 Hook 搜索均通过。下一项依次关闭 PR #78 的远端 CI/评审、在精确
+Head 上重新运行合并前 Codex CR，然后合并。只有合并后 Host 才能请求新的全新 4C 确认；
+失败尝试的旧确认不得复用，真机继续不操作。

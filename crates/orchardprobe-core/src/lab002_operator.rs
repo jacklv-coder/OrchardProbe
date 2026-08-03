@@ -13,8 +13,8 @@ use super::{
         AuthorizationAcknowledgement, AuthorizedAction, AuthorizedOperation,
         AuthorizedOperationEnvelope, AuthorizedTargetManifest, ClosedArtifact, CollectionBinding,
         CollectionChallengeCore, CollectionIntent, DataCategory, DeviceEnrollmentBinding,
-        DeviceSelectionConfirmation, Environment, LabOracle, LogicalFilename, RoleFileHashes,
-        RoleReport, SessionReport, SignedEnrollmentReceipt, SignedSessionExport,
+        DeviceSelectionConfirmation, Environment, LogicalFilename, RoleFileHashes, RoleReport,
+        SessionReport, SignedEnrollmentReceipt, SignedSessionExport, decode_frozen_oracle,
     },
     host::{
         EnrollmentArtifactBytes, RunArtifactBytes, VerifiedEnrollment, VerifiedRun,
@@ -324,8 +324,10 @@ pub fn create_run_control(
 ) -> Result<RunControl, Lab002Error> {
     let run_ordinal = request.run_ordinal;
     let acknowledged_at = request.acknowledged_at;
-    let (oracle, oracle_sha256) = verified_artifact_sha256::<LabOracle>(oracle_canonical)?;
+    let oracle = decode_frozen_oracle(oracle_canonical)?;
+    let oracle_sha256 = sha256_hex(oracle_canonical);
     verify_oracle_target_bindings(enrollment, &oracle)?;
+    let inventory_sha256 = expected_inventory_sha256(&oracle)?;
     let prior_collection_binding_sha256 = match (run_ordinal, request.prior_run) {
         (1, None) => None,
         (2, Some(prior_run)) => {
@@ -430,9 +432,7 @@ pub fn create_run_control(
         preupload_evidence_sha256: request.preupload_evidence_sha256,
         ipa_sha256: oracle.ipa_sha256,
         oracle_sha256,
-        expected_inventory_sha256: expected_inventory_sha256(&LabOracle::from_canonical_bytes(
-            oracle_canonical,
-        )?)?,
+        expected_inventory_sha256: inventory_sha256,
     }
     .to_canonical_bytes()?;
     Ok(RunControl {
@@ -558,8 +558,8 @@ pub fn close_run(
 mod tests {
     use super::*;
     use crate::lab002::artifacts::{
-        AuthorizedTarget, ContainerKind, OracleRole, OracleSlice, Presence, RequiredAppGroups,
-        RequiredEntitlement, Toolchain, UnsignedEnrollmentReceipt,
+        AuthorizedTarget, ContainerKind, LabOracle, OracleRole, OracleSlice, Presence,
+        RequiredAppGroups, RequiredEntitlement, Toolchain, UnsignedEnrollmentReceipt,
     };
     use crate::lab002::{LabRole, host::sign_enrollment_receipt};
     use rand_core::Error as RngError;

@@ -10,7 +10,7 @@ use orchardprobe_core::ipa::{MAX_IPA_ENTRY_COPY_BYTES, copy_ipa_entry_bounded, i
 use orchardprobe_core::lab002::LAB002_PROFILE;
 use orchardprobe_core::lab002::artifacts::{
     AuthorizationAcknowledgement, AuthorizedTargetManifest, ClosedArtifact,
-    DeviceEnrollmentBinding, Environment, LabOracle,
+    DeviceEnrollmentBinding, Environment, LabOracle, decode_frozen_oracle,
 };
 use orchardprobe_core::lab002::host::{
     EnrollmentArtifactBytes, RunArtifactBytes, expected_inventory_sha256, verify_enrollment_chain,
@@ -1532,7 +1532,7 @@ fn revalidate_frozen_source_tuple(
             "reconciled upload audit record",
         )?;
     }
-    let oracle = LabOracle::from_canonical_bytes(&artifacts.oracle.bytes)
+    let oracle = decode_frozen_oracle(&artifacts.oracle.bytes)
         .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
     verify_frozen_binary_oracle(candidate, evidence, &oracle, artifacts.ipa, manifest)?;
     if candidate_inventory(&candidate.directory)? != reconciled_names {
@@ -1576,7 +1576,7 @@ fn load_source_bundle(
         MAX_UPLOAD_RESULT_BYTES,
         0o600,
     )?;
-    let oracle_value = LabOracle::from_canonical_bytes(&oracle.bytes)
+    let oracle_value = decode_frozen_oracle(&oracle.bytes)
         .map_err(|error| format!("frozen oracle is invalid: {error}"))?;
     let manifest_value = AuthorizedTargetManifest::from_canonical_bytes(&manifest.bytes)
         .map_err(|error| format!("authorized-target manifest is invalid: {error}"))?;
@@ -1841,7 +1841,7 @@ fn verify_intent_source(root: &PrivateOutputRoot, intent_canonical: &[u8]) -> Re
     .map_err(|error| format!("collection intent is invalid: {error}"))?;
     let oracle_bytes = read_root_artifact(root, SOURCE_ORACLE_NAME)?;
     let evidence = read_root_artifact(root, SOURCE_EVIDENCE_NAME)?;
-    let oracle = LabOracle::from_canonical_bytes(&oracle_bytes)
+    let oracle = decode_frozen_oracle(&oracle_bytes)
         .map_err(|error| format!("retained frozen oracle is invalid: {error}"))?;
     if intent.source_commit != oracle.source_commit
         || intent.marketing_version != oracle.marketing_version
