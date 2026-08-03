@@ -10,12 +10,14 @@ Host workflow PR: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
 Publication-pipe remediation PR: [#76](https://github.com/jacklv-coder/OrchardProbe/pull/76)
 
+Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardProbe/pull/78)
+
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
-has passed its complete local gate and clean complete-diff Codex CR and is
-ready for SSH push, PR, CI, pre-merge CR, and merge before another fresh
-RFC-0001 acknowledgement or any device action**
+has passed its complete local gate and clean complete-diff Codex CR; PR #78 is
+open for CI, remote review closure, pre-merge CR, and merge before another
+fresh RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -935,7 +937,7 @@ because the review sandbox denied that OS operation; the same test and all 295
 Workspace tests had already passed in the normal local gate. Core and LAB-002
 tool tests, locked all-target Clippy with warnings denied, Rust formatting,
 Ruby syntax, diff hygiene, and the no-hook search all passed. The next ordered
-steps are SSH push, PR and remote CI/review closure, a fresh pre-merge Codex CR
-at the exact head, and merge. Only after that merge may Host request a new
-fresh 4C acknowledgement; the failed attempt's prior acknowledgement is not
-reused, and the phone remains untouched.
+steps are PR #78 remote CI/review closure, a fresh pre-merge Codex CR at the
+exact head, and merge. Only after that merge may Host request a new fresh 4C
+acknowledgement; the failed attempt's prior acknowledgement is not reused, and
+the phone remains untouched.

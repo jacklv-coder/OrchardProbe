@@ -10,10 +10,12 @@ Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
 发布管道修复 PR：[#76](https://github.com/jacklv-coder/OrchardProbe/pull/76)
 
+冻结 Oracle 兼容 PR：[#78](https://github.com/jacklv-coder/OrchardProbe/pull/78)
+
 当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
 不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过完整本地门禁和干净的完整 Diff
-Codex CR，下一步依次执行 SSH Push、PR、CI、合并前 CR 与合并；在此之前不得再次取得新的
-全新 RFC-0001 确认或执行任何真机操作**
+Codex CR；PR #78 已打开，下一步依次关闭 CI 与远端评审、执行合并前 CR 并合并；在此之前
+不得再次取得新的全新 RFC-0001 确认或执行任何真机操作**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -604,6 +606,6 @@ Codex CR；真机继续不操作。
 路径，未发现可执行缺陷或 P1/P2。评审隔离环境运行 Workspace 测试时因系统策略拒绝创建 CLI
 Unix Socket Fixture；相同测试及全部 295 项 Workspace 测试此前已在正常本地门禁通过。
 Core 与 LAB-002 Tool 测试、锁定依赖且拒绝警告的全 Target Clippy、Rust Format、Ruby
-语法、Diff Hygiene 和无 Hook 搜索均通过。下一项依次执行 SSH Push、PR 与远端 CI/评审关闭、
-在精确 Head 上重新运行合并前 Codex CR，然后合并。只有合并后 Host 才能请求新的全新 4C
-确认；失败尝试的旧确认不得复用，真机继续不操作。
+语法、Diff Hygiene 和无 Hook 搜索均通过。下一项依次关闭 PR #78 的远端 CI/评审、在精确
+Head 上重新运行合并前 Codex CR，然后合并。只有合并后 Host 才能请求新的全新 4C 确认；
+失败尝试的旧确认不得复用，真机继续不操作。
