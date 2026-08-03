@@ -206,6 +206,9 @@ Oracle；其脱敏完成记录已通过 [PR #72](https://github.com/jacklv-coder
 的全新安装确认已经提供，但下一次 Host 启动又在发布前失败：不可变的检查点 3 Oracle 早于
 必需的 `container_kind` 字段。仅限精确 Digest 的兼容修复已通过
 [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 合并；现在必须先取得另一份全新确认。
+下一次获确认的 Host 启动因操作端命令会话编排在 Helper 发布前中断，根保持为空且手机未被
+操作。终态对账确认没有残留 Fastlane/Operator 进程，重新取得全部三个绑定目录锁，并再次确认
+保留根为空；现在仍须先取得另一份全新确认。
 当前尚未安装或观察设备。
 LAB-002 用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；

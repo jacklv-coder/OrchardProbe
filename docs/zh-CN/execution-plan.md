@@ -86,7 +86,10 @@ Host 启动在发布前失败关闭，并暴露了被遮蔽的确认管道诊断
 前紧邻地记录的新 RFC-0001 确认已经提供，但下一次 Host 启动又在发布前失败关闭：不可变的
 检查点 3 Oracle 早于必需的 `container_kind` 字段。仅限精确 Digest 的兼容修复已通过
 [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 合并；现在必须在安装 Enrollment
-前紧邻地再次记录新的 RFC-0001 确认及签名一次性信封，并在每轮运行前另行记录
+前紧邻地再次记录的新确认随后因操作端命令会话编排中断而被消费；Helper 未发布任何工件，
+新的 Owner-only 根保持为空，手机未被操作。终态对账确认没有 Fastlane 或 Operator Lane
+进程，重新取得了全部绑定目录锁，并再次确认保留根为空。现在必须再次记录新的 RFC-0001 确认及签名
+一次性信封，并在每轮运行前另行记录
 新的确认。在 LAB-002 取得 Go 结果前，
 `DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、

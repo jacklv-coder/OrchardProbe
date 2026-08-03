@@ -954,3 +954,25 @@ installation, app import, enrollment, or observation action occurred. The
 failed attempt's acknowledgement remains consumed; the next and only open 4C
 gate is a new fresh RFC-0001 acknowledgement immediately before creating a new
 owner-only output root and one-shot installation envelope.
+
+After PR #79 recorded that closure on `main`, the operator supplied the next
+fresh 4C acknowledgement. Host revalidated clean merged source, the exact
+frozen prebuild/candidate pair, its published Oracle digest, and the selected
+`iPhone15,2` / iOS `26.6` (`23G5065a`) environment. The Mac also established
+iPhone Mirroring without opening TestFlight. The orchestration that launched
+`demolab_operator_start_enrollment` then treated its still-running Fastlane
+session as a terminal failure and discarded the continuation handle. The
+continuation handle could not then be recovered. Before authorizing any retry,
+a terminal reconciliation found no Fastlane process and no
+`demolab_operator_start_enrollment` process, reacquired exclusive nonblocking
+locks on all three bound output/prebuild/candidate directories, and rechecked
+the distinct owner-only output root as mode `0700` with zero entries. The
+orphaned session therefore cannot publish later or retain an operator binding;
+no installation envelope, experiment, TestFlight action, app import, enrollment
+key, receipt, or observation exists. The same
+merged source subsequently passed the complete device-free `demolab_check`,
+including its private-Helper allowlist and unsigned Simulator fixture. This is
+an operator-session interruption, not a product or device result. Its
+acknowledgement is consumed, its empty root is retained as failure evidence,
+and 4C again requires a new fresh acknowledgement. The next orchestration must
+retain and poll any yielded Fastlane session until its actual terminal result.
