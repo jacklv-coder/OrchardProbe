@@ -880,3 +880,20 @@ one-byte mutation. Because the Rust Helper changes, two independent complete
 reproducibility measurements, replacement of its sole allowlist tuple, all
 normal local/CI/CR/PR gates, and merge are required before requesting another
 fresh acknowledgement.
+
+Two independent complete Fastlane gates then each rebuilt three products from
+source snapshot
+`8718d9b88e496d4944e2c25a0186c9cd426f7aa3cdc7f69fa5555d7dd6d4c101`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,382,320`, SHA-256
+`1b6b26a3d5a743c20d6836700b5ac42ff6d09262f0eae20b5ba4fda6252bf944`,
+and CodeDirectory CDHash `265eae5cecd0812c582c09b84211722d83bae6e4`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. The explicit no-hook
+search passed. A normal non-measurement gate rebuilt and admitted only the
+allowlisted Helper and passed the unsigned Simulator fixture. The complete
+local gates pass with Rust formatting, locked all-target Workspace Clippy with
+warnings denied, all 295 Workspace tests, Ruby syntax, diff hygiene, and the
+no-hook search. The allowlist/progress commit and complete-diff Codex CR remain
+the next ordered gates; the phone remains untouched.

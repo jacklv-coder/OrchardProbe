@@ -567,3 +567,15 @@ Helper 从冻结 Archive 与 IPA 重新派生相同的完整 Role/Slice/Containe
 Production Pin 拒绝任意历史文档、只有精确 Digest 才能正向适配，以及一字节变化后拒绝。
 由于 Rust Helper 改变，必须先完成两轮独立完整可复现测量、替换其唯一 Allowlist Tuple，并依次
 通过正常本地/CI/CR/PR 与合并门禁，之后才能再次请求新的全新确认。
+
+随后两次独立完整 Fastlane 门禁分别从 Source Snapshot
+`8718d9b88e496d4944e2c25a0186c9cd426f7aa3cdc7f69fa5555d7dd6d4c101` 重建三份产物。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,382,320`、
+SHA-256 `1b6b26a3d5a743c20d6836700b5ac42ff6d09262f0eae20b5ba4fda6252bf944`、
+CodeDirectory CDHash `265eae5cecd0812c582c09b84211722d83bae6e4`；两轮无签名 Simulator Fixture
+均通过。临时缺失 Source 测量 Hook 已在该精确唯一产物 Tuple 加入已评审 Source Snapshot
+Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门禁重新构建并仅接纳 Allowlist
+中的 Helper，无签名 Simulator Fixture 通过。完整本地门禁也均通过：Rust Format、锁定依赖
+且拒绝警告的全 Target Workspace Clippy、全部 295 项 Workspace 测试、Ruby 语法、Diff
+Hygiene 及无 Hook 搜索。下一项依次执行的门禁是 Allowlist/进度提交与完整 Diff Codex CR；
+真机继续不操作。
