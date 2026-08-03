@@ -84,8 +84,9 @@ TestFlight 上传已对账为 Apple 接受并处理完成，未启用外部测�
 Host 启动在发布前失败关闭，并暴露了被遮蔽的确认管道诊断；该修复已通过
 [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 合并。现在须在安装 Enrollment
 前紧邻地记录的新 RFC-0001 确认已经提供，但下一次 Host 启动又在发布前失败关闭：不可变的
-检查点 3 Oracle 早于必需的 `container_kind` 字段。必须先评审并合并仅限精确 Digest 的兼容
-修复，之后才能再次记录新的 RFC-0001 确认及签名一次性信封，并在每轮运行前另行记录
+检查点 3 Oracle 早于必需的 `container_kind` 字段。仅限精确 Digest 的兼容修复已通过
+[PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 合并；现在必须在安装 Enrollment
+前紧邻地再次记录新的 RFC-0001 确认及签名一次性信封，并在每轮运行前另行记录
 新的确认。在 LAB-002 取得 Go 结果前，
 `DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
@@ -100,7 +101,7 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 | 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
 | 2 | 无设备实现与合成/Simulator 验证 | `done` | 已合并的 [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59)实现闭合协议、Host 链、固定设备状态/Observer/Export 流程、生产授权验证及合成/Simulator 门禁；全部必需 CI、Review Thread 与合并前 Codex CR 均已清零 |
 | 3 | 精确签名 DemoLab Build 与上传前 Oracle | `done` | 已从 PR #71 合并后的干净源码发布恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选/冻结 Oracle Pair。[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)与 [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527)记录其非秘密证据；[PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)是完成记录 Implementation PR，其合并使本行状态生效。授权仍不包含上传、安装或设备观察 |
-| 4 | 安装 Enrollment 与两次干净真机观察 | `active — 4C 冻结 Oracle 兼容修复` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并。[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 已合并第一次 4C 启动的失败关闭管道诊断修复。下一次获确认启动也在发布前失败，因为不可变的检查点 3 Oracle 早于必需的 `container_kind` 字段。按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)先合并仅限精确 Digest 的兼容修复，再在 Enrollment 与每次干净运行前紧邻地分别保留新的全新确认/信封 |
+| 4 | 安装 Enrollment 与两次干净真机观察 | `active — 4C 等待全新确认` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并。[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 已合并第一次 4C 启动的失败关闭管道诊断修复。下一次获确认启动也在发布前失败，因为不可变的检查点 3 Oracle 早于必需的 `container_kind` 字段；[PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 已合并仅限完整 Digest 的兼容修复。按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)在 Enrollment 与每次干净运行前紧邻地分别保留新的全新确认/信封 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 
 检查点 2 的完成证据保留在

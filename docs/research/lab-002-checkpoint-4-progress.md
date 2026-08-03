@@ -15,9 +15,8 @@ Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardPro
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
-has passed its complete local gate and clean complete-diff Codex CR; PR #78 is
-open for CI, remote review closure, pre-merge CR, and merge before another
-fresh RFC-0001 acknowledgement or any device action**
+merged through PR #78; 4C now requires another new fresh RFC-0001
+acknowledgement immediately before a new Host start and any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -60,7 +59,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — frozen-Oracle compatibility remediation` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged that remediation. The next freshly acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field. Merge the exact-digest-only compatibility remediation, then record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — awaiting fresh acknowledgement` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged that remediation. The next freshly acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field; [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the exact-full-digest-only compatibility remediation. Record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -941,3 +940,17 @@ steps are PR #78 remote CI/review closure, a fresh pre-merge Codex CR at the
 exact head, and merge. Only after that merge may Host request a new fresh 4C
 acknowledgement; the failed attempt's prior acknowledgement is not reused, and
 the phone remains untouched.
+
+PR #78 then passed all three required remote CI jobs with no review thread or
+comment. A fresh pre-merge Codex CR at exact head
+`5830371288decd1c906c86aec8baee357b89f604` traced the complete compatibility
+path, reproduced the source-snapshot selection, reran focused Core and Tool
+tests plus Clippy, formatting, Ruby syntax, and diff hygiene, and found no
+actionable defect or P1/P2. The only full-Workspace rerun failure remained the
+review sandbox denying Unix-socket creation before the CLI assertion; the same
+test passed in the normal local and remote gates. PR #78 was squash-merged to
+`main` as `867c8983b9ea603a7bca2bbbd5f772923626b394`. No phone, TestFlight
+installation, app import, enrollment, or observation action occurred. The
+failed attempt's acknowledgement remains consumed; the next and only open 4C
+gate is a new fresh RFC-0001 acknowledgement immediately before creating a new
+owner-only output root and one-shot installation envelope.
