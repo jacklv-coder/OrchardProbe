@@ -586,3 +586,15 @@ Hygiene 及无 Hook 搜索。下一项依次执行的门禁是 Allowlist/进度�
 变化使上一组产物测量不再适用于新的 Source Snapshot；必须从零重新完成两轮独立完整可复现
 测量、新的唯一 Allowlist Tuple、正常及完整本地门禁和一轮新的干净完整 Diff CR。真机继续
 不操作。
+
+提交该上限修复后，两次全新独立完整 Fastlane 门禁分别从 Source Snapshot
+`1c57b49686812fa59d7e4e76dd6b343150329153c565ff3ad6d99b05a2cf6706` 重建三份产物。
+全部六份产物完全一致：工具链 `1.85.0-aarch64-apple-darwin`、Size `3,382,320`、
+SHA-256 `9f6836b922b4b71961a59acf01d8701632f0b3ff8c971fe7be54d1d289c61d26`、
+CodeDirectory CDHash `c447cb4b4f1e597f1f5ffc47fa4cac93753f9119`；两轮无签名 Simulator
+Fixture 均通过。临时缺失 Source 测量 Hook 已在该精确唯一产物 Tuple 加入已评审 Source
+Snapshot Allowlist 前完整删除，明确的无 Hook 搜索通过。正常非测量门禁重新构建并仅接纳
+Allowlist 中的 Helper，无签名 Simulator Fixture 通过。完整本地门禁也均通过：Rust Format、
+锁定依赖且拒绝警告的全 Target Workspace Clippy、全部 295 项 Workspace 测试、Ruby 语法、
+Diff Hygiene 及无 Hook 搜索。下一项依次执行 Allowlist/进度提交和一轮新的干净完整 Diff
+Codex CR；真机继续不操作。

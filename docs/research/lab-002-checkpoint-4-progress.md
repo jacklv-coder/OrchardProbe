@@ -908,3 +908,20 @@ measurement for the new source snapshot; two fresh independent complete
 reproducibility measurements, a new sole allowlist tuple, the normal and
 complete local gates, and a new clean complete-diff CR are required from zero.
 The phone remains untouched.
+
+After committing that bound, two fresh independent complete Fastlane gates
+each rebuilt three products from source snapshot
+`1c57b49686812fa59d7e4e76dd6b343150329153c565ff3ad6d99b05a2cf6706`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,382,320`, SHA-256
+`9f6836b922b4b71961a59acf01d8701632f0b3ff8c971fe7be54d1d289c61d26`,
+and CodeDirectory CDHash `c447cb4b4f1e597f1f5ffc47fa4cac93753f9119`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. The explicit no-hook
+search passed. A normal non-measurement gate rebuilt and admitted only the
+allowlisted Helper and passed the unsigned Simulator fixture. The complete
+local gates pass with Rust formatting, locked all-target Workspace Clippy with
+warnings denied, all 295 Workspace tests, Ruby syntax, diff hygiene, and the
+no-hook search. The allowlist/progress commit and a new clean complete-diff
+Codex CR remain next; the phone remains untouched.
