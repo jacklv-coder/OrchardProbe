@@ -241,8 +241,10 @@ Checkpoint 4 is active: exactly one internal-TestFlight upload was reconciled as
 accepted and processed without external testing or review submission. The
 [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md) records the
 closed Host operator artifact workflow merged through
-[PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74). Step 4C is next
-and requires a fresh installation acknowledgement before any device action.
+[PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74). Step 4C is active:
+its first authorized Host start failed closed before publication and exposed a
+masked acknowledgement-pipe diagnostic. That remediation must merge before a
+new fresh installation acknowledgement and any device action.
 Installation and device observation have not occurred. LAB-002 evaluates
 a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
@@ -417,7 +419,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private 3A generation plus the complete 3B Archive/IPA/oracle/evidence/upload-gate closure merged in order through [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63), [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65); 3C device-free verification and implementation merge are complete through [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66). PR #71 merged the final re-signing identity correction, and exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair exists; the sanitized local candidate record is tracked in the [checkpoint-3 ledger](research/lab-002-checkpoint-3-progress.md). Its one internal-TestFlight upload has been reconciled as accepted and processed. [PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74) merged the closed Host operator artifact workflow tracked by the [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md). Step 4C now awaits its fresh installation acknowledgement; no installation, device verification, plaintext result, or Go result exists |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private 3A generation plus the complete 3B Archive/IPA/oracle/evidence/upload-gate closure merged in order through [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63), [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65); 3C device-free verification and implementation merge are complete through [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66). PR #71 merged the final re-signing identity correction, and exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair exists; the sanitized local candidate record is tracked in the [checkpoint-3 ledger](research/lab-002-checkpoint-3-progress.md). Its one internal-TestFlight upload has been reconciled as accepted and processed. [PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74) merged the closed Host operator artifact workflow tracked by the [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md). Step 4C is active while its fail-closed acknowledgement-pipe diagnostic remediation passes review; no installation, device verification, plaintext result, or Go result exists |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |
