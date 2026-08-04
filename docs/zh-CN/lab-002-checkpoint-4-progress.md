@@ -17,8 +17,9 @@ Host 重启身份修复 PR：[#81](https://github.com/jacklv-coder/OrchardProbe/
 当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
 不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过 PR #78 合并；最新 4C 启动因
 Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；仅限精确 Tuple 的耦合重绑定
-修复已通过完整本地门禁及干净 Codex CR；PR #81 已打开，仍须关闭远端 CI/评审、完成合并前
-CR 并合并，之后才能取得另一份全新 RFC-0001 确认或进行真机操作**
+修复已创建 PR #81；远端评审发现一个 P2，要求该例外除固定历史 Oracle Digest 外还须固定
+完整冻结 Evidence Digest，因此必须重新完成可复现性、本地门禁、CR、CI 并合并，之后才能
+取得另一份全新 RFC-0001 确认或进行真机操作**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -687,3 +688,12 @@ Head、Base、Commit 清单及九文件范围与本地已评审范围一致，�
 下一项依次关闭远端 CI/评审，再在精确 Head 上运行全新合并前 Codex CR 并合并。只有该修复
 合并后，Host 才可请求另一份全新确认并创建新的 15 分钟安装信封；先前确认保持已消费，手机
 保持未操作。
+
+PR #81 的首轮三项必需 CI 均通过，但远端 Codex Review 在合并前发现一个 P2 来源缺口：兼容
+谓词固定了历史 Oracle 的精确 Digest，却会接受独立 Evidence 文件中任意一对相同且规范的
+记录设备号。Oracle Digest 不认证该独立文件，因此改变后的 Evidence 设备号 Pair 可能被误判
+为已记录的重启迁移。修复后，只有 Oracle 字节和完整冻结上传前 Evidence 字节同时匹配各自
+检查点 3 精确 Digest 时，才启用例外；原有耦合的新旧设备号以及全部 Inode、Mode、Size、Name、
+Digest 校验仍必须通过。回归固定并篡改 Evidence Digest。上一 Helper Source Snapshot 与
+Allowlist Tuple 已移除；必须重新完成两轮独立测量、正常/完整本地门禁、干净 CR、远端 CI、
+Thread 关闭、合并前 CR 和合并。手机保持未操作。

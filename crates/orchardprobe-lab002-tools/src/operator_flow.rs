@@ -66,6 +66,8 @@ const RUN_INTENT_NAME: &str = "collection-intent.json";
 const RUN_EXPORT_NAME: &str = "signed-session-export.json";
 const RUN_BINDING_NAME: &str = "collection-binding.json";
 const MAX_OPERATOR_INPUT_BYTES: usize = 512 * 1024;
+const CHECKPOINT_3_LEGACY_EVIDENCE_SHA256: &str =
+    "77cc3adc5d1eda24e53f67e0a5759ad3f0c89b5d03187328a7af5fe3bbb113f9";
 const UPLOAD_INDETERMINATE_NOTE: &str = "Reconcile this build in App Store Connect before retrying; the upload may succeed even if Apple altool later exits with an error.";
 const UPLOAD_ACCEPTED_NOTE: &str = "Apple altool returned explicit success without product-errors for the evidence-bound upload; confirm TestFlight readiness in App Store Connect. This does not establish installed lineage, protection, or plaintext.";
 
@@ -255,7 +257,7 @@ struct EvidenceLineage {
 
 struct FrozenEvidenceInputs<'a> {
     record: &'a super::PrebuildRecord,
-    checkpoint_3_legacy_oracle: bool,
+    checkpoint_3_legacy_tuple: bool,
     manifest_device: u64,
     manifest_inode: u64,
     manifest_size: u64,
@@ -748,8 +750,16 @@ fn evidence_artifact_matches(
         && artifact.sha256 == expected.sha256
 }
 
+fn has_checkpoint_3_legacy_evidence_digest(bytes: &[u8], expected_sha256: &str) -> bool {
+    sha256_hex(bytes) == expected_sha256
+}
+
+fn is_checkpoint_3_legacy_evidence(bytes: &[u8]) -> bool {
+    has_checkpoint_3_legacy_evidence_digest(bytes, CHECKPOINT_3_LEGACY_EVIDENCE_SHA256)
+}
+
 fn legacy_reboot_device_rebind_matches(
-    checkpoint_3_legacy_oracle: bool,
+    checkpoint_3_legacy_tuple: bool,
     manifest: &EvidenceArtifactIdentity,
     held_manifest: HeldEvidenceArtifact<'_>,
     oracle: &EvidenceArtifactIdentity,
@@ -761,7 +771,7 @@ fn legacy_reboot_device_rebind_matches(
     ) else {
         return false;
     };
-    checkpoint_3_legacy_oracle
+    checkpoint_3_legacy_tuple
         && manifest_device == oracle_device
         && held_manifest.device == held_oracle.device
         && manifest_device != held_manifest.device
@@ -1067,7 +1077,7 @@ fn validate_complete_evidence(
     let oracle_validation = validate_evidence_artifact(&evidence.lab002.oracle, held_oracle);
     if (manifest_validation.is_err() || oracle_validation.is_err())
         && !legacy_reboot_device_rebind_matches(
-            inputs.checkpoint_3_legacy_oracle,
+            inputs.checkpoint_3_legacy_tuple,
             &evidence.lab002.authorized_target_manifest,
             held_manifest,
             &evidence.lab002.oracle,
@@ -1655,7 +1665,8 @@ fn load_source_bundle(
         &evidence_value,
         &FrozenEvidenceInputs {
             record: &record,
-            checkpoint_3_legacy_oracle: is_checkpoint_3_legacy_oracle(&oracle.bytes),
+            checkpoint_3_legacy_tuple: is_checkpoint_3_legacy_oracle(&oracle.bytes)
+                && is_checkpoint_3_legacy_evidence(&evidence.bytes),
             manifest_device: manifest.device,
             manifest_inode: manifest.inode,
             manifest_size: manifest.size,
@@ -2565,10 +2576,11 @@ mod tests {
         RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME, SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME,
         SignedExperimentDirectoryBinding, SourceBundle, UPLOAD_RESULT_NAME, UploadResult,
         candidate_inventory, derive_prebuild_bindings, exact_inventory,
-        has_exact_derived_prebuild_bindings, legacy_reboot_device_rebind_matches, next_run_ordinal,
-        open_run_ordinal, publish_operator_phase, read_candidate_reconciled_upload_records,
+        has_checkpoint_3_legacy_evidence_digest, has_exact_derived_prebuild_bindings,
+        legacy_reboot_device_rebind_matches, next_run_ordinal, open_run_ordinal,
+        publish_operator_phase, read_candidate_reconciled_upload_records,
         require_empty_output_root, require_retained_source_match,
-        require_unchanged_source_artifact, signed_experiment_directory_binding,
+        require_unchanged_source_artifact, sha256_hex, signed_experiment_directory_binding,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
         verify_experiment_directory_binding, verify_frozen_archive, verify_frozen_ipa_entries,
     };
@@ -3404,6 +3416,21 @@ mod tests {
             held_manifest,
             &oracle,
             held_oracle,
+        ));
+    }
+
+    #[test]
+    fn legacy_reboot_rebind_requires_the_exact_frozen_evidence_digest() {
+        let evidence = b"frozen checkpoint-3 evidence";
+        let digest = sha256_hex(evidence);
+        assert!(has_checkpoint_3_legacy_evidence_digest(evidence, &digest));
+
+        let mut changed = evidence.to_vec();
+        changed.push(b'!');
+        assert!(!has_checkpoint_3_legacy_evidence_digest(&changed, &digest));
+        assert!(!has_checkpoint_3_legacy_evidence_digest(
+            evidence,
+            &"00".repeat(32)
         ));
     }
 

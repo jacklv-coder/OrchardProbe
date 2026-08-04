@@ -19,9 +19,10 @@ fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
 merged through PR #78; the latest 4C start failed closed because a Host reboot
 changed the immutable evidence's filesystem device number; an exact-tuple
-coupled-rebind remediation has passed its complete local gates and clean Codex
-CR and is open as PR #81; it must now pass remote CI/review, pre-merge CR, and
-merge before another fresh RFC-0001 acknowledgement or any device action**
+coupled-rebind remediation is open as PR #81; remote review found one P2 that
+requires the exception to pin the exact frozen Evidence digest as well as the
+legacy Oracle digest, so fresh reproducibility/local/CR/CI gates and merge are
+required before another fresh RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -1055,3 +1056,18 @@ remote CI/review closure, followed by a fresh exact-head pre-merge Codex CR and
 merge. Only after that merge may Host request another new acknowledgement and
 create a new 15-minute installation envelope; the prior acknowledgement remains
 consumed and the phone remains untouched.
+
+PR #81's initial three required CI jobs passed, but remote Codex Review then
+identified one P2 provenance gap before merge: the compatibility predicate
+pinned the exact legacy Oracle digest while accepting any pair of identical
+canonical recorded device values in the separate Evidence file. Because the
+Oracle digest does not authenticate that file, a changed Evidence device pair
+could be misclassified as the documented reboot transition. The remediation
+now enables the exception only when both the Oracle bytes and the complete
+frozen pre-upload Evidence bytes match their exact checkpoint-3 digests; the
+existing coupled old/new device and every inode/mode/size/name/digest check
+remain required. Regressions bind and mutate the Evidence digest. The prior
+Helper source snapshot and allowlist tuple were removed, and two fresh
+independent measurements, normal/complete local gates, clean CR, remote CI,
+thread closure, pre-merge CR, and merge are required. The phone remains
+untouched.
