@@ -1094,3 +1094,13 @@ diff hygiene, and the explicit no-hook/invalidated-tuple search passed. The
 fresh complete-diff Codex CR found no actionable correctness issue or P1/P2.
 The next ordered gates are commit, SSH push, remote CI/thread closure,
 pre-merge CR, and merge. The phone remains untouched.
+
+The evidence-pinned remediation commits were pushed through the configured SSH
+remote. PR #81's remote head and nine-file inventory matched the reviewed local
+scope, and its Build fixture, Foundation files, and Test and lint jobs all
+completed successfully. The P2 thread was answered with the dual-digest pin,
+regression, reproducibility, local-gate, CR, and CI evidence, then resolved.
+The next ordered gate is a fresh Codex CR over the exact committed PR head;
+after the resulting documentation-only update also passes remote CI and thread
+inspection, PR #81 may merge. The consumed acknowledgement cannot be reused,
+and the phone remains untouched.
