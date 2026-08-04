@@ -77,7 +77,7 @@ Fingerprint、Receipt/Export 内容、Host 结果或原始私有错误。
 
 | 顺序 | 检查点 | 状态 | 门禁 |
 |---:|---|---|---|
-| 1 | 激活与闭合布局设计 | `激活 PR 合并后为 active` | Issue #84、本双语契约和执行台账新增行进入 `main` |
+| 1 | 激活与闭合布局设计 | `PR #85 合并后为 active` | Issue #84、[PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85)、本双语契约和执行台账新增行进入 `main` |
 | 2 | 无设备实现与回归 | `planned` | 路径角色 API、Prepare/Preflight UX、生命周期复核及合成测试通过本地门禁、Codex CR、PR Review 与 CI，同时已关闭的 LAB-002 Lane 继续受保护 |
 | 3 | 脱敏实现结果与后续仪式提案 | `planned` | 记录无设备 Go/No-Go。Go 只能允许提出一个指定精确首方 Tuple 的新文档提案；它本身不授权 Build、上传、安装、信封或设备操作 |
 
