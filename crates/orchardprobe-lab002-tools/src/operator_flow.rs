@@ -11,6 +11,7 @@ use orchardprobe_core::lab002::LAB002_PROFILE;
 use orchardprobe_core::lab002::artifacts::{
     AuthorizationAcknowledgement, AuthorizedTargetManifest, ClosedArtifact,
     DeviceEnrollmentBinding, Environment, LabOracle, decode_frozen_oracle,
+    is_checkpoint_3_legacy_oracle,
 };
 use orchardprobe_core::lab002::host::{
     EnrollmentArtifactBytes, RunArtifactBytes, expected_inventory_sha256, verify_enrollment_chain,
@@ -254,6 +255,7 @@ struct EvidenceLineage {
 
 struct FrozenEvidenceInputs<'a> {
     record: &'a super::PrebuildRecord,
+    checkpoint_3_legacy_oracle: bool,
     manifest_device: u64,
     manifest_inode: u64,
     manifest_size: u64,
@@ -716,22 +718,56 @@ fn validate_evidence_binary(
 
 fn validate_evidence_artifact(
     artifact: &EvidenceArtifactIdentity,
-    expected_name: &str,
-    expected_device: u64,
-    expected_inode: u64,
-    expected_size: u64,
-    expected_sha256: &str,
+    expected: HeldEvidenceArtifact<'_>,
 ) -> Result<(), String> {
-    if artifact.name != expected_name
-        || artifact.device != expected_device.to_string()
-        || artifact.inode != expected_inode.to_string()
-        || artifact.mode != 0o400
-        || artifact.size != expected_size
-        || artifact.sha256 != expected_sha256
-    {
-        return Err(format!("pre-upload {expected_name} identity is invalid"));
+    if !evidence_artifact_matches(artifact, expected, true) {
+        return Err(format!("pre-upload {} identity is invalid", expected.name));
     }
     Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct HeldEvidenceArtifact<'a> {
+    name: &'a str,
+    device: u64,
+    inode: u64,
+    size: u64,
+    sha256: &'a str,
+}
+
+fn evidence_artifact_matches(
+    artifact: &EvidenceArtifactIdentity,
+    expected: HeldEvidenceArtifact<'_>,
+    require_device: bool,
+) -> bool {
+    artifact.name == expected.name
+        && (!require_device || artifact.device == expected.device.to_string())
+        && artifact.inode == expected.inode.to_string()
+        && artifact.mode == 0o400
+        && artifact.size == expected.size
+        && artifact.sha256 == expected.sha256
+}
+
+fn legacy_reboot_device_rebind_matches(
+    checkpoint_3_legacy_oracle: bool,
+    manifest: &EvidenceArtifactIdentity,
+    held_manifest: HeldEvidenceArtifact<'_>,
+    oracle: &EvidenceArtifactIdentity,
+    held_oracle: HeldEvidenceArtifact<'_>,
+) -> bool {
+    let (Ok(manifest_device), Ok(oracle_device)) = (
+        parse_identity_component(OsStr::new(&manifest.device), "pre-upload manifest device"),
+        parse_identity_component(OsStr::new(&oracle.device), "pre-upload oracle device"),
+    ) else {
+        return false;
+    };
+    checkpoint_3_legacy_oracle
+        && manifest_device == oracle_device
+        && held_manifest.device == held_oracle.device
+        && manifest_device != held_manifest.device
+        && oracle_device != held_oracle.device
+        && evidence_artifact_matches(manifest, held_manifest, false)
+        && evidence_artifact_matches(oracle, held_oracle, false)
 }
 
 fn verify_frozen_ipa_entries(
@@ -1012,22 +1048,35 @@ fn validate_complete_evidence(
             return Err("Archive UUID evidence does not match the frozen oracle".into());
         }
     }
-    validate_evidence_artifact(
-        &evidence.lab002.authorized_target_manifest,
-        MANIFEST_NAME,
-        inputs.manifest_device,
-        inputs.manifest_inode,
-        inputs.manifest_size,
-        inputs.manifest_sha256,
-    )?;
-    validate_evidence_artifact(
-        &evidence.lab002.oracle,
-        ORACLE_NAME,
-        inputs.oracle_device,
-        inputs.oracle_inode,
-        inputs.oracle_size,
-        inputs.oracle_sha256,
-    )?;
+    let held_manifest = HeldEvidenceArtifact {
+        name: MANIFEST_NAME,
+        device: inputs.manifest_device,
+        inode: inputs.manifest_inode,
+        size: inputs.manifest_size,
+        sha256: inputs.manifest_sha256,
+    };
+    let held_oracle = HeldEvidenceArtifact {
+        name: ORACLE_NAME,
+        device: inputs.oracle_device,
+        inode: inputs.oracle_inode,
+        size: inputs.oracle_size,
+        sha256: inputs.oracle_sha256,
+    };
+    let manifest_validation =
+        validate_evidence_artifact(&evidence.lab002.authorized_target_manifest, held_manifest);
+    let oracle_validation = validate_evidence_artifact(&evidence.lab002.oracle, held_oracle);
+    if manifest_validation.is_err() || oracle_validation.is_err() {
+        if !legacy_reboot_device_rebind_matches(
+            inputs.checkpoint_3_legacy_oracle,
+            &evidence.lab002.authorized_target_manifest,
+            held_manifest,
+            &evidence.lab002.oracle,
+            held_oracle,
+        ) {
+            manifest_validation?;
+            oracle_validation?;
+        }
+    }
     Ok(())
 }
 
@@ -1606,6 +1655,7 @@ fn load_source_bundle(
         &evidence_value,
         &FrozenEvidenceInputs {
             record: &record,
+            checkpoint_3_legacy_oracle: is_checkpoint_3_legacy_oracle(&oracle.bytes),
             manifest_device: manifest.device,
             manifest_inode: manifest.inode,
             manifest_size: manifest.size,
@@ -2510,12 +2560,13 @@ mod tests {
 
     use super::{
         EVIDENCE_NAME, EXPERIMENT_DIRECTORY_BINDING_NAME, EXPERIMENT_DIRECTORY_NAME,
-        EvidenceArtifactIdentity, INSTALL_ACK_NAME, INSTALL_ENVELOPE_NAME, MANIFEST_NAME,
-        PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME,
-        SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME, SignedExperimentDirectoryBinding, SourceBundle,
-        UPLOAD_RESULT_NAME, UploadResult, candidate_inventory, derive_prebuild_bindings,
-        exact_inventory, has_exact_derived_prebuild_bindings, next_run_ordinal, open_run_ordinal,
-        publish_operator_phase, read_candidate_reconciled_upload_records,
+        EvidenceArtifactIdentity, HeldEvidenceArtifact, INSTALL_ACK_NAME, INSTALL_ENVELOPE_NAME,
+        MANIFEST_NAME, ORACLE_NAME, PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME,
+        RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME, SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME,
+        SignedExperimentDirectoryBinding, SourceBundle, UPLOAD_RESULT_NAME, UploadResult,
+        candidate_inventory, derive_prebuild_bindings, exact_inventory,
+        has_exact_derived_prebuild_bindings, legacy_reboot_device_rebind_matches, next_run_ordinal,
+        open_run_ordinal, publish_operator_phase, read_candidate_reconciled_upload_records,
         require_empty_output_root, require_retained_source_match,
         require_unchanged_source_artifact, signed_experiment_directory_binding,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
@@ -3193,13 +3244,167 @@ mod tests {
             size: 512,
             sha256: digest.clone(),
         };
-        assert!(validate_evidence_artifact(&artifact, MANIFEST_NAME, 17, 29, 512, &digest).is_ok());
+        let held = HeldEvidenceArtifact {
+            name: MANIFEST_NAME,
+            device: 17,
+            inode: 29,
+            size: 512,
+            sha256: &digest,
+        };
+        assert!(validate_evidence_artifact(&artifact, held).is_ok());
         assert!(
-            validate_evidence_artifact(&artifact, MANIFEST_NAME, 18, 29, 512, &digest).is_err()
+            validate_evidence_artifact(&artifact, HeldEvidenceArtifact { device: 18, ..held })
+                .is_err()
         );
         assert!(
-            validate_evidence_artifact(&artifact, MANIFEST_NAME, 17, 30, 512, &digest).is_err()
+            validate_evidence_artifact(&artifact, HeldEvidenceArtifact { inode: 30, ..held })
+                .is_err()
         );
+    }
+
+    #[test]
+    fn legacy_reboot_rebind_requires_exact_coupled_artifact_identity() {
+        let manifest_digest = "ab".repeat(32);
+        let oracle_digest = "cd".repeat(32);
+        let mut manifest = EvidenceArtifactIdentity {
+            name: MANIFEST_NAME.into(),
+            device: "17".into(),
+            inode: "29".into(),
+            mode: 0o400,
+            size: 512,
+            sha256: manifest_digest.clone(),
+        };
+        let mut oracle = EvidenceArtifactIdentity {
+            name: ORACLE_NAME.into(),
+            device: "17".into(),
+            inode: "31".into(),
+            mode: 0o400,
+            size: 1024,
+            sha256: oracle_digest.clone(),
+        };
+        let held_manifest = HeldEvidenceArtifact {
+            name: MANIFEST_NAME,
+            device: 18,
+            inode: 29,
+            size: 512,
+            sha256: &manifest_digest,
+        };
+        let held_oracle = HeldEvidenceArtifact {
+            name: ORACLE_NAME,
+            device: 18,
+            inode: 31,
+            size: 1024,
+            sha256: &oracle_digest,
+        };
+        assert!(legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        assert!(!legacy_reboot_device_rebind_matches(
+            false,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            HeldEvidenceArtifact {
+                device: 19,
+                ..held_oracle
+            },
+        ));
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            HeldEvidenceArtifact {
+                device: 17,
+                ..held_manifest
+            },
+            &oracle,
+            HeldEvidenceArtifact {
+                device: 17,
+                ..held_oracle
+            },
+        ));
+        oracle.device = "16".into();
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        oracle.device = "17".into();
+        manifest.inode = "290".into();
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        manifest.inode = "29".into();
+        manifest.mode = 0o600;
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        manifest.mode = 0o400;
+        manifest.size += 1;
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        manifest.size -= 1;
+        manifest.sha256 = "ef".repeat(32);
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        manifest.sha256 = manifest_digest.clone();
+        oracle.name = MANIFEST_NAME.into();
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        oracle.name = ORACLE_NAME.into();
+        manifest.device = "arbitrary".into();
+        oracle.device = "arbitrary".into();
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
+        manifest.device = "017".into();
+        oracle.device = "017".into();
+        assert!(!legacy_reboot_device_rebind_matches(
+            true,
+            &manifest,
+            held_manifest,
+            &oracle,
+            held_oracle,
+        ));
     }
 
     #[test]

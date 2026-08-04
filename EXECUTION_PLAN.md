@@ -113,8 +113,13 @@ The next fresh acknowledgement was consumed by an operator-session interruption
 before the Helper published any artifact; its new owner-only root remained empty
 and no phone action occurred. A terminal reconciliation found no Fastlane or
 operator-lane process, reacquired every bound-directory lock, and rechecked the
-retained root as empty. Another fresh acknowledgement and signed one-shot
-envelope must now immediately precede installation enrollment. A separate fresh
+retained root as empty. After PR #80 merged that closure, another fresh
+acknowledgement was consumed by a terminal pre-publication failure: a Host
+reboot changed the APFS filesystem device number recorded by the immutable
+evidence even though both retained artifacts still matched their inode, mode,
+size, and SHA-256. An exact-frozen-tuple reboot compatibility remediation must
+pass review and merge before another fresh acknowledgement and signed one-shot
+envelope may immediately precede installation enrollment. A separate fresh
 acknowledgement remains required before each run. `DEVICE-001`
 remains blocked and inactive unless LAB-002 completes with a Go result.
 Issue #9 fixed the first-party DemoLab provenance, independent
@@ -131,7 +136,7 @@ containing PR is on `main`.
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
 | 2 | Device-free implementation and synthetic/Simulator verification | `done` | Merged [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; all required CI, review threads, and pre-merge Codex CR were clean |
 | 3 | Exact signed DemoLab build and pre-upload oracle | `done` | From clean merged PR #71 source, exactly one verified local DemoLab `1.0 (3)` signed candidate/frozen-oracle pair has been published. The [checkpoint-3 progress ledger](docs/research/lab-002-checkpoint-3-progress.md) and [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527) record its non-secret evidence; [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) is the completion-record implementation PR whose merge makes this row authoritative. The authorization still excludes upload, installation, and device observation |
-| 4 | Installation enrollment and two clean device observations | `active — 4C awaiting fresh acknowledgement` | The bounded exact-build workflow is authorized, the one internal upload is remotely reconciled, and the closed Host operator workflow merged through PR #74. [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged the first attempt's fail-closed pipe-diagnostic remediation. The next acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field; [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the full-digest-only compatibility remediation. Follow the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md): retain another new fresh acknowledgement/envelope immediately before enrollment and each clean run |
+| 4 | Installation enrollment and two clean device observations | `active — 4C Host-reboot identity remediation` | The bounded exact-build workflow is authorized, the one internal upload is remotely reconciled, and the closed Host operator workflow merged through PR #74. [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged the first attempt's fail-closed pipe-diagnostic remediation, and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the immutable Oracle compatibility remediation. The latest acknowledged start failed before publication after a Host reboot changed the frozen APFS device number while all other retained identities remained exact. Follow the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md): merge an exact-tuple coupled-rebind remediation, then retain another new fresh acknowledgement/envelope immediately before enrollment and each clean run |
 | 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
 
 Checkpoint 2 completion evidence is retained in the

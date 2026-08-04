@@ -15,8 +15,10 @@ Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardPro
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
-merged through PR #78; 4C now requires another new fresh RFC-0001
-acknowledgement immediately before a new Host start and any device action**
+merged through PR #78; the latest 4C start failed closed because a Host reboot
+changed the immutable evidence's filesystem device number; an exact-tuple
+coupled-rebind remediation must pass CR, CI, PR, and merge before another fresh
+RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -59,7 +61,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — awaiting fresh acknowledgement` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged that remediation. The next freshly acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field; [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the exact-full-digest-only compatibility remediation. Record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — Host-reboot identity remediation` | The first two Host defects were remediated through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78). The latest freshly acknowledged start reached a terminal pre-publication failure after a Host reboot changed the APFS device number recorded by the immutable evidence while both artifacts retained exact inode, mode, size, and SHA-256. Merge the exact-frozen-Oracle coupled-rebind remediation, then record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -976,3 +978,35 @@ an operator-session interruption, not a product or device result. Its
 acknowledgement is consumed, its empty root is retained as failure evidence,
 and 4C again requires a new fresh acknowledgement. The next orchestration must
 retain and poll any yielded Fastlane session until its actual terminal result.
+
+After PR #80 merged that interruption closure, the operator supplied the next
+fresh 4C acknowledgement. Host validated clean merged source, the same frozen
+candidate/prebuild tuple and Oracle digest, and the same connected owned-device
+environment, then retained and polled the Fastlane session to exit status 1.
+The Helper failed before publication because the pre-upload authorized-target
+manifest identity was invalid. The new owner-only output root remains mode
+`0700` with zero entries; no envelope, experiment, TestFlight action, app
+import, enrollment key, receipt, or observation exists, and the root is
+retained as failure evidence.
+
+Read-only reconciliation established that the Host had rebooted after the
+evidence was frozen. The evidence records the same old filesystem device number
+for its manifest and Oracle; both current held files report the same new device
+number. Each file still matches its independently recorded inode, mode, size,
+and SHA-256 exactly. The remediation remains pinned to the already published
+checkpoint-3 legacy Oracle digest: it may ignore only that coupled old-to-new
+device-number transition when both recorded device values are canonical
+decimal identities and equal, both
+current device values are equal and different from the recorded value, and
+every other identity field matches. Current/non-pinned evidence remains strict;
+an independently moved artifact or any inode, mode, size, or digest change is
+rejected. Focused positive and negative regression coverage is required before
+the complete local gate, Codex CR, CI, PR, and merge. This acknowledgement is
+consumed, and the phone remains untouched.
+
+The first uncommitted Codex CR found one P2 provenance gap in that boundary:
+the two recorded device fields had to be equal but were not yet required to be
+canonical decimal identities. The compatibility predicate now parses both
+through the existing bounded identity parser before comparing them; regressions
+reject arbitrary and leading-zero strings. The reproducibility, allowlist,
+complete-gate, clean-CR, CI, PR, and merge requirements remain unchanged.
