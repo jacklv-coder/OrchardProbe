@@ -1397,6 +1397,18 @@ impl ClosedArtifact for LabOracle {
 const CHECKPOINT_3_LEGACY_ORACLE_SHA256: &str =
     "326d7a3260600f13dd65c518fdbeafebbfb119deb31dced15eb4745ced5f9472";
 
+fn has_legacy_oracle_digest(bytes: &[u8], legacy_sha256: &str) -> bool {
+    bytes.len() <= LabOracle::MAX_BYTES && sha256_hex(bytes) == legacy_sha256
+}
+
+/// Return whether bytes are the sole published checkpoint-3 legacy Oracle.
+///
+/// This is used by the closed operator chain to scope compatibility behavior
+/// to the exact immutable DemoLab 1.0 (3) tuple.
+pub fn is_checkpoint_3_legacy_oracle(bytes: &[u8]) -> bool {
+    has_legacy_oracle_digest(bytes, CHECKPOINT_3_LEGACY_ORACLE_SHA256)
+}
+
 fn decode_frozen_oracle_with_legacy_digest(
     bytes: &[u8],
     legacy_sha256: &str,
@@ -1405,7 +1417,7 @@ fn decode_frozen_oracle_with_legacy_digest(
         Ok(oracle) => return Ok(oracle),
         Err(error) => error,
     };
-    if bytes.len() > LabOracle::MAX_BYTES || sha256_hex(bytes) != legacy_sha256 {
+    if !has_legacy_oracle_digest(bytes, legacy_sha256) {
         return Err(strict_error);
     }
 

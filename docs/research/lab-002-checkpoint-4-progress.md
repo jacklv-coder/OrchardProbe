@@ -12,11 +12,19 @@ Publication-pipe remediation PR: [#76](https://github.com/jacklv-coder/OrchardPr
 
 Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardProbe/pull/78)
 
+Host-reboot identity remediation PR: [#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
+
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
-merged through PR #78; 4C now requires another new fresh RFC-0001
-acknowledgement immediately before a new Host start and any device action**
+merged through PR #78; the latest 4C start failed closed because a Host reboot
+changed the immutable evidence's filesystem device number; an exact-tuple
+coupled-rebind remediation is open as PR #81; remote review found one P2 that
+requires the exception to pin the exact frozen Evidence digest as well as the
+legacy Oracle digest, so fresh reproducibility/local/CR/CI gates and merge are
+required before another fresh RFC-0001 acknowledgement or any device action;
+reproducibility, complete local gates, and clean CR now pass, with PR update,
+remote CI/thread closure, pre-merge CR, and merge next**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -59,7 +67,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — awaiting fresh acknowledgement` | The first authorized start attempt failed closed before publication because an early Helper exit closed the acknowledgement pipe and Fastlane masked the bounded Helper error with `EPIPE`; [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged that remediation. The next freshly acknowledged start also failed before publication because the immutable checkpoint-3 Oracle predates the required `container_kind` field; [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the exact-full-digest-only compatibility remediation. Record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — Host-reboot identity remediation` | The first two Host defects were remediated through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78). The latest freshly acknowledged start reached a terminal pre-publication failure after a Host reboot changed the APFS device number recorded by the immutable evidence while both artifacts retained exact inode, mode, size, and SHA-256. Merge the exact-frozen-Oracle coupled-rebind remediation, then record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -976,3 +984,123 @@ an operator-session interruption, not a product or device result. Its
 acknowledgement is consumed, its empty root is retained as failure evidence,
 and 4C again requires a new fresh acknowledgement. The next orchestration must
 retain and poll any yielded Fastlane session until its actual terminal result.
+
+After PR #80 merged that interruption closure, the operator supplied the next
+fresh 4C acknowledgement. Host validated clean merged source, the same frozen
+candidate/prebuild tuple and Oracle digest, and the same connected owned-device
+environment, then retained and polled the Fastlane session to exit status 1.
+The Helper failed before publication because the pre-upload authorized-target
+manifest identity was invalid. The new owner-only output root remains mode
+`0700` with zero entries; no envelope, experiment, TestFlight action, app
+import, enrollment key, receipt, or observation exists, and the root is
+retained as failure evidence.
+
+Read-only reconciliation established that the Host had rebooted after the
+evidence was frozen. The evidence records the same old filesystem device number
+for its manifest and Oracle; both current held files report the same new device
+number. Each file still matches its independently recorded inode, mode, size,
+and SHA-256 exactly. The remediation remains pinned to the already published
+checkpoint-3 legacy Oracle digest: it may ignore only that coupled old-to-new
+device-number transition when both recorded device values are canonical
+decimal identities and equal, both
+current device values are equal and different from the recorded value, and
+every other identity field matches. Current/non-pinned evidence remains strict;
+an independently moved artifact or any inode, mode, size, or digest change is
+rejected. Focused positive and negative regression coverage is required before
+the complete local gate, Codex CR, CI, PR, and merge. This acknowledgement is
+consumed, and the phone remains untouched.
+
+The first uncommitted Codex CR found one P2 provenance gap in that boundary:
+the two recorded device fields had to be equal but were not yet required to be
+canonical decimal identities. The compatibility predicate now parses both
+through the existing bounded identity parser before comparing them; regressions
+reject arbitrary and leading-zero strings. The reproducibility, allowlist,
+complete-gate, clean-CR, CI, PR, and merge requirements remain unchanged.
+
+After committing the P2 remediation, two independent complete Fastlane gates
+each rebuilt three Helpers from source snapshot
+`5862d99f2b13c759bfdc4ae51092e03540a435c9dfa3896feda3dbe71a583928`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,296`, SHA-256
+`ac58ecf872d42b5e6fb7ff49eda243afa20c5929832c9c6783702188e40e2993`,
+and CodeDirectory CDHash `43d36eac4ebf50693d6e91038454b54d2dce5a7a`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. The subsequent complete
+gate passed all Workspace tests but rejected a collapsible Helper conditional
+under warnings-denied Clippy. That source snapshot and allowlist tuple were
+therefore invalidated and removed; the one-line equivalent remediation requires
+two fresh measurements from zero. The phone remains untouched.
+
+Two fresh independent complete Fastlane gates then each rebuilt three Helpers
+from source snapshot
+`8571652a1e7d822070e5abdf32f89295c3f6b88bc4aa43b58d8d8ef1e56f7cb5`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,296`, SHA-256
+`55c16316546e134e6b0594ccc283d6ec490e559a259e3c0541d34716de129f40`,
+and CodeDirectory CDHash `0e9663164bb2dcb470dc1a771fb195fb1b0d9222`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely and the explicit no-hook search passed
+before this exact sole product tuple was added to the reviewed source-snapshot
+allowlist. A normal non-measurement gate, complete local gates, and a new clean
+complete-diff Codex CR remain required before push; the phone remains untouched.
+
+The normal non-measurement `demolab_check` then accepted only the reviewed
+Helper tuple and passed its unsigned Simulator fixture. Rust format, locked
+all-target warnings-denied Clippy, all 296 Workspace tests, Ruby syntax, diff
+hygiene, and the explicit no-measurement-hook search passed. The complete-diff
+Codex CR against unchanged `origin/main` found no actionable correctness issue
+or P1/P2. The reviewed branch was pushed over the configured SSH remote and
+opened as [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81); its
+remote head, base, commit list, and nine-file inventory matched the local
+reviewed scope, and it opened with no review threads. The next ordered gate is
+remote CI/review closure, followed by a fresh exact-head pre-merge Codex CR and
+merge. Only after that merge may Host request another new acknowledgement and
+create a new 15-minute installation envelope; the prior acknowledgement remains
+consumed and the phone remains untouched.
+
+PR #81's initial three required CI jobs passed, but remote Codex Review then
+identified one P2 provenance gap before merge: the compatibility predicate
+pinned the exact legacy Oracle digest while accepting any pair of identical
+canonical recorded device values in the separate Evidence file. Because the
+Oracle digest does not authenticate that file, a changed Evidence device pair
+could be misclassified as the documented reboot transition. The remediation
+now enables the exception only when both the Oracle bytes and the complete
+frozen pre-upload Evidence bytes match their exact checkpoint-3 digests; the
+existing coupled old/new device and every inode/mode/size/name/digest check
+remain required. Regressions bind and mutate the Evidence digest. The prior
+Helper source snapshot and allowlist tuple were removed, and two fresh
+independent measurements, normal/complete local gates, clean CR, remote CI,
+thread closure, pre-merge CR, and merge are required. The phone remains
+untouched.
+
+After committing the exact-Evidence pin, two fresh independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`b503cca5aeae01565d9a80117e5725c3a3d27c547feb5a892087b8fed4264ffd`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,408`, SHA-256
+`4aa9e2c157dd2743d7141fe31733bbab59dc1b42f5e3a080623c308fd4c3137f`,
+and CodeDirectory CDHash `ceae099c2b723df7842f7ba34eb311920deafdda`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. A normal non-measurement
+gate, complete local gates, clean CR, remote CI/thread closure, pre-merge CR,
+and merge remain required; the phone remains untouched.
+
+The normal non-measurement `demolab_check` rebuilt and admitted only that
+reviewed Helper tuple and passed the unsigned Simulator fixture. Rust format,
+locked all-target warnings-denied Clippy, all 297 Workspace tests, Ruby syntax,
+diff hygiene, and the explicit no-hook/invalidated-tuple search passed. The
+fresh complete-diff Codex CR found no actionable correctness issue or P1/P2.
+The next ordered gates are commit, SSH push, remote CI/thread closure,
+pre-merge CR, and merge. The phone remains untouched.
+
+The evidence-pinned remediation commits were pushed through the configured SSH
+remote. PR #81's remote head and nine-file inventory matched the reviewed local
+scope, and its Build fixture, Foundation files, and Test and lint jobs all
+completed successfully. The P2 thread was answered with the dual-digest pin,
+regression, reproducibility, local-gate, CR, and CI evidence, then resolved.
+The next ordered gate is a fresh Codex CR over the exact committed PR head;
+after the resulting documentation-only update also passes remote CI and thread
+inspection, PR #81 may merge. The consumed acknowledgement cannot be reused,
+and the phone remains untouched.
