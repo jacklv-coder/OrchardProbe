@@ -91,8 +91,9 @@ Host 启动在发布前失败关闭，并暴露了被遮蔽的确认管道诊断
 进程，重新取得了全部绑定目录锁，并再次确认保留根为空。现在必须再次记录新的 RFC-0001 确认及签名
 一次性信封。PR #80 合并上述关闭记录后，下一份全新确认又被一次发布前终态失败消费：Host
 重启改变了不可变 Evidence 记录的 APFS 文件系统设备号，但两个保留工件的 Inode、Mode、Size
-与 SHA-256 仍全部精确匹配。仅限精确冻结 Tuple 的重启兼容修复必须先通过评审并合并，之后
-才能再次取得全新确认及签名一次性信封；每轮运行前仍须另行记录
+与 SHA-256 仍全部精确匹配。PR #81 已在可复现性、评审、CI 与精确 Head 合并前 CR 通过后
+合并仅限精确冻结 Tuple 的重启兼容修复。现在可以在安装 Enrollment 前紧邻地再次取得全新确认
+及签名一次性信封；每轮运行前仍须另行记录
 新的确认。在 LAB-002 取得 Go 结果前，
 `DEVICE-001` 保持未激活的 `blocked`。
 Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Oracle 证据、脱敏、
@@ -107,7 +108,7 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 | 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
 | 2 | 无设备实现与合成/Simulator 验证 | `done` | 已合并的 [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59)实现闭合协议、Host 链、固定设备状态/Observer/Export 流程、生产授权验证及合成/Simulator 门禁；全部必需 CI、Review Thread 与合并前 Codex CR 均已清零 |
 | 3 | 精确签名 DemoLab Build 与上传前 Oracle | `done` | 已从 PR #71 合并后的干净源码发布恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选/冻结 Oracle Pair。[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)与 [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527)记录其非秘密证据；[PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)是完成记录 Implementation PR，其合并使本行状态生效。授权仍不包含上传、安装或设备观察 |
-| 4 | 安装 Enrollment 与两次干净真机观察 | `active — PR #81 合并前 CR` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并，前两项修复已通过 PR #76 与 PR #78 合并。最新获确认启动在发布前因 Host 重启改变冻结 APFS 设备号而失败，其他保留身份字段仍全部精确。[PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) 修复远端评审发现的 P2：只有同时固定完整冻结 Evidence 与 Oracle 的精确 Digest，才允许耦合重绑定；可复现性、完整本地门禁、干净 CR、三项远端 CI 和 Review Thread 关闭均已通过。按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)继续完成精确 Head 的合并前 CR 及合并后，再在 Enrollment 与每次干净运行前紧邻地分别保留新的全新确认/信封 |
+| 4 | 安装 Enrollment 与两次干净真机观察 | `active — 需要全新确认` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并。PR #76 合并第一次尝试的 Fail-closed Pipe 诊断修复，PR #78 合并不可变 Oracle 兼容修复，[PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) 已合并 Host 重启兼容修复：只有同时固定完整冻结 Evidence 与 Oracle 的精确 Digest，才允许耦合重绑定。可复现性、完整本地门禁、精确 Head CR、全部远端 CI 和 Review Thread 关闭均通过。按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)：在 Enrollment 前紧邻地保留一份全新确认和 15 分钟信封，再为每次干净运行分别保留新的全新确认 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 
 检查点 2 的完成证据保留在

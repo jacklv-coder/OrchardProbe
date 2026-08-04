@@ -18,13 +18,12 @@ Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
 merged through PR #78; the latest 4C start failed closed because a Host reboot
-changed the immutable evidence's filesystem device number; an exact-tuple
-coupled-rebind remediation is open as PR #81; remote review found one P2 that
-requires the exception to pin the exact frozen Evidence digest as well as the
-legacy Oracle digest, so fresh reproducibility/local/CR/CI gates and merge are
-required before another fresh RFC-0001 acknowledgement or any device action;
-reproducibility, complete local gates, and clean CR now pass, with PR update,
-remote CI/thread closure, pre-merge CR, and merge next**
+changed the immutable evidence's filesystem device number; PR #81 merged the
+exact-tuple coupled-rebind remediation, pinned to both the exact frozen Evidence
+and legacy Oracle digests, after reproducibility, complete local gates,
+exact-head CR, remote CI, and review-thread closure passed; another fresh
+RFC-0001 acknowledgement and 15-minute envelope must now immediately precede
+installation enrollment; no device action has occurred**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -67,7 +66,7 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — Host-reboot identity remediation` | The first two Host defects were remediated through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78). The latest freshly acknowledged start reached a terminal pre-publication failure after a Host reboot changed the APFS device number recorded by the immutable evidence while both artifacts retained exact inode, mode, size, and SHA-256. Merge the exact-frozen-Oracle coupled-rebind remediation, then record another new fresh installation acknowledgement and sign its one-shot envelope. Independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
+| 4C | Exact installation and enrollment | `active — fresh acknowledgement required` | The first two Host defects were remediated through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78). The latest freshly acknowledged start reached a terminal pre-publication failure after a Host reboot changed the APFS device number recorded by the immutable evidence while both artifacts retained exact inode, mode, size, and SHA-256. [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) merged the Evidence-and-Oracle-pinned coupled-rebind remediation. Record another new fresh installation acknowledgement and sign its one-shot envelope, then independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
 | 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
 | 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
 | 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
@@ -1104,3 +1103,13 @@ The next ordered gate is a fresh Codex CR over the exact committed PR head;
 after the resulting documentation-only update also passes remote CI and thread
 inspection, PR #81 may merge. The consumed acknowledgement cannot be reused,
 and the phone remains untouched.
+
+PR #81 then passed the exact committed-head pre-merge Codex CR with no
+actionable correctness issue, followed by a final successful three-job CI run.
+Its remote head, clean mergeability, empty general-comment set, and sole
+resolved/outdated P2 thread were rechecked immediately before squash merge.
+The resulting merge is authoritative on `main`, and the remote topic branch is
+gone. Host may now request one new acknowledgement immediately before creating
+a new 15-minute installation envelope in a new owner-only output root. The
+previous acknowledgement remains consumed, its empty failed root remains
+private evidence, and the phone has still not been operated.
