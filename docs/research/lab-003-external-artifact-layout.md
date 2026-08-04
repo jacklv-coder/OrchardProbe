@@ -102,7 +102,7 @@ outside this checkpoint and are never used to turn its No-Go into a pass.
 | Order | Checkpoint | Status | Gate |
 |---:|---|---|---|
 | 1 | Activation and closed layout design | `done` | Issue #84, [PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85), this bilingual contract, and the execution-ledger insertion are on `main` |
-| 2 | Device-free implementation and regressions | `active` | Path-role API, prepare/preflight UX, lifecycle revalidation, and synthetic tests pass local gates, Codex CR, PR review, and CI while closed LAB-002 lanes remain guarded |
+| 2 | Device-free implementation and regressions | `active — PR #86` | [PR #86](https://github.com/jacklv-coder/OrchardProbe/pull/86) must pass local gates, Codex CR, PR review, and CI for the path-role API, prepare/preflight UX, lifecycle revalidation, and synthetic tests while closed LAB-002 lanes remain guarded |
 | 3 | Sanitized implementation result and later-ceremony proposal | `planned` | Record a device-free Go/No-Go. A Go may only permit a new documentation proposal naming an exact first-party tuple; it does not itself authorize a build, upload, installation, envelope, or device action |
 
 Checkpoint 2 began only after activation PR #85 merged. Checkpoint 3 cannot
