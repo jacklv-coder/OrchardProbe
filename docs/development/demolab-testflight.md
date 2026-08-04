@@ -246,14 +246,21 @@ Prefer the least-privileged App Store Connect key that can upload this app.
 The lane uses the key only for Apple's local `altool` package-upload command;
 it does not create a Fastlane Pilot session.
 
-## Checkpoint 4 Host operator workflow
+## Checkpoint 4 Host operator workflow (historical, closed)
 
-This maintainer-only workflow must be merged on `main` before the exact
-TestFlight installation. It is not an installation command and it never opens
-an App Group, launches an app, uploads a build, or accepts a target/path/range
-for observation. The five lanes are deliberately serial:
+Checkpoint 4 is closed as a retained No-Go. Every Host operator lane below now
+fails closed at entry. Retained private artifacts, a fresh acknowledgement, or
+the old command sequence do not authorize another lifecycle. Reuse requires a
+separately reviewed future checkpoint that deliberately replaces the code
+guard and updates the plan and this runbook before any device action.
 
-```sh
+The former maintainer-only workflow was required on `main` before the exact
+TestFlight installation. It was not an installation command and never opened
+an App Group, launched an app, uploaded a build, or accepted a free
+target/path/range for observation. Its historical serial order is retained for
+audit only; do not run these commands:
+
+```text
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
@@ -263,8 +270,8 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
 bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 ```
 
-`start_enrollment` accepts only the frozen prebuild/candidate tuple and creates
-the fixed `lab002-experiment` child below an already existing mode-`0700`
+Historically, `start_enrollment` accepted only the frozen prebuild/candidate
+tuple and created the fixed `lab002-experiment` child below an already existing mode-`0700`
 operator output root. The root must be empty: any retained prior experiment
 makes the command fail closed, so an abandoned or failed lifecycle cannot be
 bypassed by publishing another enrollment beside it. The Helper checks the

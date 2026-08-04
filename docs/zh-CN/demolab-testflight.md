@@ -235,13 +235,17 @@ Payload 继续被绑定。Oracle 会记录供已安装 Build Verifier 使用的 
 Fat 或多 Slice Size 变化、签名起点移动、闭合签名尾之外的增长，或任何既有身份/区间变化
 仍会失败关闭。
 
-## 检查点 4 Host 操作流程
+## 检查点 4 Host 操作流程（历史记录，已关闭）
 
-这套维护者流程必须先随实现 PR 进入 `main`，随后才能安装精确 TestFlight Build。
+检查点 4 已以保留证据的 No-Go 关闭。下列所有 Host 操作 Lane 现在都会在入口失败关闭。
+保留的私有产物、新确认或旧命令序列都不能授权另一条生命周期。以后如需复用，必须先建立
+一个单独评审的未来检查点，明确替换代码保护，并在任何真机操作前更新计划与本手册。
+
+此前的维护者流程必须先随实现 PR 进入 `main`，随后才能安装精确 TestFlight Build。
 它不是安装命令，不会访问 App Group、启动 App、上传 Build，也不接受用于观察的自由
-Target/Path/Range。固定顺序为：
+Target/Path/Range。以下固定顺序仅为审计保留，请勿运行：
 
-```sh
+```text
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
@@ -251,8 +255,8 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
 bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 ```
 
-开始 Enrollment 只接受冻结 Prebuild/Candidate Tuple，在仓库外已存在的 `0700` 输出根
-下排他发布固定 `lab002-experiment` 目录。该根目录必须为空；只要存在任何保留的既有实验
+历史上的 Enrollment 启动只接受冻结 Prebuild/Candidate Tuple，在仓库外已存在的
+`0700` 输出根下排他发布固定 `lab002-experiment` 目录。该根目录必须为空；只要存在任何保留的既有实验
 就会失败关闭，因此不能在放弃或失败的生命周期旁重新发布 Enrollment 来绕过保留约束。
 Helper 会紧邻原子 No-replace Rename 的前后分别核对只含 Staging/Final 的精确单项清单。
 同一次原子发布还会写入私有绑定，记录所持有的输出根与实验目录身份及 Enrollment Experiment

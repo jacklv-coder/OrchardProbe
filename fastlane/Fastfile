@@ -4068,6 +4068,14 @@ def ensure_manual_lane!
   end
 end
 
+def reject_closed_lab002_checkpoint_4!
+  UI.user_error!(
+    "LAB-002 checkpoint 4 is closed as a retained No-Go. Its Host operator " \
+    "lanes are historical and cannot be reused; a separately reviewed future " \
+    "checkpoint must replace this guard before any new lifecycle is allowed."
+  )
+end
+
 def reject_pilot_environment_overrides!
   overrides = ENV.keys.select do |key|
     key.start_with?("PILOT_") || key == "DEMO_ACCOUNT_REQUIRED"
@@ -7608,8 +7616,9 @@ def run_lab002_operator_helper!(
 end
 
 platform :ios do
-  desc "Create the fresh owner-only LAB-002 installation control bundle"
+  desc "Historical (closed): create a LAB-002 installation control bundle"
   lane :demolab_operator_start_enrollment do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     handles = []
@@ -7689,8 +7698,9 @@ platform :ios do
     end
   end
 
-  desc "Verify a device receipt and close LAB-002 enrollment"
+  desc "Historical (closed): verify and close LAB-002 enrollment"
   lane :demolab_operator_close_enrollment do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     handles = []
@@ -7765,8 +7775,9 @@ platform :ios do
     end
   end
 
-  desc "Create the next fresh owner-only LAB-002 run control bundle"
+  desc "Historical (closed): create a LAB-002 run control bundle"
   lane :demolab_operator_start_run do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     handles = []
@@ -7828,8 +7839,9 @@ platform :ios do
     end
   end
 
-  desc "Verify a device export and close the current LAB-002 run"
+  desc "Historical (closed): verify and close a LAB-002 run"
   lane :demolab_operator_close_run do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     handles = []
@@ -7901,8 +7913,9 @@ platform :ios do
     end
   end
 
-  desc "Verify the retained LAB-002 enrollment and two-run Host chain"
+  desc "Historical (closed): verify the LAB-002 Host chain"
   lane :demolab_operator_verify do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     handles = []
