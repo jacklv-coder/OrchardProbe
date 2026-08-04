@@ -15,7 +15,8 @@ Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
 不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过 PR #78 合并；最新 4C 启动因
 Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；仅限精确 Tuple 的耦合重绑定
-修复必须先通过 CR、CI、PR 并合并，之后才能取得另一份全新 RFC-0001 确认或进行真机操作**
+修复已通过完整本地门禁及干净 Codex CR，现在必须继续通过 SSH PR、远端 CI/评审、合并前
+CR 并合并，之后才能取得另一份全新 RFC-0001 确认或进行真机操作**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -674,3 +675,10 @@ CodeDirectory CDHash `0e9663164bb2dcb470dc1a771fb195fb1b0d9222`；两轮未签�
 Simulator Fixture 均通过。临时的 Source 缺席测量 Hook 已彻底移除，且显式无 Hook 搜索
 通过后，才把这一个精确产物 Tuple 加入已评审 Source Snapshot Allowlist。Push 前仍须通过
 正常非测量门禁、完整本地门禁和一轮新的干净完整 Diff Codex CR；手机保持未操作。
+
+随后正常非测量 `demolab_check` 仅接纳已评审 Helper Tuple，并通过未签名 Simulator
+Fixture。Rust Format、锁定依赖且拒绝警告的全 Target Clippy、全部 296 项 Workspace
+测试、Ruby 语法、Diff Hygiene 与显式无测量 Hook 搜索均通过。针对未变化 `origin/main`
+的完整 Diff Codex CR 未发现可执行正确性问题或 P1/P2。下一项依次执行 SSH Push、PR 远端
+CI/评审关闭，再在精确 Head 上运行全新合并前 Codex CR 并合并。只有该修复合并后，Host
+才可请求另一份全新确认并创建新的 15 分钟安装信封；先前确认保持已消费，手机保持未操作。

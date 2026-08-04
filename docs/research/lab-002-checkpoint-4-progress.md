@@ -17,8 +17,9 @@ fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
 merged through PR #78; the latest 4C start failed closed because a Host reboot
 changed the immutable evidence's filesystem device number; an exact-tuple
-coupled-rebind remediation must pass CR, CI, PR, and merge before another fresh
-RFC-0001 acknowledgement or any device action**
+coupled-rebind remediation has passed its complete local gates and clean Codex
+CR, and must now pass SSH PR, remote CI/review, pre-merge CR, and merge before
+another fresh RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -1038,3 +1039,14 @@ measurement hook was removed completely and the explicit no-hook search passed
 before this exact sole product tuple was added to the reviewed source-snapshot
 allowlist. A normal non-measurement gate, complete local gates, and a new clean
 complete-diff Codex CR remain required before push; the phone remains untouched.
+
+The normal non-measurement `demolab_check` then accepted only the reviewed
+Helper tuple and passed its unsigned Simulator fixture. Rust format, locked
+all-target warnings-denied Clippy, all 296 Workspace tests, Ruby syntax, diff
+hygiene, and the explicit no-measurement-hook search passed. The complete-diff
+Codex CR against unchanged `origin/main` found no actionable correctness issue
+or P1/P2. The next ordered gate is SSH push plus PR remote CI/review closure,
+followed by a fresh exact-head pre-merge Codex CR and merge. Only after that
+merge may Host request another new acknowledgement and create a new 15-minute
+installation envelope; the prior acknowledgement remains consumed and the
+phone remains untouched.
