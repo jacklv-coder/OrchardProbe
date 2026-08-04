@@ -25,6 +25,8 @@ Research designs:
   closed with a retained No-Go; the design remains historical evidence, not a
   device result.
 - [LAB-003 external artifact layout](lab-003-external-artifact-layout.md)
-  defines the active device-free successor gate for strict control artifacts,
+  defines the device-free successor gate for strict control artifacts,
   operator inputs, diagnostics, preflight ordering, retention, and redaction.
-  It does not authorize a new device ceremony.
+- [LAB-003 device-free implementation result](lab-003-implementation-result.md)
+  records the narrow layout Go and the continuing device-ceremony No-Go. It
+  does not establish a device backend or working IPA decryption.

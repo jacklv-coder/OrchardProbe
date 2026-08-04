@@ -33,9 +33,10 @@ implementation behind it. Start with the document that matches what you need:
   the reconciled internal upload, Host-tooling gate, terminal enrollment
   attempt, and retained procedural No-Go.
 - [LAB-003 external artifact layout](research/lab-003-external-artifact-layout.md)
-  — the current device-free successor checkpoint that separates strict
-  control artifacts, operator inputs, and diagnostics before any future
-  authorization.
+  — the device-free successor contract that separates strict control
+  artifacts, operator inputs, and diagnostics before any future authorization.
+- [LAB-003 device-free implementation result](research/lab-003-implementation-result.md)
+  — the narrow layout Go, continuing device-ceremony No-Go, and next gate.
 - [Bounded host/helper protocol](architecture/RFC-0002-bounded-host-helper-protocol.md)
   — the accepted device-free protocol design gate.
 - [Rust host architecture decision](architecture/ADR-0001-rust-host.md) — why

@@ -4,7 +4,7 @@
 
 跟踪 Issue：[#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-状态：**检查点 1 已合并；检查点 2 无设备实现进行中**
+状态：**检查点 1–2 已合并；检查点 3 脱敏结果进行中**
 
 LAB-002 因操作员提供的 Enrollment Receipt 与诊断日志被放在六个规范控制工件旁边，
 最终以保留证据的流程性 No-Go 结束。LAB-003 是独立评审的后续步骤：先让每种文件系统
@@ -80,11 +80,11 @@ Fingerprint、Receipt/Export 内容、Host 结果或原始私有错误。
 | 顺序 | 检查点 | 状态 | 门禁 |
 |---:|---|---|---|
 | 1 | 激活与闭合布局设计 | `done` | Issue #84、[PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85)、本双语契约和执行台账新增行进入 `main` |
-| 2 | 无设备实现与回归 | `active — PR #86` | [PR #86](https://github.com/jacklv-coder/OrchardProbe/pull/86) 中的路径角色 API、Prepare/Preflight UX、生命周期复核及合成测试必须通过本地门禁、Codex CR、PR Review 与 CI，同时已关闭的 LAB-002 Lane 继续受保护 |
-| 3 | 脱敏实现结果与后续仪式提案 | `planned` | 记录无设备 Go/No-Go。Go 只能允许提出一个指定精确首方 Tuple 的新文档提案；它本身不授权 Build、上传、安装、信封或设备操作 |
+| 2 | 无设备实现与回归 | `done` | [PR #86](https://github.com/jacklv-coder/OrchardProbe/pull/86) 中的路径角色 API、Prepare/Preflight UX、生命周期复核及合成测试已通过本地门禁、Codex CR、PR Review 与 CI，同时已关闭的 LAB-002 Lane 继续受保护 |
+| 3 | 脱敏实现结果与后续仪式提案 | `active — PR #87` | [脱敏结果](lab-003-implementation-result.md)与 [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)记录仅布局 Go 与设备仪式 No-Go；合并后可以关闭 LAB-003，但不授权 Build、上传、安装、信封或设备操作 |
 
-检查点 2 只在激活 PR #85 合并后开始，检查点 3 必须等待检查点 2 合并。以后任何真机仪式仍
-需要新的已评审检查点，并在每次外部或设备操作前紧邻取得全新明确授权。
+检查点 2 只在激活 PR #85 合并后开始，检查点 3 只在 PR #86 合并后开始。以后任何真机
+仪式仍需要新的已评审检查点，并在每次外部或设备操作前紧邻取得全新明确授权。
 
 ## 检查点 2 验收测试
 
