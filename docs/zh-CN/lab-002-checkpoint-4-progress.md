@@ -16,12 +16,10 @@ Host 重启身份修复 PR：[#81](https://github.com/jacklv-coder/OrchardProbe/
 
 当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
 不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过 PR #78 合并；最新 4C 启动因
-Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；仅限精确 Tuple 的耦合重绑定
-修复已创建 PR #81；远端评审发现一个 P2，要求该例外除固定历史 Oracle Digest 外还须固定
-完整冻结 Evidence Digest，因此必须重新完成可复现性、本地门禁、CR、CI 并合并，之后才能
-取得另一份全新 RFC-0001 确认或进行真机操作；可复现性、完整本地门禁和干净 CR 均已通过，
-下一项为更新 PR、关闭远端 CI/Thread、合并前
-CR 及合并**
+Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；PR #81 已合并仅限精确 Tuple
+的耦合重绑定修复，并同时固定完整冻结 Evidence 与历史 Oracle 的精确 Digest；可复现性、
+完整本地门禁、精确 Head CR、远端 CI 与 Review Thread 关闭均通过；现在必须在安装
+Enrollment 前紧邻地取得另一份全新 RFC-0001 确认与 15 分钟信封；尚未进行真机操作**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -53,7 +51,7 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 |---:|---|---|---|
 | 4A | 激活并关闭提前上传/对账治理偏差 | `完成 — PR #73` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
 | 4B | 闭合 Host 操作流程 | `完成 — PR #74` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前要求的无设备测试、Codex CR、CI、PR 与合并均已通过 |
-| 4C | 精确安装与 Enrollment | `active — Host 重启身份修复` | 前两个 Host 缺陷已分别通过 PR #76 与 PR #78 修复。最新获全新确认启动在 Host 重启改变不可变 Evidence 所记 APFS 设备号后，于发布前得到终态失败；两个工件的 Inode、Mode、Size 与 SHA-256 仍精确匹配。先合并仅限精确冻结 Oracle 的耦合重绑定修复，再记录新的全新安装确认并签署一次性信封。在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
+| 4C | 精确安装与 Enrollment | `active — 需要全新确认` | 前两个 Host 缺陷已分别通过 PR #76 与 PR #78 修复。最新获全新确认启动在 Host 重启改变不可变 Evidence 所记 APFS 设备号后，于发布前得到终态失败；两个工件的 Inode、Mode、Size 与 SHA-256 仍精确匹配。[PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) 已合并同时固定 Evidence 与 Oracle 的耦合重绑定修复。记录新的全新安装确认并签署一次性信封，再在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
 | 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
 | 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
 | 4F | 检查点关闭 | `blocked on 4E` | 以冻结 Manifest、IPA 证据和外部 Oracle 验证完整 Enrollment 加两轮链；发布脱敏 Go/No-Go，不能通过重试掩盖失败或不完整运行 |
@@ -721,3 +719,9 @@ Evidence 固定修复提交已通过配置的 SSH 远端 Push。PR #81 的远端
 Thread 已用双 Digest 固定、回归、可复现性、本地门禁、CR 与 CI 证据回复并关闭。下一项门禁
 是在精确已提交 PR Head 上运行全新 Codex CR；产生的仅文档更新也通过远端 CI 与 Thread
 复核后，PR #81 方可合并。已消费确认不得复用，手机保持未操作。
+
+随后 PR #81 在精确已提交 Head 上通过合并前 Codex CR，未发现可执行正确性问题；最后一轮
+三项 CI 也全部成功。Squash Merge 前再次确认远端 Head、Clean Mergeability、空 General
+Comment 集合，以及唯一 P2 Thread 已解决且过时。合并结果现已在 `main` 生效，远端 Topic
+Branch 已删除。Host 现在可以在创建新 15 分钟安装信封之前紧邻地请求一份全新确认，并使用
+新的 Owner-only 输出根。上一份确认保持已消费，其空失败根继续作为私有证据保留，手机仍未操作。

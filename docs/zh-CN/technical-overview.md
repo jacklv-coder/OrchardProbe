@@ -209,8 +209,9 @@ Oracle；其脱敏完成记录已通过 [PR #72](https://github.com/jacklv-coder
 下一次获确认的 Host 启动因操作端命令会话编排在 Helper 发布前中断，根保持为空且手机未被
 操作。终态对账确认没有残留 Fastlane/Operator 进程，重新取得全部三个绑定目录锁，并再次确认
 保留根为空。下一次获确认启动又在 Host 重启改变不可变 Evidence 的 APFS 设备号后，于发布前
-失败关闭，而两个保留工件的 Inode、Mode、Size 与 SHA-256 仍精确匹配。仅限精确冻结 Tuple
-的耦合重绑定修复现为 Active；只有其合并后才可再取得全新确认。
+失败关闭，而两个保留工件的 Inode、Mode、Size 与 SHA-256 仍精确匹配。PR #81 已在全部
+评审与验证门禁通过后合并同时固定精确冻结 Evidence 与 Oracle 的耦合重绑定修复；现在必须在
+Enrollment 前紧邻地取得全新确认。
 当前尚未安装或观察设备。
 LAB-002 用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle。完整清单固定为
 主程序、DemoFramework、DemoShareExtension 及记录安装 Build 中它们的每个 Slice；
@@ -361,7 +362,7 @@ Rust Host 负责政策、解析、资源记账、重建、验证、打包、脱�
 | 版本化 Manifest/Capability/Error Schema | 已实现 |
 | 首方 DemoLab Simulator Fixture | 已实现 |
 | 有界协议规范 | 设计已接受；未实现 |
-| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现。私有 3A 生成和完整 3B Archive/IPA/Oracle/Evidence/Upload-gate 闭环已依次随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62)、[#63](https://github.com/jacklv-coder/OrchardProbe/pull/63)、[#64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 与 [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 合并；3C 无设备验证与实现合并已通过 [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 完成。PR #71 合并了最终重签名身份修复，现已存在恰好一个通过验证的本地签名 DemoLab `1.0 (3)` 候选/冻结 Oracle Pair；脱敏本地候选记录见[检查点 3 台账](lab-002-checkpoint-3-progress.md)。其恰好一次内部 TestFlight 上传已对账为 Apple 接受并处理。[PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74) 合并了[检查点 4 台账](lab-002-checkpoint-4-progress.md)跟踪的闭合 Host 操作工件流程，[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 合并了失败关闭的确认管道诊断修复，[PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 合并了不可变且早于 `container_kind` 字段的检查点 3 Oracle 精确 Digest 兼容修复。最新 4C 启动因 Host 重启改变不可变 Evidence 的文件系统设备号而在发布前失败，其他保留身份字段仍全部精确；仅限精确冻结 Tuple 的耦合重绑定修复现为 Active。尚无安装、真机验证、明文结果或 Go 结果 |
+| 受保护首方 Oracle | LAB-001 得到有界 No-Go；LAB-002 已完成三个可执行文件完整安装 Slice 清单的无设备设计与实现。私有 3A 生成和完整 3B Archive/IPA/Oracle/Evidence/Upload-gate 闭环已依次随 [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62)、[#63](https://github.com/jacklv-coder/OrchardProbe/pull/63)、[#64](https://github.com/jacklv-coder/OrchardProbe/pull/64) 与 [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65) 合并；3C 无设备验证与实现合并已通过 [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66) 完成。PR #71 合并了最终重签名身份修复，现已存在恰好一个通过验证的本地签名 DemoLab `1.0 (3)` 候选/冻结 Oracle Pair；脱敏本地候选记录见[检查点 3 台账](lab-002-checkpoint-3-progress.md)。其恰好一次内部 TestFlight 上传已对账为 Apple 接受并处理。[PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74) 合并了[检查点 4 台账](lab-002-checkpoint-4-progress.md)跟踪的闭合 Host 操作工件流程，[PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) 合并了失败关闭的确认管道诊断修复，[PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) 合并了不可变且早于 `container_kind` 字段的检查点 3 Oracle 精确 Digest 兼容修复，[PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) 合并了同时固定精确冻结 Evidence 与 Oracle 的 Host 重启兼容修复。现在必须在 Enrollment 前紧邻地取得全新确认；尚无安装、真机验证、明文结果或 Go 结果 |
 | 设备发现与 Transport | 未实现 |
 | 设备 Helper 与 Backend | 未实现 |
 | 确定性未签名分析 IPA 打包 | Unix 库内已从保留的私有工作树实现；尚无 CLI 或产物发布 |
