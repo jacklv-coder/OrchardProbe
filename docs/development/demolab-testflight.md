@@ -20,6 +20,50 @@ checkpoint must replace the code guard and update this runbook before any new
 artifact, authorization, upload, installation, or device action is allowed.
 The credential-free `demolab_check` fixture lane remains available.
 
+## LAB-003 device-free layout preflight
+
+LAB-003 adds two local, credential-free lanes without reopening any LAB-002
+lifecycle lane. They operate only on a new private directory outside the
+repository and never contact Apple or a device.
+
+Use a canonical absolute path whose components are real directories. The
+prepare lane creates the private root and its fixed `experiments`,
+`external-inputs`, and `diagnostics` children with mode `0700`:
+
+```sh
+export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_LAB003_PRIVATE_ROOT=/canonical/private/path/orchardprobe-lab003
+bundle _4.0.16_ exec fastlane ios demolab_lab003_prepare_layout
+```
+
+Put one owner-only Receipt or Export directly in `external-inputs`; do not put
+it, a shell log, or a temporary file in an experiment child. Supply only its
+direct filename, not another path. This example reserves a new read-only
+diagnostic sink and validates a bounded Receipt without parsing it:
+
+```sh
+chmod 600 /canonical/private/path/orchardprobe-lab003/external-inputs/receipt.json
+export DEMO_LAB_LAB003_EXTERNAL_INPUT_NAME=receipt.json
+export DEMO_LAB_LAB003_EXTERNAL_INPUT_KIND=receipt
+export DEMO_LAB_LAB003_DIAGNOSTIC_NAME=preflight.log
+bundle _4.0.16_ exec fastlane ios demolab_lab003_preflight
+```
+
+For an Export use `DEMO_LAB_LAB003_EXTERNAL_INPUT_KIND=export`. A future
+synthetic or separately authorized experiment may also set a 64-lowercase-hex
+`DEMO_LAB_LAB003_EXPERIMENT_NAME` together with exactly one lifecycle value:
+`base`, `enrollment-closed`, `run-1-control`, `run-1-closed`, `run-2-control`,
+or `complete`. Omit both experiment variables before an envelope exists.
+
+The preflight reports only role-level readiness. It does not print the private
+root, experiment ID, input filename, or content. It opens no retained LAB-002
+evidence, creates or consumes no envelope, and performs no build, upload,
+installation, launch, or device operation. Its regression suite is:
+
+```sh
+ruby fastlane/test/lab003_layout_test.rb
+```
+
 ## Why this controlled build exists
 
 The ordinary DemoLab CI product is an unsigned Simulator build. It can prove

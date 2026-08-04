@@ -8,6 +8,45 @@ Enrollment、Run 和验证的全部生命周期 Lane 都会在入口失败关闭
 审计，不得运行。任何新产物、授权、上传、安装或真机操作，都必须先由单独评审的未来
 检查点替换代码保护并更新本文。无凭据的 `demolab_check` Fixture Lane 仍可使用。
 
+## LAB-003 无设备布局预检
+
+LAB-003 新增两个无需 Apple 凭据的本地 Lane，不会重新打开任何 LAB-002 生命周期 Lane，
+只操作仓库外的全新私有目录，也不会连接 Apple 或真机。
+
+先选择一个全部组件都是真实目录的规范绝对路径。Prepare Lane 会新建私有根及固定的
+`experiments`、`external-inputs`、`diagnostics` 三个 `0700` 子目录：
+
+```sh
+export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_LAB003_PRIVATE_ROOT=/canonical/private/path/orchardprobe-lab003
+bundle _4.0.16_ exec fastlane ios demolab_lab003_prepare_layout
+```
+
+把一个仅 Owner 可访问的 Receipt 或 Export 直接放入 `external-inputs`；不要把它、Shell
+日志或临时文件放进实验子目录。只提供直接文件名，不再提供另一个路径。下面的示例会
+排他预留一个只读诊断 Sink，并在不解析 Receipt 内容的情况下检查它的边界：
+
+```sh
+chmod 600 /canonical/private/path/orchardprobe-lab003/external-inputs/receipt.json
+export DEMO_LAB_LAB003_EXTERNAL_INPUT_NAME=receipt.json
+export DEMO_LAB_LAB003_EXTERNAL_INPUT_KIND=receipt
+export DEMO_LAB_LAB003_DIAGNOSTIC_NAME=preflight.log
+bundle _4.0.16_ exec fastlane ios demolab_lab003_preflight
+```
+
+Export 使用 `DEMO_LAB_LAB003_EXTERNAL_INPUT_KIND=export`。未来的合成实验或另行授权实验
+还可以同时设置 64 位小写十六进制 `DEMO_LAB_LAB003_EXPERIMENT_NAME` 与一个精确生命周期
+值：`base`、`enrollment-closed`、`run-1-control`、`run-1-closed`、`run-2-control`
+或 `complete`。在信封存在前应同时省略这两个实验变量。
+
+Preflight 只报告角色级就绪状态，不打印私有根、实验 ID、输入文件名或内容。它不打开
+LAB-002 保留证据，不创建或消费信封，也不执行 Build、上传、安装、启动或真机操作。
+回归测试命令是：
+
+```sh
+ruby fastlane/test/lab003_layout_test.rb
+```
+
 ## 目的
 
 TestFlight 只用于准备一个由项目自己开发、自己签名、自己上传并安装到自有 iPhone

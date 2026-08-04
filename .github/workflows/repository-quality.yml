@@ -30,6 +30,13 @@ jobs:
             git diff --check HEAD^
           fi
 
+      - name: Test LAB-003 role layout
+        shell: bash
+        run: |
+          ruby -c fastlane/lib/lab003_layout.rb
+          ruby -c fastlane/test/lab003_layout_test.rb
+          ruby fastlane/test/lab003_layout_test.rb
+
       - name: Check required project files
         shell: bash
         run: |

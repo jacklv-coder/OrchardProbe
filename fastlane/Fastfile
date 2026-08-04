@@ -19,6 +19,8 @@ require "time"
 require "zip"
 require "zlib"
 
+require_relative "lib/lab003_layout"
+
 DEMO_LAB_EVIDENCE_PROFILE = "orchardprobe.demolab.testflight-preupload.v1"
 DEMO_LAB_EVIDENCE_PURPOSE = "LAB-001 controlled first-party TestFlight preparation"
 DEMO_LAB_EVIDENCE_DECISION = "pending_controlled_device_observation"
@@ -7617,6 +7619,55 @@ def run_lab002_operator_helper!(
 end
 
 platform :ios do
+  desc "Prepare the device-free LAB-003 private role layout"
+  lane :demolab_lab003_prepare_layout do
+    ensure_manual_lane!
+    ensure_clean_source!
+    result = begin
+      OrchardProbe::Lab003Layout.prepare(
+        required_environment("DEMO_LAB_LAB003_PRIVATE_ROOT"),
+        repository_root: repository_root
+      )
+    rescue OrchardProbe::Lab003Layout::Error => error
+      UI.user_error!(error.message)
+    end
+    ensure_clean_source!
+    UI.success(
+      "Prepared the LAB-003 private layout. Put bounded operator input only " \
+      "under external-inputs and diagnostics only under diagnostics."
+    )
+    result
+  end
+
+  desc "Validate the device-free LAB-003 layout without consuming an envelope"
+  lane :demolab_lab003_preflight do
+    ensure_manual_lane!
+    ensure_clean_source!
+    optional = lambda do |name|
+      value = ENV[name]
+      value && !value.empty? ? value : nil
+    end
+    result = begin
+      OrchardProbe::Lab003Layout.preflight(
+        required_environment("DEMO_LAB_LAB003_PRIVATE_ROOT"),
+        repository_root: repository_root,
+        experiment_name: optional.call("DEMO_LAB_LAB003_EXPERIMENT_NAME"),
+        lifecycle: optional.call("DEMO_LAB_LAB003_LIFECYCLE"),
+        external_input_name: optional.call("DEMO_LAB_LAB003_EXTERNAL_INPUT_NAME"),
+        input_kind: optional.call("DEMO_LAB_LAB003_EXTERNAL_INPUT_KIND"),
+        diagnostic_name: optional.call("DEMO_LAB_LAB003_DIAGNOSTIC_NAME")
+      )
+    rescue OrchardProbe::Lab003Layout::Error => error
+      UI.user_error!(error.message)
+    end
+    ensure_clean_source!
+    UI.success(
+      "LAB-003 role-level preflight is ready. No authorization or device " \
+      "operation was created or consumed."
+    )
+    result
+  end
+
   desc "Historical (closed): create a LAB-002 installation control bundle"
   lane :demolab_operator_start_enrollment do
     reject_closed_lab002_checkpoint_4!
