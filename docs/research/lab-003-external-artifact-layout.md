@@ -38,6 +38,8 @@ held directory descriptors and must not print the resolved private root.
 
 The three role roots must be distinct directories, direct children of the same
 validated private root, and neither descendants nor aliases of one another.
+Before an experiment is selected, `experiments/` must be empty; afterward it
+must contain exactly the one selected opaque-ID child.
 Every path component must be a real directory with the expected owner and
 permissions; symlinks are rejected. Each experiment child continues to accept
 exactly its six schema-defined base control files before enrollment closure.
@@ -47,10 +49,10 @@ publisher, and every phase has its own exact fixed inventory. No Receipt,
 Export, log, temporary file, unknown phase, or other extra entry is permitted
 at any lifecycle state.
 
-An external input must be one bounded, owner-only, non-symlink regular file
-directly inside `external-inputs/`. A diagnostic destination must be directly
-inside `diagnostics/`, created without replacement, and must never be accepted
-as protocol input. Across all opened role objects, an implementation must
+The `external-inputs/` role may contain at most one bounded, owner-only,
+non-symlink regular file, directly inside that role. A diagnostic destination
+must be directly inside `diagnostics/`, created without replacement, and must
+never be accepted as protocol input. Across all opened role objects, an implementation must
 reject equal filesystem identity (device and inode), including hard-link
 aliasing where the host filesystem exposes it.
 

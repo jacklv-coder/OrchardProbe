@@ -94,9 +94,47 @@ class Lab003LayoutTest < Minitest::Test
     end
   end
 
+  def test_inventory_revalidation_uses_the_requested_owner
+    context = Layout.open_layout(@root, repository_root: repository_root)
+    requested_uid = Process.uid + 1
+    observed_uids = []
+    original_validator = Layout.method(:revalidate_opened!)
+    Layout.define_singleton_method(:revalidate_opened!) do |_opened, uid, **_options|
+      observed_uids << uid
+    end
+
+    assert_empty Layout.entries(
+      context.roles.fetch("diagnostics"),
+      requested_uid
+    )
+    assert_equal [requested_uid, requested_uid], observed_uids
+  ensure
+    if original_validator
+      Layout.define_singleton_method(:revalidate_opened!, original_validator)
+    end
+    context&.close
+  end
+
   def test_a_future_phase_is_invalid_for_an_earlier_lifecycle
     create_experiment(@root, "run-1-control")
     assert_layout_error("inventory") { preflight_experiment("base") }
+  end
+
+  def test_unselected_experiments_must_be_empty
+    experiment = create_experiment(@root, "base")
+    write_private(File.join(experiment, "shell.log"), "diagnostic", 0o400)
+
+    assert_layout_error("experiment_inventory") do
+      Layout.preflight(@root, repository_root: repository_root)
+    end
+  end
+
+  def test_only_the_selected_experiment_may_exist
+    create_experiment(@root, "base")
+    other = "b" * 64
+    Dir.mkdir(File.join(@root, "experiments", other), 0o700)
+
+    assert_layout_error("experiment_inventory") { preflight_experiment("base") }
   end
 
   def test_wrong_role_nesting_and_regular_file_substitution_are_rejected
@@ -118,9 +156,35 @@ class Lab003LayoutTest < Minitest::Test
 
     Timeout.timeout(2) do
       assert_layout_error("directory_identity") do
-        Layout.preflight(@root, repository_root: repository_root)
+        Layout.preflight(
+          @root,
+          repository_root: repository_root,
+          experiment_name: EXPERIMENT,
+          lifecycle: "base"
+        )
       end
     end
+  end
+
+  def test_inventory_pipe_is_drained_in_bounded_chunks
+    names = 128.times.map { |index| "#{index}-#{'x' * 120}" }
+    reader, writer = IO.pipe
+    pid = fork do
+      reader.close
+      Marshal.dump(names, writer)
+      writer.close
+      exit! 0
+    end
+    writer.close
+    payload = Layout.read_bounded_pipe(reader, Layout::MAX_INVENTORY_PAYLOAD_BYTES)
+    reader.close
+    _, status = Process.wait2(pid)
+
+    assert status.success?
+    assert_equal names, Marshal.load(payload)
+  ensure
+    reader&.close unless reader&.closed?
+    writer&.close unless writer&.closed?
   end
 
   def test_symlinked_ancestor_overlap_and_symlinked_input_are_rejected
@@ -173,6 +237,14 @@ class Lab003LayoutTest < Minitest::Test
     )
     result = preflight_input
     assert_equal "external-inputs", result.fetch("input_role")
+  end
+
+  def test_external_input_role_rejects_multiple_valid_files
+    external = File.join(@root, "external-inputs")
+    write_private(File.join(external, "receipt.json"), "receipt", 0o600)
+    write_private(File.join(external, "export.bin"), "export", 0o600)
+
+    assert_layout_error("input_count") { preflight_input }
   end
 
   def test_changed_input_identity_between_checks_is_rejected

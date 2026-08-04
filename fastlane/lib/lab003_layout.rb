@@ -191,7 +191,11 @@ module OrchardProbe
       opened = [context.root, *context.roles.values]
       begin
         after_layout_open&.call
-        validate_experiments_role!(context.roles.fetch("experiments"), uid)
+        validate_experiments_role!(
+          context.roles.fetch("experiments"),
+          uid,
+          selected_name: experiment_name
+        )
         validate_external_inputs_role!(
           context.roles.fetch("external-inputs"),
           uid,
@@ -247,7 +251,11 @@ module OrchardProbe
         reject_identity_aliases!(opened)
         before_second_check&.call
         revalidate_opened!(opened, uid)
-        validate_experiments_role!(context.roles.fetch("experiments"), uid)
+        validate_experiments_role!(
+          context.roles.fetch("experiments"),
+          uid,
+          selected_name: experiment_name
+        )
         validate_external_inputs_role!(context.roles.fetch("external-inputs"), uid)
         validate_diagnostics_role!(context.roles.fetch("diagnostics"), uid)
         if context.experiment
@@ -421,7 +429,7 @@ module OrchardProbe
       root = open_directory!(path, uid, exact_mode: 0o700)
       roles = {}
       begin
-        exact_inventory!(root, ROLE_NAMES)
+        exact_inventory!(root, ROLE_NAMES, uid)
         ROLE_NAMES.each do |name|
           roles[name] = open_directory_at!(root, name, uid, exact_mode: 0o700)
         end
@@ -453,7 +461,7 @@ module OrchardProbe
       phases = LIFECYCLE_PHASES.fetch(lifecycle.to_s) do
         fail!("lifecycle_invalid", "LAB-003 lifecycle state is invalid")
       end
-      exact_inventory!(experiment, BASE_CONTROL_NAMES + phases)
+      exact_inventory!(experiment, BASE_CONTROL_NAMES + phases, uid)
       phases.each do |phase|
         directory = open_directory_at!(
           experiment,
@@ -462,7 +470,7 @@ module OrchardProbe
           exact_mode: 0o700
         )
         begin
-          exact_inventory!(directory, PHASE_INVENTORIES.fetch(phase))
+          exact_inventory!(directory, PHASE_INVENTORIES.fetch(phase), uid)
         ensure
           directory.close
         end
@@ -475,7 +483,7 @@ module OrchardProbe
       phases = LIFECYCLE_PHASES.fetch(lifecycle.to_s) do
         fail!("lifecycle_invalid", "LAB-003 lifecycle state is invalid")
       end
-      exact_inventory!(experiment, BASE_CONTROL_NAMES + phases)
+      exact_inventory!(experiment, BASE_CONTROL_NAMES + phases, uid)
       BASE_CONTROL_NAMES.each do |name|
         artifact = open_regular_file_at!(
           experiment,
@@ -495,7 +503,7 @@ module OrchardProbe
           exact_mode: 0o700
         )
         opened << phase_directory
-        exact_inventory!(phase_directory, PHASE_INVENTORIES.fetch(phase))
+        exact_inventory!(phase_directory, PHASE_INVENTORIES.fetch(phase), uid)
         PHASE_INVENTORIES.fetch(phase).each do |name|
           opened << open_regular_file_at!(
             phase_directory,
@@ -510,8 +518,16 @@ module OrchardProbe
       reject_identity_aliases!(opened)
     end
 
-    def validate_experiments_role!(role, uid)
-      entries(role).each do |name|
+    def validate_experiments_role!(role, uid, selected_name: nil)
+      names = entries(role, uid)
+      expected = selected_name ? [selected_name.to_s] : []
+      unless names.sort == expected.sort
+        fail!(
+          "experiment_inventory",
+          "LAB-003 experiments role does not match the selected experiment"
+        )
+      end
+      names.each do |name|
         unless EXPERIMENT_NAME.match?(name)
           fail!("experiment_entry", "LAB-003 experiments role has an invalid entry")
         end
@@ -521,7 +537,11 @@ module OrchardProbe
     end
 
     def validate_external_inputs_role!(role, uid, opened = nil, skip_name: nil)
-      entries(role).each do |name|
+      names = entries(role, uid)
+      if names.length > 1
+        fail!("input_count", "LAB-003 external input role is ambiguous")
+      end
+      names.each do |name|
         safe_name!(name, "external input")
         next if name == skip_name
 
@@ -552,7 +572,7 @@ module OrchardProbe
     end
 
     def validate_diagnostics_role!(role, uid, reserve: false, opened: nil)
-      names = entries(role)
+      names = entries(role, uid)
       maximum_count = reserve ? MAX_DIAGNOSTIC_FILES - 1 : MAX_DIAGNOSTIC_FILES
       if names.length > maximum_count
         fail!("diagnostic_count", "LAB-003 diagnostics role exceeds its file limit")
@@ -831,20 +851,20 @@ module OrchardProbe
       }
     end
 
-    def exact_inventory!(directory, expected)
-      observed = entries(directory)
+    def exact_inventory!(directory, expected, uid)
+      observed = entries(directory, uid)
       unless observed.sort == expected.sort
         fail!("inventory", "LAB-003 role inventory does not match its lifecycle state")
       end
     end
 
-    def entries(directory)
-      revalidate_opened!([directory], Process.uid)
+    def entries(directory, uid)
+      revalidate_opened!([directory], uid)
       names = descriptor_entries!(directory)
       if names.any? { |name| !name.valid_encoding? || name.match?(/[\x00-\x1f\x7f]/) }
         fail!("entry_name", "LAB-003 role contains an invalid entry name")
       end
-      revalidate_opened!([directory], Process.uid)
+      revalidate_opened!([directory], uid)
       names
     rescue SystemCallError
       fail!("inventory_read", "LAB-003 role inventory could not be read safely")
@@ -870,7 +890,7 @@ module OrchardProbe
         exit! 126
       end
       writer.close
-      payload = reader.read(MAX_INVENTORY_PAYLOAD_BYTES + 1)
+      payload = read_bounded_pipe(reader, MAX_INVENTORY_PAYLOAD_BYTES)
       reader.close
       _, status = Process.wait2(pid)
       unless status.success? && payload.bytesize <= MAX_INVENTORY_PAYLOAD_BYTES
@@ -887,6 +907,17 @@ module OrchardProbe
     ensure
       reader&.close unless reader&.closed?
       writer&.close unless writer&.closed?
+    end
+
+    def read_bounded_pipe(reader, maximum)
+      payload = +""
+      loop do
+        chunk = reader.readpartial(8192)
+        remaining = maximum + 1 - payload.bytesize
+        payload << chunk.byteslice(0, remaining) if remaining.positive?
+      end
+    rescue EOFError
+      payload
     end
 
     def open_at!(parent, name, flags, mode, io_mode)
