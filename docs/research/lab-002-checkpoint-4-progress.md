@@ -14,6 +14,8 @@ Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardPro
 
 Host-reboot identity remediation PR: [#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
 
+Closure PR: [#83](https://github.com/jacklv-coder/OrchardProbe/pull/83)
+
 Current branch status: **checkpoint 4 closed as a retained No-Go; 4A and 4B
 completed, and the prior Host compatibility remediations merged through PR
 #81. The fresh 4C ceremony reached the selected owned iPhone: TestFlight

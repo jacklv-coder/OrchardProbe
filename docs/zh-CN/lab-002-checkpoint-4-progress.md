@@ -14,6 +14,8 @@ Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
 Host 重启身份修复 PR：[#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
 
+关闭 PR：[#83](https://github.com/jacklv-coder/OrchardProbe/pull/83)
+
 当前分支状态：**检查点 4 已以保留证据的 No-Go 关闭；4A 与 4B 已完成，之前的 Host
 兼容修复已合并至 PR #81。全新的 4C 仪式已到达所选自有 iPhone：TestFlight 显示并打开
 首方 DemoLab `1.0 (3)`，App 导入一次性信封，并创建、导出签名 Enrollment Receipt。
