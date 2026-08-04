@@ -4,7 +4,7 @@
 
 Tracking Issue: [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-Status: **activation proposed; device-free design only**
+Status: **checkpoint 1 merged; checkpoint 2 device-free implementation active**
 
 LAB-002 ended with a retained procedural No-Go after an operator-supplied
 Enrollment Receipt and diagnostic log were placed beside the six canonical
@@ -38,6 +38,8 @@ held directory descriptors and must not print the resolved private root.
 
 The three role roots must be distinct directories, direct children of the same
 validated private root, and neither descendants nor aliases of one another.
+Before an experiment is selected, `experiments/` must be empty; afterward it
+must contain exactly the one selected opaque-ID child.
 Every path component must be a real directory with the expected owner and
 permissions; symlinks are rejected. Each experiment child continues to accept
 exactly its six schema-defined base control files before enrollment closure.
@@ -47,19 +49,20 @@ publisher, and every phase has its own exact fixed inventory. No Receipt,
 Export, log, temporary file, unknown phase, or other extra entry is permitted
 at any lifecycle state.
 
-An external input must be one bounded, owner-only, non-symlink regular file
-directly inside `external-inputs/`. A diagnostic destination must be directly
-inside `diagnostics/`, created without replacement, and must never be accepted
-as protocol input. Across all opened role objects, an implementation must
+The `external-inputs/` role may contain at most one bounded, owner-only,
+non-symlink regular file, directly inside that role. A diagnostic destination
+must be directly inside `diagnostics/`, created without replacement, and must
+never be accepted as protocol input. Across all opened role objects, an implementation must
 reject equal filesystem identity (device and inode), including hard-link
 aliasing where the host filesystem exposes it.
 
 Diagnostics are a closed retained output: at most 16 direct regular files,
 each no larger than 1 MiB and no more than 4 MiB in aggregate. Subdirectories,
 links, special files, replacement, and further writes after final validation
-are rejected. The reviewed wrapper must create the sink and constrain child
-output to the same per-file ceiling; arbitrary caller redirection is not a
-trusted diagnostic path.
+are rejected. The reviewed wrapper must create the sink, constrain child output
+to the same per-file ceiling, enforce a maximum 30-second wall-clock lifetime,
+and terminate the complete child process group before final validation;
+arbitrary caller redirection is not a trusted diagnostic path.
 
 ## Preflight order
 
@@ -101,11 +104,11 @@ outside this checkpoint and are never used to turn its No-Go into a pass.
 
 | Order | Checkpoint | Status | Gate |
 |---:|---|---|---|
-| 1 | Activation and closed layout design | `active when PR #85 merges` | Issue #84, [PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85), this bilingual contract, and the execution-ledger insertion are on `main` |
-| 2 | Device-free implementation and regressions | `planned` | Path-role API, prepare/preflight UX, lifecycle revalidation, and synthetic tests pass local gates, Codex CR, PR review, and CI while closed LAB-002 lanes remain guarded |
+| 1 | Activation and closed layout design | `done` | Issue #84, [PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85), this bilingual contract, and the execution-ledger insertion are on `main` |
+| 2 | Device-free implementation and regressions | `active — PR #86` | [PR #86](https://github.com/jacklv-coder/OrchardProbe/pull/86) must pass local gates, Codex CR, PR review, and CI for the path-role API, prepare/preflight UX, lifecycle revalidation, and synthetic tests while closed LAB-002 lanes remain guarded |
 | 3 | Sanitized implementation result and later-ceremony proposal | `planned` | Record a device-free Go/No-Go. A Go may only permit a new documentation proposal naming an exact first-party tuple; it does not itself authorize a build, upload, installation, envelope, or device action |
 
-Checkpoint 2 cannot start until the activation PR is merged. Checkpoint 3 cannot
+Checkpoint 2 began only after activation PR #85 merged. Checkpoint 3 cannot
 start until checkpoint 2 is merged. Any later real-device ceremony requires a
 new reviewed checkpoint and fresh explicit authorization immediately before
 each external or device action.
