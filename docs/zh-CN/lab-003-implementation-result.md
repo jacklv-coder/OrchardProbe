@@ -4,7 +4,7 @@
 
 跟踪 Issue：[#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-状态：**检查点 3 进行中 — 脱敏关闭记录**
+状态：**检查点 3 进行中 — PR #87**
 
 本文只评估 [LAB-003 布局契约](lab-003-external-artifact-layout.md)定义的无设备文件系统
 角色门禁，不包含私有路径、凭据、稳定设备标识符、Receipt/Export 内容、受保护二进制
@@ -34,7 +34,7 @@
 |---:|---|---|---|
 | 3A | 记录脱敏实现证据 | `完成` | 上文只包含公开 PR、Commit、CI、测试与 Review 事实；没有打开私有工件 |
 | 3B | 本地校验双语结果 | `完成` | 中英文语义、链接、Patch 格式、文档一致性、两个 Ruby 回归 Run 与 Codex CR 均通过 |
-| 3C | 发布并关闭 | `进行中` | 通过 SSH Push、创建结果 PR、通过必需 CI 与 Review、重跑合并前 Codex CR、合并，然后关闭 Issue #84 |
+| 3C | 发布并关闭 | `进行中 — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)必须通过必需 CI、Review 与合并前 Codex CR；合并后关闭 Issue #84 |
 
 ## 判定
 

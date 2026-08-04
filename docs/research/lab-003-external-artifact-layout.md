@@ -106,7 +106,7 @@ outside this checkpoint and are never used to turn its No-Go into a pass.
 |---:|---|---|---|
 | 1 | Activation and closed layout design | `done` | Issue #84, [PR #85](https://github.com/jacklv-coder/OrchardProbe/pull/85), this bilingual contract, and the execution-ledger insertion are on `main` |
 | 2 | Device-free implementation and regressions | `done` | [PR #86](https://github.com/jacklv-coder/OrchardProbe/pull/86) passed local gates, Codex CR, PR review, and CI for the path-role API, prepare/preflight UX, lifecycle revalidation, and synthetic tests while closed LAB-002 lanes remained guarded |
-| 3 | Sanitized implementation result and later-ceremony proposal | `active` | The [sanitized result](lab-003-implementation-result.md) records a layout-only Go and device-ceremony No-Go. Merge of its result PR may close LAB-003; it does not authorize a build, upload, installation, envelope, or device action |
+| 3 | Sanitized implementation result and later-ceremony proposal | `active — PR #87` | The [sanitized result](lab-003-implementation-result.md) and [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87) record a layout-only Go and device-ceremony No-Go. Merge may close LAB-003; it does not authorize a build, upload, installation, envelope, or device action |
 
 Checkpoint 2 began only after activation PR #85 merged, and checkpoint 3 began
 only after PR #86 merged. Any later real-device ceremony requires a new

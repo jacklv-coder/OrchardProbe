@@ -4,7 +4,7 @@
 
 Tracking Issue: [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-Status: **checkpoint 3 active — sanitized closure record**
+Status: **checkpoint 3 active — PR #87**
 
 This record evaluates only the device-free filesystem-role gate defined by the
 [LAB-003 layout contract](lab-003-external-artifact-layout.md). It contains no
@@ -40,7 +40,7 @@ by this checkpoint.
 |---:|---|---|---|
 | 3A | Record sanitized implementation evidence | `done` | Only public PR, commit, CI, test, and review facts appear above; no private artifact was opened |
 | 3B | Validate the bilingual result locally | `done` | English/Chinese meaning, links, patch formatting, documentation consistency, both Ruby regression runs, and Codex CR passed |
-| 3C | Publish and close | `active` | Push over SSH, open the result PR, pass required CI and review, rerun pre-merge Codex CR, merge, then close Issue #84 |
+| 3C | Publish and close | `active — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87) must pass required CI and review plus pre-merge Codex CR; its merge then closes Issue #84 |
 
 ## Decision
 
