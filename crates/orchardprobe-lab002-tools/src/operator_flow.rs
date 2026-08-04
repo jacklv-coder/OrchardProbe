@@ -1065,17 +1065,17 @@ fn validate_complete_evidence(
     let manifest_validation =
         validate_evidence_artifact(&evidence.lab002.authorized_target_manifest, held_manifest);
     let oracle_validation = validate_evidence_artifact(&evidence.lab002.oracle, held_oracle);
-    if manifest_validation.is_err() || oracle_validation.is_err() {
-        if !legacy_reboot_device_rebind_matches(
+    if (manifest_validation.is_err() || oracle_validation.is_err())
+        && !legacy_reboot_device_rebind_matches(
             inputs.checkpoint_3_legacy_oracle,
             &evidence.lab002.authorized_target_manifest,
             held_manifest,
             &evidence.lab002.oracle,
             held_oracle,
-        ) {
-            manifest_validation?;
-            oracle_validation?;
-        }
+        )
+    {
+        manifest_validation?;
+        oracle_validation?;
     }
     Ok(())
 }

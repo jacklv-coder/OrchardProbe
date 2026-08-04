@@ -653,3 +653,14 @@ Digest 都必须拒绝。完成正反向聚焦回归后，还须通过完整本�
 要求其为规范十进制身份。兼容谓词现先通过既有有界身份解析器解析两者再比较；回归覆盖任意
 字符串与前导零字符串的拒绝。可复现性、Allowlist、完整门禁、干净 CR、CI、PR 与合并要求
 保持不变。
+
+提交 P2 修复后，两轮独立完整 Fastlane 门禁分别从 Source Snapshot
+`5862d99f2b13c759bfdc4ae51092e03540a435c9dfa3896feda3dbe71a583928`
+重建 3 份 Helper。全部 6 份产物完全一致：Toolchain
+`1.85.0-aarch64-apple-darwin`，Size `3,399,296`，SHA-256
+`ac58ecf872d42b5e6fb7ff49eda243afa20c5929832c9c6783702188e40e2993`，
+CodeDirectory CDHash `43d36eac4ebf50693d6e91038454b54d2dce5a7a`；两轮未签名
+Simulator Fixture 均通过。临时的 Source 缺席测量 Hook 已彻底移除，随后才把这一个精确产物
+Tuple 加入已评审 Source Snapshot Allowlist。后续完整门禁通过了全部 Workspace 测试，但拒绝了
+Warnings-denied Clippy 所报告的 Helper 可折叠条件。该 Source Snapshot 与 Allowlist Tuple
+因此失效并已移除；语义等价的一行修复要求从零重新完成两轮测量。手机保持未操作。

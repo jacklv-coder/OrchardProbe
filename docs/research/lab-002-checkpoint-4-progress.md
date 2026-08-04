@@ -1010,3 +1010,18 @@ canonical decimal identities. The compatibility predicate now parses both
 through the existing bounded identity parser before comparing them; regressions
 reject arbitrary and leading-zero strings. The reproducibility, allowlist,
 complete-gate, clean-CR, CI, PR, and merge requirements remain unchanged.
+
+After committing the P2 remediation, two independent complete Fastlane gates
+each rebuilt three Helpers from source snapshot
+`5862d99f2b13c759bfdc4ae51092e03540a435c9dfa3896feda3dbe71a583928`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,296`, SHA-256
+`ac58ecf872d42b5e6fb7ff49eda243afa20c5929832c9c6783702188e40e2993`,
+and CodeDirectory CDHash `43d36eac4ebf50693d6e91038454b54d2dce5a7a`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. The subsequent complete
+gate passed all Workspace tests but rejected a collapsible Helper conditional
+under warnings-denied Clippy. That source snapshot and allowlist tuple were
+therefore invalidated and removed; the one-line equivalent remediation requires
+two fresh measurements from zero. The phone remains untouched.
