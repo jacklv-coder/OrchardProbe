@@ -4070,9 +4070,10 @@ end
 
 def reject_closed_lab002_checkpoint_4!
   UI.user_error!(
-    "LAB-002 checkpoint 4 is closed as a retained No-Go. Its Host operator " \
+    "LAB-002 checkpoint 4 is closed as a retained No-Go. Its lifecycle " \
     "lanes are historical and cannot be reused; a separately reviewed future " \
-    "checkpoint must replace this guard before any new lifecycle is allowed."
+    "checkpoint must replace this guard before any new artifact or external " \
+    "action is allowed."
   )
 end
 
@@ -11264,8 +11265,9 @@ platform :ios do
     end
   end
 
-  desc "Create private LAB-002 authorization and build inputs outside Git"
+  desc "Historical (closed): create private LAB-002 build inputs"
   lane :demolab_prepare_lab002 do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     source_commit = reviewed_main_source_commit
@@ -11358,8 +11360,9 @@ platform :ios do
     )
   end
 
-  desc "Archive and export one signed first-party DemoLab candidate outside Git"
+  desc "Historical (closed): archive a signed DemoLab candidate"
   lane :demolab_archive do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     reject_gym_environment_overrides!
@@ -11688,8 +11691,9 @@ platform :ios do
     end
   end
 
-  desc "Reconcile and archive one indeterminate DemoLab upload result"
+  desc "Historical (closed): reconcile a DemoLab upload result"
   lane :demolab_reconcile_indeterminate_upload do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     reject_pilot_environment_overrides!
@@ -11745,8 +11749,9 @@ platform :ios do
     )
   end
 
-  desc "Explicitly upload the evidence-bound first-party IPA to TestFlight"
+  desc "Historical (closed): upload the DemoLab IPA to TestFlight"
   lane :demolab_upload_testflight do
+    reject_closed_lab002_checkpoint_4!
     ensure_manual_lane!
     ensure_clean_source!
     reject_pilot_environment_overrides!

@@ -3,6 +3,11 @@
 本文是 `LAB-001` 的中文状态摘要。完整操作与证据边界以英文
 [受控 TestFlight Runbook](../development/demolab-testflight.md) 为准。
 
+LAB-002 检查点 4 现已以保留证据的 No-Go 关闭。下文涉及准备、Archive、上传、对账、
+Enrollment、Run 和验证的全部生命周期 Lane 都会在入口失败关闭；命令序列仅保留作历史
+审计，不得运行。任何新产物、授权、上传、安装或真机操作，都必须先由单独评审的未来
+检查点替换代码保护并更新本文。无凭据的 `demolab_check` Fixture Lane 仍可使用。
+
 ## 目的
 
 TestFlight 只用于准备一个由项目自己开发、自己签名、自己上传并安装到自有 iPhone
@@ -119,7 +124,7 @@ PR #51 已合并该修复。`1.0 (2)` 候选来自干净的合并 Commit
 本身覆盖全部 Build；本次没有创建或修改测试组、启用公开链接、外部分发、
 Beta App Review 或 App Store 提交。
 
-## LAB-002 本机 Archive 配置
+## LAB-002 本机 Archive 配置（历史记录，已关闭）
 
 以下值只从仓库外的私有 Shell 配置加载，不得写入 Git、Issue、PR 或构建日志：
 
@@ -134,9 +139,9 @@ Beta App Review 或 App Store 提交。
 | `DEMO_LAB_BUILD_NUMBER` | 预构建与 Archive 使用的正整数；检查点 3 当前只接受 `3`。 |
 | `DEMO_LAB_OUTPUT_DIR` | 仓库外已存在的绝对私有目录，必须由当前用户所有、不是 Symlink、Mode `0700`。Archive Lane 会在该根目录下自动推导并锁定精确 3A 目录。 |
 
-签名构建前先在仓库外创建私有输出根目录；Lane 会拒绝不存在的根目录：
+以下签名构建序列仅为历史审计保留，请勿运行：
 
-```sh
+```text
 mkdir -p /absolute/private/path/orchardprobe-demolab
 chmod 700 /absolute/private/path/orchardprobe-demolab
 export DEMO_LAB_OUTPUT_DIR=/absolute/private/path/orchardprobe-demolab
@@ -334,7 +339,7 @@ Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或
   仓库，也不要让其配置路径或解析后路径包含单引号/控制字符。
 - Archive 前拒绝全部继承的 `GYM_*` 环境变量，避免 Fastlane 从 Shell 隐式改变
   构建选项或把 Result Bundle 重定向到受控运行目录之外。
-- 签名和上传必须在专用、可信的本机 macOS 登录会话中手工执行。目录锁与身份复核
+- 关闭前，签名和上传只在专用、可信的本机 macOS 登录会话中手工执行。目录锁与身份复核
   可以拒绝遵守锁的并发 Lane 及可观察到的替换；已经能以同一 macOS 用户执行代码的
   恶意进程也能接触该用户的签名身份，不属于这个维护者实验 Lane 的防护边界。未来
   Device Collector 仍必须满足 RFC-0001 对恶意本机进程的更强要求。
@@ -367,11 +372,12 @@ Receipt/Export 内容或 Host 结果粘贴到 GitHub/日志。失败、过期或
   30 分钟上限，到时 Lane 会终止其进程组并保留 `status: indeterminate`。若上传、
   等待或响应解析失败/超时，必须在 App Store Connect 按版本、Build 号和 IPA
   SHA-256 核对，因为远端可能已经接收 Build。不要手工删除结果文件：若 Build
-  已存在则不得重试；只有确认不存在时，才能把结果中的 `attempt_started_at` 设为
+  已存在则不得重试。关闭前，只有确认不存在时，才能把结果中的 `attempt_started_at` 设为
   `DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT`，再设置
   `DEMO_LAB_CONFIRM_RETRY_AFTER_RECONCILIATION` 为
   `I_CONFIRMED_THIS_EXACT_BUILD_IS_ABSENT_IN_APP_STORE_CONNECT` 并运行
-  `fastlane ios demolab_reconcile_indeterminate_upload`。该 Lane 会锁住 Candidate 目录和
+  `fastlane ios demolab_reconcile_indeterminate_upload`；该命令现已作为历史入口被代码保护拒绝。
+  该 Lane 曾锁住 Candidate 目录和
   旧记录并完成复核，
   通过已 fsync 的原子替换将其持久化为 `status: reconciled_absent` 后排他归档；
   归档成功后才允许新上传。
@@ -396,9 +402,9 @@ Install Name 阻止启动，不能用于 LAB-001 观察。2026-07-29，只读设
 [LAB-001 首方受保护 Oracle 结论](lab-001-protected-oracle.md)。LAB-001 以
 No-Go 完成，不激活 DEVICE-001。
 
-执行签名或上传 Lane 前还必须设置：
+以下签名/上传环境变量仅为历史审计保留，请勿设置或使用：
 
-```sh
+```text
 export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
 # 仅上传 Lane：App Store Connect 中该 App 的数字 Apple ID
 export DEMO_LAB_APPLE_ID=1234567890 # 替换为真实数字 Apple ID
