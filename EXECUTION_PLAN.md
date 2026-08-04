@@ -101,28 +101,20 @@ irreversible fact is retained as a governance deviation rather than rewritten
 as compliant or retried. No installation or device observation followed it.
 Checkpoint 4 became `active` through activation PR #73, and the reviewed Host
 operator artifact chain merged through PR #74. Its
-[ordered progress ledger](docs/research/lab-002-checkpoint-4-progress.md) now
-places 4C next. Its first authorized Host start failed closed before publication
-and exposed a masked acknowledgement-pipe diagnostic. The remediation merged
-through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76); a new
-fresh RFC-0001 acknowledgement was supplied, but the next Host start again
-failed closed before publication because the immutable checkpoint-3 Oracle
-predates the required `container_kind` field. The exact-digest compatibility
-remediation merged through [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78).
-The next fresh acknowledgement was consumed by an operator-session interruption
-before the Helper published any artifact; its new owner-only root remained empty
-and no phone action occurred. A terminal reconciliation found no Fastlane or
-operator-lane process, reacquired every bound-directory lock, and rechecked the
-retained root as empty. After PR #80 merged that closure, another fresh
-acknowledgement was consumed by a terminal pre-publication failure: a Host
-reboot changed the APFS filesystem device number recorded by the immutable
-evidence even though both retained artifacts still matched their inode, mode,
-size, and SHA-256. PR #81 merged the exact-frozen-tuple reboot compatibility
-remediation after reproducibility, review, CI, and the exact-head pre-merge CR
-passed. Another fresh acknowledgement and signed one-shot envelope may now
-immediately precede installation enrollment. A separate fresh
-acknowledgement remains required before each run. `DEVICE-001`
-remains blocked and inactive unless LAB-002 completes with a Go result.
+[ordered progress ledger](docs/research/lab-002-checkpoint-4-progress.md)
+retains each earlier fail-closed Host attempt and the remediations merged
+through PRs #76, #78, #80, and #81. The final fresh 4C ceremony reached the
+selected owned iPhone: TestFlight displayed and opened first-party DemoLab
+`1.0 (3)`, DemoLab imported the signed one-shot envelope, and the device
+created and exported a signed Enrollment Receipt. Installed binary lineage
+remained unverified because Host closure then
+rejected the strict experiment inventory before publishing any Enrollment
+Binding because the external Receipt and diagnostic log had been placed inside
+that six-entry directory. The files and failure evidence remain owner-only,
+the authorization expired, and the reviewed No-Go rules forbid recreating or
+retrying the ceremony into a pass. Checkpoint 4 is therefore closed as a
+retained No-Go; neither clean run was executed, no protected-to-plaintext
+observation or Go result exists, and `DEVICE-001` remains blocked.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.
@@ -137,8 +129,8 @@ containing PR is on `main`.
 | 1 | Device-free oracle design | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58) and the reviewed [design](docs/research/lab-002-oracle-design.md) |
 | 2 | Device-free implementation and synthetic/Simulator verification | `done` | Merged [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59) implements the closed protocol, Host chain, fixed device state/observer/export workflow, production authorization verification, and synthetic/Simulator gates; all required CI, review threads, and pre-merge Codex CR were clean |
 | 3 | Exact signed DemoLab build and pre-upload oracle | `done` | From clean merged PR #71 source, exactly one verified local DemoLab `1.0 (3)` signed candidate/frozen-oracle pair has been published. The [checkpoint-3 progress ledger](docs/research/lab-002-checkpoint-3-progress.md) and [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527) record its non-secret evidence; [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72) is the completion-record implementation PR whose merge makes this row authoritative. The authorization still excludes upload, installation, and device observation |
-| 4 | Installation enrollment and two clean device observations | `active — fresh acknowledgement required` | The bounded exact-build workflow is authorized, the one internal upload is remotely reconciled, and the closed Host operator workflow merged through PR #74. [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged the first attempt's fail-closed pipe-diagnostic remediation, [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the immutable Oracle compatibility remediation, and [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) merged the Host-reboot compatibility remediation with both exact frozen Evidence and Oracle digests pinned before the coupled rebind can apply. Reproducibility, complete local gates, exact-head CR, all remote CI jobs, and review-thread closure passed. Follow the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md): retain one new acknowledgement and 15-minute envelope immediately before enrollment, then use separate fresh acknowledgements for each clean run |
-| 5 | Sanitized LAB-002 Go/No-Go result | `blocked` | Requires checkpoint 4; updates Issue #55 and this ledger without weakening a No-Go |
+| 4 | Installation enrollment and two clean device observations | `closed — retained No-Go` | TestFlight displayed and opened first-party DemoLab `1.0 (3)`; DemoLab imported the fresh envelope and exported a signed Receipt. Host closure stopped before Enrollment Binding publication, so installed binary lineage remained unverified; the authorization then expired. Runs 1 and 2 were not executed, and the ceremony is not retried. See the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md) |
+| 5 | Sanitized LAB-002 Go/No-Go result | `in progress — closure publication` | Preserve the procedural 4C No-Go in the bilingual ledger and Issue #55 without private paths, identifiers, fingerprint, Receipt content, or Host results; no Go or backend claim follows |
 
 Checkpoint 2 completion evidence is retained in the
 [LAB-002 implementation progress ledger](docs/research/lab-002-implementation-progress.md).
@@ -274,7 +266,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 10 | `HOST-009` | `done` | Rebuild a deterministic, unsigned analysis-only IPA from unchanged fixture bytes; preserve required metadata and never claim decryption. | `HOST-008` | [#40](https://github.com/jacklv-coder/OrchardProbe/issues/40) | [#41](https://github.com/jacklv-coder/OrchardProbe/pull/41) | [#42](https://github.com/jacklv-coder/OrchardProbe/pull/42) |
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
-| 13 | `LAB-002` | `active` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2 is complete through PR #59, checkpoint 3 completed the exact local DemoLab `1.0 (3)` signed candidate and frozen pre-upload oracle through PR #72, and PR #74 merged the closed Host operator chain. The exact checkpoint-4 workflow is authorized and its one internal-TestFlight upload has been reconciled as accepted; the [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md) now requires a fresh RFC-0001 acknowledgement immediately before installation enrollment and each of two clean observations on the selected owned iPhone. The complete inventory is the app, DemoFramework, and DemoShareExtension executables plus every installed architecture/slice in the recorded build. Before device observation, freeze the exact DemoLab source commit/build identity, a non-empty exact mapped-code-range set for every inventory slice, and an independent expected-plaintext oracle artifact/hash for every range, all bound to that same commit/build. Independently bind every installed inventory item/slice to that build, prove its initial installed state is protected, and prove the same mapped ranges become plaintext matching the frozen oracle; no post-observation omission or reclassification is allowed, otherwise record a bounded No-Go. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Initial: [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57); checkpoint 3: [#61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 4: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); checkpoint 3: [#72](https://github.com/jacklv-coder/OrchardProbe/pull/72); host workflow: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74); final: — |
+| 13 | `LAB-002` | `active — closure publication only` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2, the exact local DemoLab `1.0 (3)` candidate/frozen Oracle, and the Host operator chain completed through PRs #59, #72, and #74. The one internal-TestFlight upload was reconciled as accepted. In the final fresh 4C ceremony TestFlight displayed and opened first-party DemoLab `1.0 (3)`, which imported its one-shot envelope and exported a signed Receipt; Host closure stopped before Enrollment Binding publication, so installed binary lineage remained unverified, and the authorization expired. The [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md) retains the procedural No-Go; neither observation run occurred, no protected-to-plaintext or Go result exists, and the ceremony is not retried. The only active work is merging the sanitized closure record and closing Issue #55. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Initial: [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57); checkpoint 3: [#61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 4: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); checkpoint 3: [#72](https://github.com/jacklv-coder/OrchardProbe/pull/72); host workflow: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74); final: closure PR |
 | 14 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |

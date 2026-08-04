@@ -14,16 +14,19 @@ Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardPro
 
 Host-reboot identity remediation PR: [#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
 
-Current branch status: **checkpoint 4 active; 4A and 4B complete; the
-fail-closed publication-pipe diagnostic remediation is merged; the 4C
-exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
-merged through PR #78; the latest 4C start failed closed because a Host reboot
-changed the immutable evidence's filesystem device number; PR #81 merged the
-exact-tuple coupled-rebind remediation, pinned to both the exact frozen Evidence
-and legacy Oracle digests, after reproducibility, complete local gates,
-exact-head CR, remote CI, and review-thread closure passed; another fresh
-RFC-0001 acknowledgement and 15-minute envelope must now immediately precede
-installation enrollment; no device action has occurred**
+Current branch status: **checkpoint 4 closed as a retained No-Go; 4A and 4B
+completed, and the prior Host compatibility remediations merged through PR
+#81. The fresh 4C ceremony reached the selected owned iPhone: TestFlight
+displayed and opened first-party DemoLab `1.0 (3)`, the app imported the
+one-shot envelope, and it created and exported the signed Enrollment Receipt.
+Host closure then failed before publication because the external Receipt and
+diagnostic log had been placed inside the experiment
+directory, violating its exact six-entry inventory. No Enrollment Binding was
+published, so installed binary lineage remained unverified. The external files
+and failed log remain owner-only outside that
+strict child, but the 15-minute authorization subsequently expired. The
+reviewed rules forbid recreating or retrying this failed ceremony into a pass;
+4D and 4E were not executed**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -66,16 +69,46 @@ start until the matching signed one-shot envelope exists.
 |---:|---|---|---|
 | 4A | Activation and closure of the early upload/reconciliation deviation | `complete — PR #73` | This ledger and the bilingual execution plan merge the explicit noncompliance record. Apple lists exact DemoLab `1.0 (3)` as processed and assigned to the existing internal group; the immutable build is not retried, and no external-testing or review state was created |
 | 4B | Closed Host operator workflow | `complete — PR #74` | The five reviewed Fastlane entry points create and atomically retain installation/run control phases, accept only bounded device-created Receipt/Export bytes, require fresh confirmation plus all four RFC-0001 scope assertions and the full 64-hex fingerprint, derive the Host-only Binding artifacts, and re-run the complete enrollment/run/two-run verifier. Every operation reparses the complete closed pre-upload evidence, rehashes the exact three frozen Archive executables, and revalidates the retained source against the original prebuild/candidate tuple; closure compares every signed role/slice report with the frozen Oracle, and the final chain requires identical normalized observations. Fixed owner-only directories are passed through held descriptors; no command installs, launches, uploads, addresses App Group state, or selects a target. Device-free tests, Codex CR, CI, PR, and merge passed before installation |
-| 4C | Exact installation and enrollment | `active — fresh acknowledgement required` | The first two Host defects were remediated through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) and [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78). The latest freshly acknowledged start reached a terminal pre-publication failure after a Host reboot changed the APFS device number recorded by the immutable evidence while both artifacts retained exact inode, mode, size, and SHA-256. [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) merged the Evidence-and-Oracle-pinned coupled-rebind remediation. Record another new fresh installation acknowledgement and sign its one-shot envelope, then independently provision only TestFlight `1.0 (3)` on the selected owned iPhone outside OrchardProbe; import the envelope, export and verify the device-signed receipt, compare all 64 fingerprint hex characters, and close the enrollment binding inside the signed window |
-| 4D | Clean run 1 | `blocked on 4C` | Record a fresh run-1 acknowledgement; create and retain its distinct Host-side intent, import only its signed challenge, freshly launch the three fixed roles, then export, verify, bind, and safely retain the exact run before cleaning reports |
-| 4E | Clean run 2 | `blocked on 4D` | Use a later non-overlapping authorization window and a distinct challenge chained to run 1; repeat the fresh three-role export and close the second binding without reinstall, device/OS change, or state reset |
-| 4F | Checkpoint closure | `blocked on 4E` | Verify the complete enrollment plus two-run chain against the frozen manifest, IPA evidence, and external oracle; record a sanitized Go/No-Go without retrying away any failed or incomplete run |
+| 4C | Exact installation and enrollment | `terminal incomplete — evidence retained` | TestFlight displayed and opened first-party DemoLab `1.0 (3)` on the selected owned iPhone; the fresh one-shot envelope was imported and the device created and exported a signed Receipt. Host closure stopped before publishing Enrollment Binding, so installed binary lineage remained unverified. The external inputs and failure log were retained owner-only outside the strict experiment child, and the authorization then expired. The ceremony is not recreated or retried into a pass |
+| 4D | Clean run 1 | `not executed — blocked by terminal 4C` | No run-1 acknowledgement, intent, device observation, or Export was created |
+| 4E | Clean run 2 | `not executed — blocked by terminal 4C` | No run-2 acknowledgement, intent, device observation, or Export was created |
+| 4F | Checkpoint closure | `complete — retained No-Go` | Record this sanitized pre-publication failure, preserve the private Receipt and failure evidence, publish no Enrollment Binding or fabricated run chain, and require a separately reviewed future checkpoint rather than retrying this ceremony |
 
 Each row completes before the next starts. A crash, expiry, missing share
 extension, failed fingerprint comparison, incomplete export, changed
 installation/device/OS, or inconsistent normalized result is retained and
 closed according to the reviewed No-Go rules; it is never silently retried into
 a passing result.
+
+## 4C device attempt record — 2026-08-04
+
+The fresh installation envelope was created from the merged PR #81 source and
+the exact frozen checkpoint-3 tuple. Read-only device preflight selected one
+wired, booted, owned iPhone with the expected sanitized environment. TestFlight
+displayed first-party DemoLab `1.0 (3)`, and that app opened successfully.
+Because Host closure never published Enrollment Binding, the installed binary's
+exact lineage remained unverified. The envelope was transferred through
+AirDrop, imported by DemoLab, and consumed to create the device-bound enrollment
+key, the complete displayed selection fingerprint, and the signed Enrollment
+Receipt. DemoLab then exported that Receipt through the system share sheet back
+to the Host.
+
+The first Host-close invocation stopped at its pre-publication inventory gate
+because two operator-supplied external files—the Receipt and the diagnostic
+log—were siblings of the six fixed control artifacts. It published no
+Enrollment Binding. The files were moved without deletion to the owner-only
+outer private root, the failed log was retained, and the strict six-file
+inventory was restored. By then the signed 15-minute window had expired, so the
+Host close was not invoked again. No private path, experiment identifier,
+fingerprint, Receipt content, or exact Host result is recorded here.
+
+This is a procedural No-Go, not evidence that the cryptographic receipt or the
+device observer was invalid. It nevertheless prevents enrollment closure for
+this ceremony. Checkpoint 4 therefore ends without either observation run and
+without claiming the future one-file IPA workflow is ready. A future attempt
+requires a separately reviewed checkpoint that makes the external-file layout
+unambiguous before any new build, installation state, or authorization is
+created.
 
 ## Upload reconciliation record
 
@@ -1109,7 +1142,8 @@ actionable correctness issue, followed by a final successful three-job CI run.
 Its remote head, clean mergeability, empty general-comment set, and sole
 resolved/outdated P2 thread were rechecked immediately before squash merge.
 The resulting merge is authoritative on `main`, and the remote topic branch is
-gone. Host may now request one new acknowledgement immediately before creating
-a new 15-minute installation envelope in a new owner-only output root. The
-previous acknowledgement remains consumed, its empty failed root remains
-private evidence, and the phone has still not been operated.
+gone. At that point Host could request one new acknowledgement immediately
+before creating a new 15-minute installation envelope in a new owner-only
+output root; the prior empty failed root remained private evidence and the
+phone had not yet been operated. The later 2026-08-04 device attempt and its
+terminal retained No-Go are the authoritative current status recorded above.
