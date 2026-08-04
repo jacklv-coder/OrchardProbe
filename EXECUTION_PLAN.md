@@ -68,8 +68,8 @@ decryption support.
 
 ## Current gate
 
-When [PR #83](https://github.com/jacklv-coder/OrchardProbe/pull/83) is on
-`main`, `LAB-002` becomes `done — retained No-Go` and Issue #55 closes.
+PR [#83](https://github.com/jacklv-coder/OrchardProbe/pull/83) is on
+`main`; `LAB-002` is `done — retained No-Go`, and Issue #55 is closed.
 Checkpoint 2 completed on `main` through merged PR #59. On 2026-07-31 the operator
 explicitly accepted the immediately preceding bounded proposal for first-party
 DemoLab `1.0 (3)`: create the signed candidate and frozen pre-upload oracle,
@@ -119,6 +119,20 @@ observation or Go result exists, and `DEVICE-001` remains blocked.
 Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.
+
+Issue [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) defines
+`LAB-003`, a separately reviewed, device-free successor inserted before the
+blocked backend work. Its first gate is the bilingual
+[external artifact layout contract](docs/research/lab-003-external-artifact-layout.md):
+the experiment child retains six immutable base controls plus only the exact
+phase directories valid at its lifecycle state, while external Receipt/Export
+inputs and bounded diagnostics receive distinct, non-overlapping, owner-only
+roles whose complete path and identity checks occur before future authorization
+creation or consumption. This activation changes no lifecycle
+guard and authorizes no build, upload, installation, envelope, or device
+action. After it merges, only device-free implementation and synthetic tests
+inside Issue #84 may begin. Any later ceremony requires another reviewed
+checkpoint and fresh explicit authorization.
 
 ### LAB-002 checkpoint ledger
 
@@ -268,20 +282,22 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
 | 13 | `LAB-002` | `done — retained No-Go` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2, the exact local DemoLab `1.0 (3)` candidate/frozen Oracle, and the Host operator chain completed through PRs #59, #72, and #74. The one internal-TestFlight upload was reconciled as accepted. In the final fresh 4C ceremony TestFlight displayed and opened first-party DemoLab `1.0 (3)`, which imported its one-shot envelope and exported a signed Receipt; Host closure stopped before Enrollment Binding publication, so installed binary lineage remained unverified, and the authorization expired. The [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md) retains the procedural No-Go; neither observation run occurred, no protected-to-plaintext or Go result exists, and the ceremony is not retried. [PR #83](https://github.com/jacklv-coder/OrchardProbe/pull/83) publishes the sanitized closure record and closes Issue #55. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Initial: [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57); checkpoint 3: [#61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 4: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); checkpoint 3: [#72](https://github.com/jacklv-coder/OrchardProbe/pull/72); host workflow: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74); final: [#83](https://github.com/jacklv-coder/OrchardProbe/pull/83) |
-| 14 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | `LAB-002` Go result | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
-| 15 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
-| 16 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
-| 17 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | To record during activation | — |
-| 18 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | To record during activation | — |
-| 19 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | To record during activation | — |
-| 20 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | To record during activation | — |
+| 14 | `LAB-003` | `active when PR #85 merges` | Make external Receipt/Export inputs and bounded diagnostics unambiguous before any future authorization exists. Publish the closed three-role layout and phase-aware experiment inventory, implement device-free path/identity validation and preflight UX, and retain all closed LAB-002 lifecycle guards. Completion may only permit a later documentation proposal; it does not authorize or perform a new device ceremony. | `LAB-002` retained No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | — |
+| 15 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | A reviewed first-party protected-oracle Go result; `LAB-003` alone is insufficient | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
+| 16 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
+| 17 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
+| 18 | `EXPORT-001` | `planned` | Reconstruct and verify the root main executable from exact device code-range evidence while preserving non-code bytes from the input IPA. | `DEVICE-003` | To create during activation | To record during activation | — |
+| 19 | `EXPORT-002` | `planned` | Extend reconstruction and per-binary evidence to the supported declared-executable inventory; failures remain explicit and per file. | `EXPORT-001` | To create during activation | To record during activation | — |
+| 20 | `UX-001` | `planned` | Implement the one-command `oprobe decrypt <input.ipa>` happy path with automatic diagnostics, atomic unsigned IPA output, and a separate manifest. | `EXPORT-002` | To create during activation | To record during activation | — |
+| 21 | `RELEASE-001` | `planned` | Publish a reproducible narrow alpha, installation instructions, checksums/SBOM, bilingual troubleshooting, and an evidence-backed compatibility matrix. | `UX-001` | To create during activation | To record during activation | — |
 
 ## What this plan does not claim
 
 `LAB-002` checkpoint 3 is done for the exact local DemoLab `1.0 (3)`
-candidate/frozen-oracle pair. Its device-free checkpoint 2 implementation is complete,
-but neither it nor later
-blocked or planned rows establish a product capability. In particular, the repository does not yet provide a protected
+candidate/frozen-oracle pair, and its device-free checkpoint 2 implementation
+is complete. `LAB-003` only activates device-free layout remediation. None of
+these steps, or the later blocked and planned rows, establishes a product
+capability. In particular, the repository does not yet provide a protected
 oracle, device backend, working decryption, device/build matching, Mach-O
 reconstruction, caller-visible IPA publication, the `oprobe decrypt` command,
 an installable release, or a supported-device claim. The output design remains

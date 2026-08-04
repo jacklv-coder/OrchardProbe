@@ -19,12 +19,15 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
   证据语义和源码阅读顺序。
 - [LAB-001 首方受保护 Oracle 结论](lab-001-protected-oracle.md)：为什么当前
   内部 TestFlight 研究组合得到有界 No-Go。
-- [LAB-002 固定区间 Oracle 设计状态](lab-002-oracle-design.md)：当前首方
-  自观测方案的证据链、完整清单、固定区间、两轮流程和 Go/No-Go 门禁。
+- [LAB-002 固定区间 Oracle 设计状态](lab-002-oracle-design.md)：历史首方
+  自观测方案的证据链、完整清单、固定区间、两轮流程和现已关闭的
+  Go/No-Go 门禁。
 - [LAB-002 检查点 3 进度](lab-002-checkpoint-3-progress.md)：精确 DemoLab
   `1.0 (3)` 候选/Oracle 授权、顺序实现门禁与脱敏本地候选记录。
 - [LAB-002 检查点 4 进度](lab-002-checkpoint-4-progress.md)：已对账的内部上传、
-  Host 工具门禁，以及设备观察前的 Enrollment 与两轮顺序计划。
+  Host 工具门禁、终态 Enrollment 尝试及保留的流程性 No-Go。
+- [LAB-003 外部工件布局](lab-003-external-artifact-layout.md)：当前无设备后续
+  检查点，在未来授权前分离严格控制工件、操作员输入与诊断。
 - [范围与威胁模型（英文）](../architecture/RFC-0001-scope-and-threat-model.md)
 - [有界 Host/Helper 协议（英文）](../architecture/RFC-0002-bounded-host-helper-protocol.md)
 - [Rust Host 架构决策（英文）](../architecture/ADR-0001-rust-host.md)
