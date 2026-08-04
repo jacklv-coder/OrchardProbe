@@ -664,3 +664,13 @@ Simulator Fixture 均通过。临时的 Source 缺席测量 Hook 已彻底移除
 Tuple 加入已评审 Source Snapshot Allowlist。后续完整门禁通过了全部 Workspace 测试，但拒绝了
 Warnings-denied Clippy 所报告的 Helper 可折叠条件。该 Source Snapshot 与 Allowlist Tuple
 因此失效并已移除；语义等价的一行修复要求从零重新完成两轮测量。手机保持未操作。
+
+随后两轮全新独立完整 Fastlane 门禁分别从 Source Snapshot
+`8571652a1e7d822070e5abdf32f89295c3f6b88bc4aa43b58d8d8ef1e56f7cb5`
+重建 3 份 Helper。全部 6 份产物完全一致：Toolchain
+`1.85.0-aarch64-apple-darwin`，Size `3,399,296`，SHA-256
+`55c16316546e134e6b0594ccc283d6ec490e559a259e3c0541d34716de129f40`，
+CodeDirectory CDHash `0e9663164bb2dcb470dc1a771fb195fb1b0d9222`；两轮未签名
+Simulator Fixture 均通过。临时的 Source 缺席测量 Hook 已彻底移除，且显式无 Hook 搜索
+通过后，才把这一个精确产物 Tuple 加入已评审 Source Snapshot Allowlist。Push 前仍须通过
+正常非测量门禁、完整本地门禁和一轮新的干净完整 Diff Codex CR；手机保持未操作。

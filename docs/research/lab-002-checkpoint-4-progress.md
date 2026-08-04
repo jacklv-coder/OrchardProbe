@@ -1025,3 +1025,16 @@ gate passed all Workspace tests but rejected a collapsible Helper conditional
 under warnings-denied Clippy. That source snapshot and allowlist tuple were
 therefore invalidated and removed; the one-line equivalent remediation requires
 two fresh measurements from zero. The phone remains untouched.
+
+Two fresh independent complete Fastlane gates then each rebuilt three Helpers
+from source snapshot
+`8571652a1e7d822070e5abdf32f89295c3f6b88bc4aa43b58d8d8ef1e56f7cb5`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,296`, SHA-256
+`55c16316546e134e6b0594ccc283d6ec490e559a259e3c0541d34716de129f40`,
+and CodeDirectory CDHash `0e9663164bb2dcb470dc1a771fb195fb1b0d9222`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely and the explicit no-hook search passed
+before this exact sole product tuple was added to the reviewed source-snapshot
+allowlist. A normal non-measurement gate, complete local gates, and a new clean
+complete-diff Codex CR remain required before push; the phone remains untouched.
