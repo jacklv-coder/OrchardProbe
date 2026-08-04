@@ -107,7 +107,7 @@ Issue #9 固定其首方 DemoLab 来源、独立的初始保护/预期明文 Ora
 | 1 | 无设备 Oracle 设计 | `done` | [PR #58](https://github.com/jacklv-coder/OrchardProbe/pull/58)及已评审的[设计](lab-002-oracle-design.md) |
 | 2 | 无设备实现与合成/Simulator 验证 | `done` | 已合并的 [PR #59](https://github.com/jacklv-coder/OrchardProbe/pull/59)实现闭合协议、Host 链、固定设备状态/Observer/Export 流程、生产授权验证及合成/Simulator 门禁；全部必需 CI、Review Thread 与合并前 Codex CR 均已清零 |
 | 3 | 精确签名 DemoLab Build 与上传前 Oracle | `done` | 已从 PR #71 合并后的干净源码发布恰好一个通过验证的本地 DemoLab `1.0 (3)` 签名候选/冻结 Oracle Pair。[检查点 3 进度台账](lab-002-checkpoint-3-progress.md)与 [Issue #55](https://github.com/jacklv-coder/OrchardProbe/issues/55#issuecomment-5151749527)记录其非秘密证据；[PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72)是完成记录 Implementation PR，其合并使本行状态生效。授权仍不包含上传、安装或设备观察 |
-| 4 | 安装 Enrollment 与两次干净真机观察 | `active — 4C 修复 PR/CI` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并，前两项修复已通过 PR #76 与 PR #78 合并。最新获确认启动在发布前因 Host 重启改变冻结 APFS 设备号而失败，其他保留身份字段仍全部精确。仅限精确 Tuple 的耦合重绑定修复已通过完整本地门禁和干净 Codex CR；按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)关闭 SSH PR/CI/评审并合并后，再在 Enrollment 与每次干净运行前紧邻地分别保留新的全新确认/信封 |
+| 4 | 安装 Enrollment 与两次干净真机观察 | `active — PR #81 CI/评审` | 精确 Build 的有界流程已授权，恰好一次内部上传已完成远端对账，闭合 Host 操作流程已通过 PR #74 合并，前两项修复已通过 PR #76 与 PR #78 合并。最新获确认启动在发布前因 Host 重启改变冻结 APFS 设备号而失败，其他保留身份字段仍全部精确。仅限精确 Tuple 的耦合重绑定修复已通过完整本地门禁和干净 Codex CR，并已创建 [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81)；按[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)关闭远端 CI/评审并合并后，再在 Enrollment 与每次干净运行前紧邻地分别保留新的全新确认/信封 |
 | 5 | 脱敏 LAB-002 Go/No-Go 结果 | `blocked` | 需要检查点 4；更新 Issue #55 和本台账，No-Go 时不得降低标准 |
 
 检查点 2 的完成证据保留在

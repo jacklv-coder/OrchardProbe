@@ -12,14 +12,16 @@ Publication-pipe remediation PR: [#76](https://github.com/jacklv-coder/OrchardPr
 
 Frozen-Oracle compatibility PR: [#78](https://github.com/jacklv-coder/OrchardProbe/pull/78)
 
+Host-reboot identity remediation PR: [#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
+
 Current branch status: **checkpoint 4 active; 4A and 4B complete; the
 fail-closed publication-pipe diagnostic remediation is merged; the 4C
 exact-digest compatibility remediation for the immutable checkpoint-3 Oracle
 merged through PR #78; the latest 4C start failed closed because a Host reboot
 changed the immutable evidence's filesystem device number; an exact-tuple
 coupled-rebind remediation has passed its complete local gates and clean Codex
-CR, and must now pass SSH PR, remote CI/review, pre-merge CR, and merge before
-another fresh RFC-0001 acknowledgement or any device action**
+CR and is open as PR #81; it must now pass remote CI/review, pre-merge CR, and
+merge before another fresh RFC-0001 acknowledgement or any device action**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -1045,8 +1047,11 @@ Helper tuple and passed its unsigned Simulator fixture. Rust format, locked
 all-target warnings-denied Clippy, all 296 Workspace tests, Ruby syntax, diff
 hygiene, and the explicit no-measurement-hook search passed. The complete-diff
 Codex CR against unchanged `origin/main` found no actionable correctness issue
-or P1/P2. The next ordered gate is SSH push plus PR remote CI/review closure,
-followed by a fresh exact-head pre-merge Codex CR and merge. Only after that
-merge may Host request another new acknowledgement and create a new 15-minute
-installation envelope; the prior acknowledgement remains consumed and the
-phone remains untouched.
+or P1/P2. The reviewed branch was pushed over the configured SSH remote and
+opened as [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81); its
+remote head, base, commit list, and nine-file inventory matched the local
+reviewed scope, and it opened with no review threads. The next ordered gate is
+remote CI/review closure, followed by a fresh exact-head pre-merge Codex CR and
+merge. Only after that merge may Host request another new acknowledgement and
+create a new 15-minute installation envelope; the prior acknowledgement remains
+consumed and the phone remains untouched.
