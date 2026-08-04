@@ -17,9 +17,14 @@ device support claim, a general decryption capability, or a user-facing
 `oprobe decrypt` workflow unless the corresponding execution gates separately
 complete with the required evidence.
 
-Active research designs:
+Research designs:
 
 - [LAB-002 fixed-range self-observation oracle design](lab-002-oracle-design.md)
   defines the device-free trust model, complete inventory, fixed-range oracle,
-  bounded report family, two-run procedure, and Go/No-Go gate. It is not an
-  implementation or device result.
+  bounded report family, two-run procedure, and Go/No-Go gate. LAB-002 is now
+  closed with a retained No-Go; the design remains historical evidence, not a
+  device result.
+- [LAB-003 external artifact layout](lab-003-external-artifact-layout.md)
+  defines the active device-free successor gate for strict control artifacts,
+  operator inputs, diagnostics, preflight ordering, retention, and redaction.
+  It does not authorize a new device ceremony.
