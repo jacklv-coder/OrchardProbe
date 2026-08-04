@@ -14,12 +14,15 @@ Host 流程 PR：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)
 
 Host 重启身份修复 PR：[#81](https://github.com/jacklv-coder/OrchardProbe/pull/81)
 
-当前分支状态：**检查点 4 active；4A 与 4B 已完成；失败关闭的发布管道诊断修复已合并；
-不可变检查点 3 Oracle 的 4C 精确 Digest 兼容修复已通过 PR #78 合并；最新 4C 启动因
-Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；PR #81 已合并仅限精确 Tuple
-的耦合重绑定修复，并同时固定完整冻结 Evidence 与历史 Oracle 的精确 Digest；可复现性、
-完整本地门禁、精确 Head CR、远端 CI 与 Review Thread 关闭均通过；现在必须在安装
-Enrollment 前紧邻地取得另一份全新 RFC-0001 确认与 15 分钟信封；尚未进行真机操作**
+关闭 PR：[#83](https://github.com/jacklv-coder/OrchardProbe/pull/83)
+
+当前分支状态：**检查点 4 已以保留证据的 No-Go 关闭；4A 与 4B 已完成，之前的 Host
+兼容修复已合并至 PR #81。全新的 4C 仪式已到达所选自有 iPhone：TestFlight 显示并打开
+首方 DemoLab `1.0 (3)`，App 导入一次性信封，并创建、导出签名 Enrollment Receipt。
+随后 Host 在发布前关闭失败，原因是外部 Receipt 与诊断日志被放入实验目录，违反该目录
+精确六项清单；没有发布 Enrollment Binding，因此已安装二进制 Lineage 仍未验证。外部文件与失败日志仍以
+仅 Owner 可访问的形式保留在严格子目录之外，但 15 分钟授权随后已过期。已评审规则禁止把
+本次失败仪式重建或重试成通过；4D 与 4E 均未执行**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -51,14 +54,34 @@ TestFlight 安装、Enrollment 和两次干净观察。OrchardProbe 不安装、
 |---:|---|---|---|
 | 4A | 激活并关闭提前上传/对账治理偏差 | `完成 — PR #73` | 本台账与双语执行计划合并明确的不合规记录。Apple 已列出精确 DemoLab `1.0 (3)`，处理完成并进入现有内部组；不可变 Build 不重试，且没有创建外部测试或审核状态 |
 | 4B | 闭合 Host 操作流程 | `完成 — PR #74` | 五个已评审 Fastlane 入口创建并原子保留安装/运行控制阶段，只接受有界且由设备创建的 Receipt/Export，要求每次明确确认、全部四项 RFC-0001 范围断言和完整 64 位十六进制 Fingerprint，派生仅 Host 的 Binding，并再次执行完整 Enrollment/Run/两轮验证。每次操作都会重新解析完整闭合的上传前 Evidence、重新 Hash 精确三个冻结 Archive 可执行文件，并依据原始 Prebuild/Candidate 元组重新验证保留的 Source；关闭时逐 Role/Slice 对照冻结 Oracle，最终链还要求两轮规范化观察完全一致。固定 Owner-only 目录均通过已持有描述符传入；命令不安装、不启动、不上传、不访问 App Group，也不选择 Target。安装前要求的无设备测试、Codex CR、CI、PR 与合并均已通过 |
-| 4C | 精确安装与 Enrollment | `active — 需要全新确认` | 前两个 Host 缺陷已分别通过 PR #76 与 PR #78 修复。最新获全新确认启动在 Host 重启改变不可变 Evidence 所记 APFS 设备号后，于发布前得到终态失败；两个工件的 Inode、Mode、Size 与 SHA-256 仍精确匹配。[PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) 已合并同时固定 Evidence 与 Oracle 的耦合重绑定修复。记录新的全新安装确认并签署一次性信封，再在 OrchardProbe 之外独立 Provision 所选自有 iPhone 上唯一的 TestFlight `1.0 (3)`；导入信封，导出并验证设备签名 Receipt，对比全部 64 个 Fingerprint 十六进制字符，并在签名时间窗内关闭 Enrollment Binding |
-| 4D | 干净运行 1 | `blocked on 4C` | 记录全新 Run-1 确认；创建并保留不同的 Host 侧 Intent，只导入签名 Challenge；全新启动三个固定 Role，再导出、验证、绑定并安全保留精确运行后清理报告 |
-| 4E | 干净运行 2 | `blocked on 4D` | 使用更晚且不重叠的授权窗口和与 Run 1 链接的不同 Challenge；在不重装、不更换设备/OS、不重置状态的前提下重复全新三 Role 导出并关闭第二份 Binding |
-| 4F | 检查点关闭 | `blocked on 4E` | 以冻结 Manifest、IPA 证据和外部 Oracle 验证完整 Enrollment 加两轮链；发布脱敏 Go/No-Go，不能通过重试掩盖失败或不完整运行 |
+| 4C | 精确安装与 Enrollment | `终态未完成 — 证据已保留` | TestFlight 在所选自有 iPhone 显示并打开首方 DemoLab `1.0 (3)`；全新一次性信封已导入，设备已创建并导出签名 Receipt。Host 在发布 Enrollment Binding 前停止，所以已安装二进制 Lineage 仍未验证。外部输入与失败日志以仅 Owner 可访问的形式保留在严格实验子目录之外，随后授权过期；本次仪式不重建、不重试成通过 |
+| 4D | 干净运行 1 | `未执行 — 被终态 4C 阻断` | 没有创建 Run-1 确认、Intent、设备观察或 Export |
+| 4E | 干净运行 2 | `未执行 — 被终态 4C 阻断` | 没有创建 Run-2 确认、Intent、设备观察或 Export |
+| 4F | 检查点关闭 | `完成 — 保留证据的 No-Go` | 记录本次脱敏的发布前失败，保留私有 Receipt 与失败证据，不发布 Enrollment Binding 或伪造运行链；后续必须进入独立评审的新检查点，而不能重试本次仪式 |
 
 每行完成后才能开始下一行。Crash、过期、Share Extension 不可用、Fingerprint 对比失败、
 Export 不完整、安装/设备/OS 改变或归一化结果不一致，都必须按已评审 No-Go 规则保留并
 关闭，不能静默重试成通过结果。
+
+## 4C 真机尝试记录 — 2026-08-04
+
+全新安装信封基于已合并 PR #81 的源码与精确冻结检查点 3 元组创建。只读设备预检选中了
+一台有线连接、已启动且自有的 iPhone，其脱敏环境符合预期。TestFlight 显示首方 DemoLab
+`1.0 (3)`，且该 App 成功打开。由于 Host 关闭从未发布 Enrollment Binding，已安装
+二进制的精确 Lineage 仍未验证。信封通过 AirDrop 传输并由 DemoLab 导入，随后创建了
+Device-bound Enrollment Key、完整显示的选择 Fingerprint 和签名 Enrollment Receipt；
+DemoLab 再通过系统 Share Sheet 把该 Receipt 导出回 Host。
+
+第一次 Host 关闭调用在发布前清单门禁停止，因为两个由操作员提供的外部文件——Receipt
+与诊断日志——与六个固定控制工件处于同级；没有发布 Enrollment Binding。这些文件未删除，
+而是移动至仅 Owner 可访问的外层私有根目录；失败日志得到保留，严格六文件清单也已恢复。
+此时签名的 15 分钟窗口已经过期，因此没有再次调用 Host 关闭。本文不记录任何私有路径、
+实验标识符、Fingerprint、Receipt 内容或精确 Host 结果。
+
+这是一次流程性 No-Go，并不证明密码学 Receipt 或设备 Observer 无效；但它仍然阻止本次
+仪式完成 Enrollment 关闭。因此检查点 4 在没有执行任何观察 Run、也没有声称未来单文件 IPA
+工作流已可用的情况下结束。未来若继续，必须建立独立评审的新检查点，在创建任何新 Build、
+安装状态或授权之前先让外部文件布局明确且不易误用。
 
 ## 上传对账记录
 
@@ -723,5 +746,6 @@ Thread 已用双 Digest 固定、回归、可复现性、本地门禁、CR 与 C
 随后 PR #81 在精确已提交 Head 上通过合并前 Codex CR，未发现可执行正确性问题；最后一轮
 三项 CI 也全部成功。Squash Merge 前再次确认远端 Head、Clean Mergeability、空 General
 Comment 集合，以及唯一 P2 Thread 已解决且过时。合并结果现已在 `main` 生效，远端 Topic
-Branch 已删除。Host 现在可以在创建新 15 分钟安装信封之前紧邻地请求一份全新确认，并使用
-新的 Owner-only 输出根。上一份确认保持已消费，其空失败根继续作为私有证据保留，手机仍未操作。
+Branch 已删除。在该时间点，Host 可以在创建新 15 分钟安装信封之前紧邻地请求一份全新确认，
+并使用新的 Owner-only 输出根；上一份确认保持已消费，其空失败根继续作为私有证据保留，手机
+当时尚未操作。此后 2026-08-04 真机尝试及其保留证据的终态 No-Go，以上文记录为当前权威状态。

@@ -237,29 +237,19 @@ implementation checkpoints through PR #59. Checkpoint 3 produced exactly one
 verified local DemoLab `1.0 (3)` signed candidate and frozen pre-upload oracle
 from the clean merged PR #71 source, and its sanitized completion record merged
 through [PR #72](https://github.com/jacklv-coder/OrchardProbe/pull/72).
-Checkpoint 4 is active: exactly one internal-TestFlight upload was reconciled as
-accepted and processed without external testing or review submission. The
+Checkpoint 4 is closed as a retained procedural No-Go. Exactly one
+internal-TestFlight upload was reconciled as accepted and processed without
+external testing or review submission. The
 [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md) records the
-closed Host operator artifact workflow merged through
-[PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74). Step 4C is active:
-its first authorized Host start failed closed before publication and exposed a
-masked acknowledgement-pipe diagnostic. Its fail-closed remediation merged
-through [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76); a new
-fresh installation acknowledgement was supplied, but the next Host start also
-failed before publication because the immutable checkpoint-3 Oracle predates
-the required `container_kind` field. Its exact-digest compatibility remediation
-merged through [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78);
-the next acknowledged Host start was interrupted by operator command-session
-orchestration before Helper publication, leaving its root empty and the phone
-untouched. A terminal reconciliation found no surviving Fastlane/operator
-process, reacquired all three bound-directory locks, and rechecked the retained
-root as empty. The next acknowledged start then failed closed before publication
-after a Host reboot changed the immutable evidence's APFS device number while
-both retained artifacts still matched inode, mode, size, and SHA-256. PR #81
-merged the exact-frozen-Evidence-and-Oracle coupled-rebind remediation after
-all review and verification gates passed; another fresh acknowledgement is now
-required immediately before enrollment.
-Installation and device observation have not occurred. LAB-002 evaluates
+closed Host operator workflow and earlier remediations through PR #81. The
+final fresh 4C ceremony used TestFlight to display and open first-party DemoLab
+`1.0 (3)`, imported the one-shot envelope, and created and exported a signed
+Enrollment Receipt. Host closure rejected the strict experiment inventory
+before publishing Enrollment Binding because external inputs were placed inside
+that directory, so installed binary lineage remained unverified; the
+authorization then expired.
+Neither observation run was executed, and no protected-to-plaintext result or
+Go result exists. LAB-002 evaluates
 a first-party DemoLab protected-to-plaintext self-observation oracle. Its complete inventory is the app,
 DemoFramework, and DemoShareExtension executables plus every installed slice in
 the recorded build. Before device observation, a reviewed design/build manifest
@@ -433,7 +423,7 @@ crates.
 | Versioned manifest/capability/error schemas | Implemented |
 | First-party DemoLab simulator fixture | Implemented |
 | Bounded protocol specification | Accepted design; not implemented |
-| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private 3A generation plus the complete 3B Archive/IPA/oracle/evidence/upload-gate closure merged in order through [PR #62](https://github.com/jacklv-coder/OrchardProbe/pull/62), [#63](https://github.com/jacklv-coder/OrchardProbe/pull/63), [#64](https://github.com/jacklv-coder/OrchardProbe/pull/64), and [#65](https://github.com/jacklv-coder/OrchardProbe/pull/65); 3C device-free verification and implementation merge are complete through [PR #66](https://github.com/jacklv-coder/OrchardProbe/pull/66). PR #71 merged the final re-signing identity correction, and exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair exists; the sanitized local candidate record is tracked in the [checkpoint-3 ledger](research/lab-002-checkpoint-3-progress.md). Its one internal-TestFlight upload has been reconciled as accepted and processed. [PR #74](https://github.com/jacklv-coder/OrchardProbe/pull/74) merged the closed Host operator artifact workflow tracked by the [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md), [PR #76](https://github.com/jacklv-coder/OrchardProbe/pull/76) merged the fail-closed acknowledgement-pipe diagnostic remediation, [PR #78](https://github.com/jacklv-coder/OrchardProbe/pull/78) merged the exact-digest compatibility remediation for the immutable pre-`container_kind` checkpoint-3 Oracle, and [PR #81](https://github.com/jacklv-coder/OrchardProbe/pull/81) merged the exact-frozen-Evidence-and-Oracle Host-reboot compatibility remediation. A fresh acknowledgement is required immediately before enrollment; no installation, device verification, plaintext result, or Go result exists |
+| Protected first-party oracle | LAB-001 bounded No-Go; LAB-002 device-free design and implementation are complete for the three-executable installed-slice inventory. Private checkpoint 3 generated exactly one verified local signed DemoLab `1.0 (3)` candidate/frozen-oracle pair, and its one internal-TestFlight upload was reconciled as accepted and processed. The [checkpoint-4 ledger](research/lab-002-checkpoint-4-progress.md) records the Host workflow and remediations through PR #81. In its final fresh 4C ceremony TestFlight displayed and opened first-party DemoLab `1.0 (3)`, which imported the envelope and exported a signed Receipt, but Host closure stopped before publishing Enrollment Binding, leaving installed binary lineage unverified, and the authorization expired. Checkpoint 4 is closed as a retained procedural No-Go; no observation run, protected-to-plaintext result, or Go result exists |
 | Device discovery and transport | Not implemented |
 | Device helper and backend | Not implemented |
 | Deterministic unsigned analysis IPA packaging | Implemented on Unix as a library from the retained private worktree; no CLI or publication |

@@ -12,6 +12,14 @@ expected plaintext ranges, a working device backend, extraction, decryption, or
 IPA reconstruction. The bounded result is recorded in the
 [LAB-001 research note](../research/lab-001-protected-oracle.md).
 
+LAB-002 checkpoint 4 is now closed as a retained No-Go. Every lifecycle lane
+documented below—preparation, archive, upload, reconciliation, enrollment, run,
+and verification—fails closed at entry. The command sequences remain only as
+historical audit material and must not be run. A separately reviewed future
+checkpoint must replace the code guard and update this runbook before any new
+artifact, authorization, upload, installation, or device action is allowed.
+The credential-free `demolab_check` fixture lane remains available.
+
 ## Why this controlled build exists
 
 The ordinary DemoLab CI product is an unsigned Simulator build. It can prove
@@ -36,9 +44,10 @@ it cannot by itself identify the exact bytes installed on a phone:
 - Never commit or attach an IPA, archive, provisioning profile, certificate,
   API key, receipt, pairing record, stable device identifier, or raw private
   service log.
-- The privileged lanes must be invoked manually from a clean, reviewed commit.
-  They reject common CI-provider environments and also require an explicit
-  local-run confirmation; they are not called by CI or by the `oprobe` CLI.
+- Before closure, the privileged lanes were invoked manually from a clean,
+  reviewed commit. They rejected common CI-provider environments and required
+  an explicit local-run confirmation; they were not called by CI or by the
+  `oprobe` CLI.
 - The archive lane rejects inherited `GYM_*` variables so ambient Fastlane
   settings cannot redirect result bundles or change the controlled build.
 - The upload lane accepts only an App Store Connect API key stored outside the
@@ -53,8 +62,8 @@ it cannot by itself identify the exact bytes installed on a phone:
   read-only descriptor. The lane does not accept an Apple ID password, patch
   TestFlight beta metadata, add tester groups, or
   distribute/notify external testers.
-- Run signing and upload only in a trusted, dedicated local macOS login session.
-  Directory locks and identity checks reject cooperating concurrent lanes and
+- Before closure, signing and upload ran only in a trusted, dedicated local
+  macOS login session. Directory locks and identity checks reject cooperating concurrent lanes and
   observable replacement, but a process already executing as the same macOS
   user can also access signing identities and is outside this maintainer-lane
   boundary. This does not weaken the future device collector's hostile-local-
@@ -246,14 +255,21 @@ Prefer the least-privileged App Store Connect key that can upload this app.
 The lane uses the key only for Apple's local `altool` package-upload command;
 it does not create a Fastlane Pilot session.
 
-## Checkpoint 4 Host operator workflow
+## Checkpoint 4 Host operator workflow (historical, closed)
 
-This maintainer-only workflow must be merged on `main` before the exact
-TestFlight installation. It is not an installation command and it never opens
-an App Group, launches an app, uploads a build, or accepts a target/path/range
-for observation. The five lanes are deliberately serial:
+Checkpoint 4 is closed as a retained No-Go. Every Host operator lane below now
+fails closed at entry. Retained private artifacts, a fresh acknowledgement, or
+the old command sequence do not authorize another lifecycle. Reuse requires a
+separately reviewed future checkpoint that deliberately replaces the code
+guard and updates the plan and this runbook before any device action.
 
-```sh
+The former maintainer-only workflow was required on `main` before the exact
+TestFlight installation. It was not an installation command and never opened
+an App Group, launched an app, uploaded a build, or accepted a free
+target/path/range for observation. Its historical serial order is retained for
+audit only; do not run these commands:
+
+```text
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_close_enrollment
 bundle _4.0.16_ exec fastlane ios demolab_operator_start_run
@@ -263,8 +279,8 @@ bundle _4.0.16_ exec fastlane ios demolab_operator_close_run
 bundle _4.0.16_ exec fastlane ios demolab_operator_verify
 ```
 
-`start_enrollment` accepts only the frozen prebuild/candidate tuple and creates
-the fixed `lab002-experiment` child below an already existing mode-`0700`
+Historically, `start_enrollment` accepted only the frozen prebuild/candidate
+tuple and created the fixed `lab002-experiment` child below an already existing mode-`0700`
 operator output root. The root must be empty: any retained prior experiment
 makes the command fail closed, so an abandoned or failed lifecycle cannot be
 bypassed by publishing another enrollment beside it. The Helper checks the
@@ -390,14 +406,13 @@ fingerprints, paths, Receipt/Export contents, or Host results into GitHub or
 logs. A failed/expired/post-start phase is retained and evaluated under the
 reviewed No-Go rules; it is not deleted and recreated to obtain a pass.
 
-## Stage 1: create the signed candidate
+## Stage 1: create the signed candidate (historical, closed)
 
-Before the first run, sign in to the correct development team in Xcode and
-allow Xcode to manage signing for the two registered App IDs. Create the
-private output root yourself, then invoke the lane from a clean, reviewed
-commit:
+Before closure, the maintainer signed in to the correct development team in
+Xcode and allowed Xcode to manage signing for the two registered App IDs. The
+following historical sequence is retained for audit only; do not run it:
 
-```sh
+```text
 mkdir -p /absolute/private/path/orchardprobe-demolab
 chmod 700 /absolute/private/path/orchardprobe-demolab
 export DEMO_LAB_OUTPUT_DIR=/absolute/private/path/orchardprobe-demolab
@@ -496,7 +511,7 @@ user or protected by the sticky bit; a custom `TMPDIR` inside the checkout, or
 one whose configured/resolved path contains an apostrophe or control character,
 is rejected before any temporary artifact is created.
 
-## Stage 2: upload the exact candidate
+## Stage 2: upload the exact candidate (historical, closed)
 
 Set `DEMO_LAB_EVIDENCE_PATH` to the evidence JSON from Stage 1. The lane derives
 the IPA path from that record and refuses to upload if the current Git commit,
@@ -600,9 +615,10 @@ no missing export compliance. The existing internal group already covers all
 builds. No group was created or changed, no public link was enabled, and no
 external distribution, Beta App Review, or App Store submission was performed.
 
-Set this exact confirmation only after checking the target account and build:
+The following historical confirmation sequence is retained for audit only; do
+not run it:
 
-```sh
+```text
 export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
 export DEMO_LAB_CONFIRM_UPLOAD=I_OWN_AND_AUTHORIZE_THIS_FIRST_PARTY_FIXTURE
 export DEMO_LAB_APPLE_ID=1234567890 # replace with the app's numeric Apple ID
@@ -663,12 +679,11 @@ beta metadata, submit for beta review, add tester groups, distribute or notify
 external testers, or install the app. The least-privileged App Store Connect
 role capable of uploading this app is sufficient.
 
-Never delete or rename an indeterminate result by hand. If App Store Connect
-shows that the exact version and build are present, do not retry. If it confirms
-that they are absent, copy `attempt_started_at` from the current result and run
-the dedicated reconciliation lane:
+Never delete or rename an indeterminate result by hand. Before closure, an
+absent remote build could be reconciled using the sequence below. It is now
+historical audit material and must not be run:
 
-```sh
+```text
 export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
 export DEMO_LAB_EVIDENCE_PATH=/absolute/private/path/demolab-pre-upload-evidence.json
 export DEMO_LAB_RECONCILED_ATTEMPT_STARTED_AT=2026-07-29T00:00:00Z
@@ -686,11 +701,11 @@ record has been archived can `demolab_upload_testflight` exclusively create a
 fresh current result and make another network attempt. Reconciliation does not
 require either Bundle ID variable or any API-key/upload credential.
 
-## Stage 3: manual owned-device observation
+## Stage 3: manual owned-device observation (historical, closed)
 
-After App Store Connect reports the build ready, the maintainer manually
-selects this exact version/build in TestFlight and installs it on an owned
-iPhone. Record only sanitized facts allowed by the compatibility policy. Do
+Before closure, the maintainer manually selected the exact ready version/build
+in TestFlight and installed it on an owned iPhone. Only sanitized facts allowed
+by the compatibility policy were recorded. Do
 not publish the device UDID, serial number, pairing material, receipt,
 protected executable, IPA, or private logs.
 
