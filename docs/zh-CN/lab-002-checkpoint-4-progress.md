@@ -19,7 +19,9 @@ Host 重启身份修复 PR：[#81](https://github.com/jacklv-coder/OrchardProbe/
 Host 重启改变不可变 Evidence 的文件系统设备号而失败关闭；仅限精确 Tuple 的耦合重绑定
 修复已创建 PR #81；远端评审发现一个 P2，要求该例外除固定历史 Oracle Digest 外还须固定
 完整冻结 Evidence Digest，因此必须重新完成可复现性、本地门禁、CR、CI 并合并，之后才能
-取得另一份全新 RFC-0001 确认或进行真机操作**
+取得另一份全新 RFC-0001 确认或进行真机操作；可复现性、完整本地门禁和干净 CR 均已通过，
+下一项为更新 PR、关闭远端 CI/Thread、合并前
+CR 及合并**
 
 本台账控制已冻结首方 DemoLab `1.0 (3)` 候选的精确安装 Enrollment 与两轮执行。
 它不授权其他源码、Build、Target、设备、分发渠道或 Device Backend。只有 `main`
@@ -697,3 +699,19 @@ PR #81 的首轮三项必需 CI 均通过，但远端 Codex Review 在合并前�
 Digest 校验仍必须通过。回归固定并篡改 Evidence Digest。上一 Helper Source Snapshot 与
 Allowlist Tuple 已移除；必须重新完成两轮独立测量、正常/完整本地门禁、干净 CR、远端 CI、
 Thread 关闭、合并前 CR 和合并。手机保持未操作。
+
+提交完整 Evidence 固定修复后，两轮全新独立完整 Fastlane 门禁分别从 Source Snapshot
+`b503cca5aeae01565d9a80117e5725c3a3d27c547feb5a892087b8fed4264ffd`
+重建 3 份 Helper。全部 6 份产物完全一致：Toolchain
+`1.85.0-aarch64-apple-darwin`，Size `3,399,408`，SHA-256
+`4aa9e2c157dd2743d7141fe31733bbab59dc1b42f5e3a080623c308fd4c3137f`，
+CodeDirectory CDHash `ceae099c2b723df7842f7ba34eb311920deafdda`；两轮未签名
+Simulator Fixture 均通过。临时 Source 缺席测量 Hook 已在把这一个精确产物 Tuple 加入
+已评审 Source Snapshot Allowlist 前完整删除。仍须通过正常非测量门禁、完整本地门禁、
+干净 CR、远端 CI/Thread 关闭、合并前 CR 和合并；手机保持未操作。
+
+随后正常非测量 `demolab_check` 重新构建并仅接纳该已评审 Helper Tuple，未签名 Simulator
+Fixture 通过。Rust Format、锁定依赖且拒绝警告的全 Target Clippy、全部 297 项 Workspace
+测试、Ruby 语法、Diff Hygiene 及显式无 Hook/已失效 Tuple 搜索均通过。全新完整 Diff
+Codex CR 未发现可执行正确性问题或 P1/P2。下一项依次提交、SSH Push、关闭远端 CI/Thread、
+运行合并前 CR 并合并。手机保持未操作。

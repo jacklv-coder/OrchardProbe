@@ -22,7 +22,9 @@ changed the immutable evidence's filesystem device number; an exact-tuple
 coupled-rebind remediation is open as PR #81; remote review found one P2 that
 requires the exception to pin the exact frozen Evidence digest as well as the
 legacy Oracle digest, so fresh reproducibility/local/CR/CI gates and merge are
-required before another fresh RFC-0001 acknowledgement or any device action**
+required before another fresh RFC-0001 acknowledgement or any device action;
+reproducibility, complete local gates, and clean CR now pass, with PR update,
+remote CI/thread closure, pre-merge CR, and merge next**
 
 This ledger controls the exact installation-enrollment and two-run execution
 for the frozen first-party DemoLab `1.0 (3)` candidate. It does not authorize a
@@ -1071,3 +1073,24 @@ Helper source snapshot and allowlist tuple were removed, and two fresh
 independent measurements, normal/complete local gates, clean CR, remote CI,
 thread closure, pre-merge CR, and merge are required. The phone remains
 untouched.
+
+After committing the exact-Evidence pin, two fresh independent complete
+Fastlane gates each rebuilt three Helpers from source snapshot
+`b503cca5aeae01565d9a80117e5725c3a3d27c547feb5a892087b8fed4264ffd`.
+All six products were identical with toolchain
+`1.85.0-aarch64-apple-darwin`, size `3,399,408`, SHA-256
+`4aa9e2c157dd2743d7141fe31733bbab59dc1b42f5e3a080623c308fd4c3137f`,
+and CodeDirectory CDHash `ceae099c2b723df7842f7ba34eb311920deafdda`;
+both unsigned Simulator fixtures passed. The temporary absent-source
+measurement hook was removed completely before this exact sole product tuple
+was added to the reviewed source-snapshot allowlist. A normal non-measurement
+gate, complete local gates, clean CR, remote CI/thread closure, pre-merge CR,
+and merge remain required; the phone remains untouched.
+
+The normal non-measurement `demolab_check` rebuilt and admitted only that
+reviewed Helper tuple and passed the unsigned Simulator fixture. Rust format,
+locked all-target warnings-denied Clippy, all 297 Workspace tests, Ruby syntax,
+diff hygiene, and the explicit no-hook/invalidated-tuple search passed. The
+fresh complete-diff Codex CR found no actionable correctness issue or P1/P2.
+The next ordered gates are commit, SSH push, remote CI/thread closure,
+pre-merge CR, and merge. The phone remains untouched.
