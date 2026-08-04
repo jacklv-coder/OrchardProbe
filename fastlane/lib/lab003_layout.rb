@@ -3,6 +3,7 @@
 require "fileutils"
 require "fiddle/import"
 require "pathname"
+require "timeout"
 
 module OrchardProbe
   module Lab003Layout
@@ -79,6 +80,9 @@ module OrchardProbe
     MAX_DIAGNOSTIC_FILES = 16
     MAX_DIAGNOSTIC_FILE_BYTES = 1024 * 1024
     MAX_DIAGNOSTIC_TOTAL_BYTES = 4 * 1024 * 1024
+    MAX_DIAGNOSTIC_SECONDS = 30.0
+    DIAGNOSTIC_TERMINATION_GRACE_SECONDS = 0.5
+    DIAGNOSTIC_POLL_INTERVAL_SECONDS = 0.01
     MAX_ROLE_ENTRIES = 128
     MAX_INVENTORY_PAYLOAD_BYTES = 64 * 1024
     SAFE_NAME = /\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/.freeze
@@ -116,7 +120,13 @@ module OrchardProbe
 
     module_function
 
-    def prepare(root_path, repository_root:, uid: Process.uid, after_role_open: nil)
+    def prepare(
+      root_path,
+      repository_root:,
+      uid: Process.uid,
+      after_role_create: nil,
+      after_role_open: nil
+    )
       path = new_private_root_path!(root_path, repository_root, uid)
       created = []
       root = nil
@@ -126,14 +136,17 @@ module OrchardProbe
         created << created_identity(root)
         ROLE_NAMES.each do |name|
           mkdir_at!(root, name, 0o700)
+          expected_identity = created_directory_identity!(root, name, uid)
+          created << expected_identity
+          after_role_create&.call(name, expected_identity)
           child = open_directory_at!(
             root,
             name,
             uid,
             exact_mode: 0o700,
-            on_open: lambda do |opened|
-              created << created_identity(opened)
-              after_role_open&.call(name, opened)
+            expected_identity: expected_identity,
+            on_open: after_role_open && lambda do |opened|
+              after_role_open.call(name, opened)
             end
           )
           child.close
@@ -223,11 +236,13 @@ module OrchardProbe
           opened << context.external_input
         end
 
-        reserve_diagnostic!(
-          context.roles.fetch("diagnostics"),
-          diagnostic_name,
-          uid
-        ) if diagnostic_name
+        if diagnostic_name
+          opened << reserve_diagnostic!(
+            context.roles.fetch("diagnostics"),
+            diagnostic_name,
+            uid
+          )
+        end
 
         reject_identity_aliases!(opened)
         before_second_check&.call
@@ -259,26 +274,58 @@ module OrchardProbe
       fail!("preflight_failed", "LAB-003 layout preflight failed closed")
     end
 
-    def capture_diagnostic(root_path, name:, argv:, repository_root:, uid: Process.uid)
+    def capture_diagnostic(
+      root_path,
+      name:,
+      argv:,
+      repository_root:,
+      uid: Process.uid,
+      timeout_seconds: MAX_DIAGNOSTIC_SECONDS
+    )
       unless argv.is_a?(Array) && argv.any? && argv.all? { |value| value.is_a?(String) }
         fail!("diagnostic_command", "LAB-003 diagnostic command is invalid")
       end
+      timeout_seconds = bounded_diagnostic_timeout!(timeout_seconds)
       context = open_layout(root_path, repository_root: repository_root, uid: uid)
       diagnostic = context.roles.fetch("diagnostics")
       sink = nil
       published = false
+      pid = nil
+      parent_reaped = false
+      process_group_closed = false
       begin
         validate_diagnostics_role!(diagnostic, uid, reserve: true)
         sink = create_direct_file!(diagnostic, name, 0o600, uid)
         diagnostic.identity = identity(diagnostic.handle.stat)
-        status = Process.spawn(
+        pid = Process.spawn(
           *argv,
           out: sink.handle,
           err: sink.handle,
           pgroup: true,
           rlimit_fsize: MAX_DIAGNOSTIC_FILE_BYTES
         )
-        process_status = Process.wait2(status).last
+        timed_out = false
+        process_status = begin
+          Timeout.timeout(timeout_seconds) do
+            status = Process.wait2(pid).last
+            parent_reaped = true
+            status
+          end
+        rescue Timeout::Error
+          timed_out = true
+          nil
+        ensure
+          terminated_status = terminate_process_group!(
+            pid,
+            parent_reaped: parent_reaped
+          )
+          process_group_closed = true
+          parent_reaped ||= !terminated_status.nil?
+        end
+        process_status ||= terminated_status
+        if timed_out
+          fail!("diagnostic_timeout", "LAB-003 diagnostic process exceeded its time bound")
+        end
         sink.handle.flush
         sink.handle.fsync
         sink.handle.chmod(0o400)
@@ -295,10 +342,78 @@ module OrchardProbe
       rescue SystemCallError
         fail!("diagnostic_failed", "LAB-003 diagnostic capture failed closed")
       ensure
+        if pid && !process_group_closed
+          terminate_process_group!(pid, parent_reaped: parent_reaped)
+        end
         cleanup_unpublished_file!(diagnostic, sink, uid) if sink && !published
         sink&.close
         context.close
       end
+    end
+
+    def bounded_diagnostic_timeout!(value)
+      seconds = Float(value)
+      unless seconds.positive? && seconds.finite? && seconds <= MAX_DIAGNOSTIC_SECONDS
+        fail!("diagnostic_timeout_bound", "LAB-003 diagnostic time bound is invalid")
+      end
+      seconds
+    rescue ArgumentError, TypeError
+      fail!("diagnostic_timeout_bound", "LAB-003 diagnostic time bound is invalid")
+    end
+
+    def terminate_process_group!(pid, parent_reaped:)
+      signal_process_group!(pid, "TERM")
+      status = parent_reaped ? nil : wait_for_child!(pid)
+      unless wait_for_process_group_exit(pid)
+        signal_process_group!(pid, "KILL")
+        status ||= wait_for_child!(pid) unless parent_reaped
+        unless wait_for_process_group_exit(pid)
+          fail!("diagnostic_process_group", "LAB-003 diagnostic process group did not close")
+        end
+      end
+      status
+    end
+
+    def signal_process_group!(pid, signal)
+      Process.kill(signal, -pid)
+    rescue Errno::ESRCH
+      nil
+    end
+
+    def wait_for_child!(pid)
+      deadline = monotonic_seconds + DIAGNOSTIC_TERMINATION_GRACE_SECONDS
+      loop do
+        waited, status = Process.wait2(pid, Process::WNOHANG)
+        return status if waited
+        return nil if monotonic_seconds >= deadline
+
+        sleep DIAGNOSTIC_POLL_INTERVAL_SECONDS
+      end
+    rescue Errno::ECHILD
+      nil
+    end
+
+    def wait_for_process_group_exit(pid)
+      deadline = monotonic_seconds + DIAGNOSTIC_TERMINATION_GRACE_SECONDS
+      loop do
+        return true unless process_group_alive?(pid)
+        return false if monotonic_seconds >= deadline
+
+        sleep DIAGNOSTIC_POLL_INTERVAL_SECONDS
+      end
+    end
+
+    def process_group_alive?(pid)
+      Process.kill(0, -pid)
+      true
+    rescue Errno::ESRCH
+      false
+    rescue Errno::EPERM
+      true
+    end
+
+    def monotonic_seconds
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def open_layout(root_path, repository_root:, uid: Process.uid)
@@ -472,11 +587,15 @@ module OrchardProbe
         sink.handle.fsync
         sink.handle.chmod(0o400)
         revalidate_opened!([sink], uid, file_mode: 0o400)
+        sink.identity = identity(sink.handle.stat)
         validate_diagnostics_role!(role, uid)
         published = true
+        sink
       ensure
-        cleanup_unpublished_file!(role, sink, uid) unless published
-        sink.close
+        unless published
+          cleanup_unpublished_file!(role, sink, uid)
+          sink&.close
+        end
       end
     end
 
@@ -565,9 +684,16 @@ module OrchardProbe
       fail!("directory_symlink", "LAB-003 role directory must not be a symbolic link")
     end
 
-    def open_directory_at!(parent, name, uid, exact_mode:, on_open: nil)
+    def open_directory_at!(
+      parent,
+      name,
+      uid,
+      exact_mode:,
+      expected_identity: nil,
+      on_open: nil
+    )
       safe_name!(name, "directory")
-      flags = File::RDONLY
+      flags = File::RDONLY | File::NONBLOCK
       flags |= File::NOFOLLOW if defined?(File::NOFOLLOW)
       handle = open_at!(parent, name, flags, 0, "r")
       path = File.join(parent.path, name)
@@ -576,9 +702,12 @@ module OrchardProbe
       on_open&.call(object)
       stat = handle.stat
       linked = File.lstat(path)
+      expected_match = !expected_identity ||
+                       (opened.dev == expected_identity.fetch(:device) &&
+                        opened.ino == expected_identity.fetch(:inode))
       unless stat.directory? && !linked.symlink? && stat.uid == uid &&
              (stat.mode & 0o777) == exact_mode && same_identity?(opened, stat) &&
-             same_identity?(stat, linked)
+             same_identity?(stat, linked) && expected_match
         handle.close
         fail!("directory_identity", "LAB-003 role directory identity is invalid")
       end
@@ -673,7 +802,7 @@ module OrchardProbe
         stat = File.lstat(path)
         next unless stat.directory? && !stat.symlink? && stat.uid == uid &&
                     stat.dev == record.fetch(:device) &&
-                    stat.ino == record.fetch(:inode) && Dir.children(path).empty?
+                    stat.ino == record.fetch(:inode)
 
         Dir.rmdir(path)
       rescue SystemCallError
@@ -686,6 +815,19 @@ module OrchardProbe
         path: object.path,
         device: object.identity.fetch(:device),
         inode: object.identity.fetch(:inode),
+      }
+    end
+
+    def created_directory_identity!(parent, name, uid)
+      path = File.join(parent.path, name)
+      stat = File.lstat(path)
+      unless stat.directory? && !stat.symlink? && stat.uid == uid
+        fail!("directory_identity", "LAB-003 newly created role identity is invalid")
+      end
+      {
+        path: path,
+        device: stat.dev,
+        inode: stat.ino,
       }
     end
 

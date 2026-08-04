@@ -57,9 +57,10 @@ aliasing where the host filesystem exposes it.
 Diagnostics are a closed retained output: at most 16 direct regular files,
 each no larger than 1 MiB and no more than 4 MiB in aggregate. Subdirectories,
 links, special files, replacement, and further writes after final validation
-are rejected. The reviewed wrapper must create the sink and constrain child
-output to the same per-file ceiling; arbitrary caller redirection is not a
-trusted diagnostic path.
+are rejected. The reviewed wrapper must create the sink, constrain child output
+to the same per-file ceiling, enforce a maximum 30-second wall-clock lifetime,
+and terminate the complete child process group before final validation;
+arbitrary caller redirection is not a trusted diagnostic path.
 
 ## Preflight order
 

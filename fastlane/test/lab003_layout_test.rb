@@ -3,6 +3,7 @@
 require "fileutils"
 require "minitest/autorun"
 require "rbconfig"
+require "timeout"
 require "tmpdir"
 
 require_relative "../lib/lab003_layout"
@@ -42,6 +43,20 @@ class Lab003LayoutTest < Minitest::Test
         repository_root: repository_root,
         after_role_open: lambda do |name, opened|
           opened.handle.chmod(0o755) if name == "external-inputs"
+        end
+      )
+    end
+    refute File.exist?(failed_root)
+  end
+
+  def test_prepare_tracks_a_role_before_its_first_open
+    failed_root = File.join(@container, "failed-before-open-layout")
+    assert_layout_error("prepare_failed") do
+      Layout.prepare(
+        failed_root,
+        repository_root: repository_root,
+        after_role_create: lambda do |name, record|
+          File.chmod(0o000, record.fetch(:path)) if name == "external-inputs"
         end
       )
     end
@@ -94,6 +109,18 @@ class Lab003LayoutTest < Minitest::Test
     Dir.rmdir(diagnostics)
     write_private(diagnostics, "not-a-directory", 0o700)
     assert_layout_error { Layout.preflight(other, repository_root: repository_root) }
+  end
+
+  def test_fifo_with_an_experiment_name_fails_without_blocking
+    fifo = File.join(@root, "experiments", EXPERIMENT)
+    assert system("/usr/bin/mkfifo", fifo)
+    File.chmod(0o700, fifo)
+
+    Timeout.timeout(2) do
+      assert_layout_error("directory_identity") do
+        Layout.preflight(@root, repository_root: repository_root)
+      end
+    end
   end
 
   def test_symlinked_ancestor_overlap_and_symlinked_input_are_rejected
@@ -161,6 +188,28 @@ class Lab003LayoutTest < Minitest::Test
         before_second_check: lambda do
           File.rename(input, displaced)
           write_private(input, "receipt", 0o600)
+        end
+      )
+    end
+  end
+
+  def test_reserved_diagnostic_identity_is_held_through_the_second_check
+    diagnostics = File.join(@root, "diagnostics")
+    existing = File.join(diagnostics, "existing.log")
+    reserved = File.join(diagnostics, "reserved.log")
+    displaced = File.join(@container, "displaced-reserved.log")
+    write_private(existing, "diagnostic", 0o400)
+
+    assert_layout_error("identity_changed") do
+      Layout.preflight(
+        @root,
+        repository_root: repository_root,
+        diagnostic_name: "reserved.log",
+        before_second_check: lambda do
+          directory_stat = File.stat(diagnostics)
+          File.rename(reserved, displaced)
+          File.link(existing, reserved)
+          File.utime(directory_stat.atime, directory_stat.mtime, diagnostics)
         end
       )
     end
@@ -328,6 +377,40 @@ class Lab003LayoutTest < Minitest::Test
     end
     path = File.join(@root, "diagnostics", "overflow.log")
     assert_operator File.size(path), :<=, Layout::MAX_DIAGNOSTIC_FILE_BYTES
+    assert_equal 0o400, File.stat(path).mode & 0o777
+  end
+
+  def test_reviewed_diagnostic_wrapper_terminates_a_timed_out_process_group
+    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    assert_layout_error("diagnostic_timeout") do
+      Layout.capture_diagnostic(
+        @root,
+        name: "timeout.log",
+        argv: [RbConfig.ruby, "-e", "sleep 30"],
+        repository_root: repository_root,
+        timeout_seconds: 0.05
+      )
+    end
+    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
+    assert_operator elapsed, :<, 2
+  end
+
+  def test_reviewed_diagnostic_wrapper_closes_background_writers
+    result = Layout.capture_diagnostic(
+      @root,
+      name: "background.log",
+      argv: [
+        RbConfig.ruby,
+        "-e",
+        "fork { loop { STDOUT.write('x'); STDOUT.flush; sleep 0.01 } }; exit! 0",
+      ],
+      repository_root: repository_root
+    )
+    assert_equal "captured", result.fetch("status")
+    path = File.join(@root, "diagnostics", "background.log")
+    size = File.size(path)
+    sleep 0.1
+    assert_equal size, File.size(path)
     assert_equal 0o400, File.stat(path).mode & 0o777
   end
 
