@@ -65,6 +65,7 @@ module OrchardProbe
       "helper-success" => "LAB-004 Host helper completed within the reviewed boundary.\n",
       "helper-failure" => "LAB-004 Host helper failed within the reviewed boundary.\n",
     }.freeze
+    MAX_DIAGNOSTIC_MESSAGE_BYTES = DIAGNOSTIC_MESSAGES.values.map(&:bytesize).max
 
     class Error < StandardError
       attr_reader :code
@@ -324,7 +325,7 @@ module OrchardProbe
         after = protocol_descendants(current, experiments)
         compare_protocol_subset!(before, after, uid, boundary)
         validate_external_role_exact!(boundary, uid)
-        validate_diagnostics_role_exact!(boundary, uid, reserve: true)
+        validate_diagnostics_role_exact!(boundary, uid)
         Layout.reject_identity_aliases!(
           [boundary.context.root, *boundary.context.roles.values, *current,
            boundary.context.external_input].compact
@@ -360,7 +361,7 @@ module OrchardProbe
         if boundary.diagnostic
           fail!("diagnostic_exists", "LAB-004 diagnostic result already exists")
         end
-        Layout.validate_diagnostics_role!(role, uid, reserve: true)
+        validate_diagnostics_capacity!(role, uid)
         sink = Layout.create_direct_file!(role, boundary.diagnostic_name, 0o600, uid)
         role.identity = Layout.identity(role.handle.stat)
         sink.handle.write(message)
@@ -452,10 +453,9 @@ module OrchardProbe
           skip_name: external_input_name
         )
         diagnostics_role = context.roles.fetch("diagnostics")
-        Layout.validate_diagnostics_role!(
+        validate_diagnostics_capacity!(
           diagnostics_role,
           uid,
-          reserve: true,
           opened: opened
         )
         initial_diagnostic_names = Layout.entries(diagnostics_role, uid)
@@ -714,7 +714,7 @@ module OrchardProbe
           )
         end
         validate_external_role_exact!(boundary, uid)
-        validate_diagnostics_role_exact!(boundary, uid, reserve: true)
+        validate_diagnostics_role_exact!(boundary, uid)
         Layout.revalidate_opened!(boundary.opened, uid)
         true
       ensure
@@ -746,7 +746,7 @@ module OrchardProbe
       true
     end
 
-    def validate_diagnostics_role_exact!(boundary, uid, reserve:)
+    def validate_diagnostics_role_exact!(boundary, uid)
       role = boundary.context.roles.fetch("diagnostics")
       refresh_mutated_directory!(role, uid)
       unless Layout.entries(role, uid).sort == boundary.initial_diagnostic_names.sort
@@ -754,10 +754,9 @@ module OrchardProbe
       end
       current = []
       begin
-        Layout.validate_diagnostics_role!(
+        validate_diagnostics_capacity!(
           role,
           uid,
-          reserve: reserve,
           opened: current
         )
         compare_initial_diagnostics!(boundary, current, role)
@@ -765,6 +764,19 @@ module OrchardProbe
         current.reverse_each(&:close)
       end
       true
+    end
+
+    def validate_diagnostics_capacity!(role, uid, opened: nil)
+      total = Layout.validate_diagnostics_role!(
+        role,
+        uid,
+        reserve: true,
+        opened: opened
+      )
+      if total > Layout::MAX_DIAGNOSTIC_TOTAL_BYTES - MAX_DIAGNOSTIC_MESSAGE_BYTES
+        fail!("diagnostic_total", "LAB-004 diagnostics role lacks result capacity")
+      end
+      total
     end
 
     def protocol_descendants(objects, experiments_role)

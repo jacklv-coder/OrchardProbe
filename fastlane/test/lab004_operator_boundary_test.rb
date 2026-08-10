@@ -98,6 +98,37 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     refute_includes error.message, root
   end
 
+  def test_preflight_reserves_aggregate_capacity_for_the_largest_diagnostic
+    root = fresh_layout("diagnostic-byte-reservation")
+    diagnostic_root = File.join(root, "diagnostics")
+    reserved = Boundary::MAX_DIAGNOSTIC_MESSAGE_BYTES
+    sizes = [
+      Layout::MAX_DIAGNOSTIC_FILE_BYTES,
+      Layout::MAX_DIAGNOSTIC_FILE_BYTES,
+      Layout::MAX_DIAGNOSTIC_FILE_BYTES,
+      Layout::MAX_DIAGNOSTIC_FILE_BYTES - reserved + 1,
+    ]
+    sizes.each_with_index do |size, index|
+      write_private(
+        File.join(diagnostic_root, "retained-#{index}.log"),
+        "x" * size,
+        0o400
+      )
+    end
+
+    error = assert_boundary_error("diagnostic_total") do
+      Boundary.preflight(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      )
+    end
+
+    refute_includes error.message, root
+    refute File.exist?(File.join(diagnostic_root, "operation.log"))
+  end
+
   def test_success_requires_the_exact_post_operation_lifecycle
     root = fresh_layout("missing-transition")
     create_experiment(root, "base")

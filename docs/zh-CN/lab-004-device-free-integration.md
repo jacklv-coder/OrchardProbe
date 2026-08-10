@@ -47,7 +47,8 @@ Closure。
 Closure 重新打开完整后置状态，按角色相对名称、类型、Device、Inode 与文件内容摘要比较
 全部既有和新捕获后代。因此同名替换、保留元数据的原位改写或未捕获的转换都会 Fail-closed。
 
-Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失败语句。成功后，Closure
+Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失败语句。Preflight
+同时预留一个文件位和较长固定语句所需的总字节容量，不会把已知的容量失败延迟到发布阶段。成功后，Closure
 重新打开并比较根/角色身份，要求精确后置状态清单、未改变的外部输入身份与字节、共享锁下
 每个保留诊断的持有身份与打开时 SHA-256、指定的有界只读诊断及完整无别名。Callback 失败时
 先精确移除本 Boundary 发布的诊断，再要求原

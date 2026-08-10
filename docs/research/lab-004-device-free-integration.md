@@ -64,7 +64,9 @@ metadata-preserving in-place rewrite, or uncaptured transition therefore fails
 closed.
 
 The Helper records only one fixed success/failure sentence through the held
-`diagnostics` descriptor. On success, closure reopens and compares the root and
+`diagnostics` descriptor. Preflight reserves both one file slot and enough
+aggregate bytes for the larger fixed sentence, so a ready result cannot defer a
+known capacity failure until publication. On success, closure reopens and compares the root and
 role identities, requires the exact post-state inventory, unchanged external
 input identity and bytes, every retained diagnostic's held identity and opening
 SHA-256 under a shared lock, the named bounded read-only diagnostic, and
