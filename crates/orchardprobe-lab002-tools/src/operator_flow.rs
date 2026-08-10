@@ -50,7 +50,6 @@ const SOURCE_ORACLE_NAME: &str = "frozen-oracle.json";
 const SOURCE_EVIDENCE_NAME: &str = "preupload-evidence.json";
 const INSTALL_ACK_NAME: &str = "installation-acknowledgement.json";
 const INSTALL_ENVELOPE_NAME: &str = "installation-envelope.json";
-const EXPERIMENT_DIRECTORY_NAME: &str = "lab002-experiment";
 const EXPERIMENT_DIRECTORY_BINDING_NAME: &str = "experiment-directory-binding.json";
 const EXPERIMENT_DIRECTORY_BINDING_SCHEMA: &str =
     "orchardprobe.lab002.experiment-directory-binding.v1";
@@ -409,7 +408,7 @@ fn signed_experiment_directory_binding(
         parent_inode: parent_identity.1.to_string(),
         experiment_device: experiment_identity.0.to_string(),
         experiment_inode: experiment_identity.1.to_string(),
-        experiment_name: EXPERIMENT_DIRECTORY_NAME.into(),
+        experiment_name: experiment_id.into(),
         experiment_id: experiment_id.into(),
     };
     let message = canonical_json(&binding)
@@ -444,8 +443,8 @@ fn verify_experiment_directory_binding(
     source: &SourceBundle,
     expected_experiment_id: &str,
 ) -> Result<(), String> {
-    if root.canonical_path.file_name() != Some(OsStr::new(EXPERIMENT_DIRECTORY_NAME)) {
-        return Err("experiment is not the fixed published directory".into());
+    if root.canonical_path.file_name() != Some(OsStr::new(expected_experiment_id)) {
+        return Err("experiment is not the opaque published directory".into());
     }
     let parent_path = root
         .canonical_path
@@ -505,7 +504,7 @@ fn verify_experiment_directory_binding(
             .verify_strict(&message, &signature)
             .is_err()
         || binding.schema != EXPERIMENT_DIRECTORY_BINDING_SCHEMA
-        || binding.experiment_name != EXPERIMENT_DIRECTORY_NAME
+        || binding.experiment_name != expected_experiment_id
         || binding.experiment_id != expected_experiment_id
         || !parent_path_metadata.is_dir()
         || parent_path_metadata.file_type().is_symlink()
@@ -526,7 +525,7 @@ fn verify_experiment_directory_binding(
         ) != experiment_identity
         || (experiment_metadata.dev(), experiment_metadata.ino()) != experiment_identity
     {
-        return Err("experiment is not the originally published fixed directory".into());
+        return Err("experiment is not the originally published opaque directory".into());
     }
     Ok(())
 }
@@ -544,8 +543,13 @@ fn held_experiment_root(
     descriptor: File,
 ) -> Result<PrivateOutputRoot, String> {
     let root = held_root(path, identity, descriptor)?;
-    if root.canonical_path.file_name() != Some(OsStr::new(EXPERIMENT_DIRECTORY_NAME)) {
-        return Err("experiment is not the fixed published directory".into());
+    let name = root
+        .canonical_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| "experiment opaque directory name is invalid".to_owned())?;
+    if !is_lower_hex(name, 64) {
+        return Err("experiment opaque directory name is invalid".into());
     }
     Ok(root)
 }
@@ -2038,7 +2042,7 @@ fn start_enrollment(
     };
     publish_prebuild_directory_guarded_with_generated_files(
         &output,
-        EXPERIMENT_DIRECTORY_NAME,
+        &acknowledgement.experiment_id,
         &[
             (SOURCE_MANIFEST_NAME, &source.manifest),
             (SOURCE_ORACLE_NAME, &source.oracle),
@@ -2570,15 +2574,14 @@ mod tests {
     use zip::{CompressionMethod, ZipWriter};
 
     use super::{
-        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_BINDING_NAME, EXPERIMENT_DIRECTORY_NAME,
-        EvidenceArtifactIdentity, HeldEvidenceArtifact, INSTALL_ACK_NAME, INSTALL_ENVELOPE_NAME,
-        MANIFEST_NAME, ORACLE_NAME, PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME,
-        RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME, SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME,
-        SignedExperimentDirectoryBinding, SourceBundle, UPLOAD_RESULT_NAME, UploadResult,
-        candidate_inventory, derive_prebuild_bindings, exact_inventory,
-        has_checkpoint_3_legacy_evidence_digest, has_exact_derived_prebuild_bindings,
-        legacy_reboot_device_rebind_matches, next_run_ordinal, open_run_ordinal,
-        publish_operator_phase, read_candidate_reconciled_upload_records,
+        EVIDENCE_NAME, EXPERIMENT_DIRECTORY_BINDING_NAME, EvidenceArtifactIdentity,
+        HeldEvidenceArtifact, INSTALL_ACK_NAME, INSTALL_ENVELOPE_NAME, MANIFEST_NAME, ORACLE_NAME,
+        PreuploadEvidence, RUN_ACK_NAME, RUN_ENVELOPE_NAME, RUN_INTENT_NAME, SOURCE_EVIDENCE_NAME,
+        SOURCE_MANIFEST_NAME, SOURCE_ORACLE_NAME, SignedExperimentDirectoryBinding, SourceBundle,
+        UPLOAD_RESULT_NAME, UploadResult, candidate_inventory, derive_prebuild_bindings,
+        exact_inventory, has_checkpoint_3_legacy_evidence_digest,
+        has_exact_derived_prebuild_bindings, legacy_reboot_device_rebind_matches, next_run_ordinal,
+        open_run_ordinal, publish_operator_phase, read_candidate_reconciled_upload_records,
         require_empty_output_root, require_retained_source_match,
         require_unchanged_source_artifact, sha256_hex, signed_experiment_directory_binding,
         split_fingerprint_and_receipt, valid_upload_result, validate_evidence_artifact,
@@ -2892,7 +2895,7 @@ mod tests {
         };
         assert!(require_empty_output_root(&root).is_ok());
 
-        fs::create_dir(temporary.path().join(EXPERIMENT_DIRECTORY_NAME)).unwrap();
+        fs::create_dir(temporary.path().join("11".repeat(32))).unwrap();
         assert_eq!(
             require_empty_output_root(&root),
             Err("operator enrollment output root must be empty".into())
@@ -2907,7 +2910,8 @@ mod tests {
             std::os::unix::fs::PermissionsExt::from_mode(0o700),
         )
         .unwrap();
-        let original_path = original_parent.path().join(EXPERIMENT_DIRECTORY_NAME);
+        let experiment_id = "11".repeat(32);
+        let original_path = original_parent.path().join(&experiment_id);
         fs::create_dir(&original_path).unwrap();
         fs::set_permissions(
             &original_path,
@@ -2916,7 +2920,6 @@ mod tests {
         .unwrap();
         let parent_metadata = fs::metadata(original_parent.path()).unwrap();
         let experiment_metadata = fs::metadata(&original_path).unwrap();
-        let experiment_id = "11".repeat(32);
         let source = SourceBundle {
             signing_key: SigningKey::from_bytes(&[7; 32]),
             manifest: Vec::new(),
@@ -2950,7 +2953,7 @@ mod tests {
             std::os::unix::fs::PermissionsExt::from_mode(0o700),
         )
         .unwrap();
-        let copied_path = copied_parent.path().join(EXPERIMENT_DIRECTORY_NAME);
+        let copied_path = copied_parent.path().join(&experiment_id);
         fs::create_dir(&copied_path).unwrap();
         fs::set_permissions(
             &copied_path,
@@ -2970,7 +2973,7 @@ mod tests {
         };
         assert_eq!(
             verify_experiment_directory_binding(&copied, &source, &experiment_id),
-            Err("experiment is not the originally published fixed directory".into())
+            Err("experiment is not the originally published opaque directory".into())
         );
 
         let copied_parent_metadata = fs::metadata(copied_parent.path()).unwrap();
@@ -2990,7 +2993,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             verify_experiment_directory_binding(&copied, &source, &experiment_id),
-            Err("experiment is not the originally published fixed directory".into())
+            Err("experiment is not the originally published opaque directory".into())
         );
     }
 

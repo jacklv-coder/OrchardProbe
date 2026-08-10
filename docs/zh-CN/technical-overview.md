@@ -220,8 +220,12 @@ LAB-002 用于评估仅限首方 DemoLab 的受保护到明文自观测 Oracle�
 永不离开设备。Inbox 操作串行化，且只消费原子隔离、Descriptor 身份匹配的 Record。
 Host/Helper 永远不能访问共享容器。
 已合并的无设备实现只覆盖 Issue #55 的有界设计与合成/Simulator 验证，不建立受
-保护 Oracle，也不授权签名 Build、TestFlight 上传或设备观察。LAB-002 尚未完成
-真机验证，且只有取得 Go 结果后才能解除 DEVICE-001 的阻塞。
+保护 Oracle，也不授权签名 Build、TestFlight 上传或设备观察。LAB-002 已以保留流程性
+No-Go 关闭；LAB-003 随后只建立三角色文件系统布局，LAB-004 检查点 2 增加含七个固定
+Lifecycle Profile 的无设备 Host Adapter。受保护 Helper 发布不透明 64-hex 实验子目录，
+仅在 Receipt/Export 字节匹配持有的 `external-inputs` Descriptor 时接受输入，写入固定
+有界诊断并要求精确角色 Closure。这些变化仍不执行设备观察，也不建立受保护 Oracle；
+`DEVICE-001` 在取得另行评审的 LAB-004 Go 结果前继续阻塞。
 
 ### 6. 有界 Host/Helper Session
 

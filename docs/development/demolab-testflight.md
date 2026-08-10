@@ -64,6 +64,47 @@ installation, launch, or device operation. Its regression suite is:
 ruby fastlane/test/lab003_layout_test.rb
 ```
 
+## LAB-004 device-free Host boundary
+
+LAB-004 checkpoint 2 adds a second credential-free layer; it still does not
+open any historical lifecycle lane. Prepare a new empty three-role root:
+
+```sh
+export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_LAB004_PRIVATE_ROOT=/canonical/private/path/orchardprobe-lab004
+bundle _4.0.16_ exec fastlane ios demolab_lab004_prepare_layout
+```
+
+The device-free preflight accepts exactly one operation profile. For example,
+the enrollment-start profile requires the `experiments` and `external-inputs`
+roles to be empty and only verifies that a new diagnostic name can later be
+created safely:
+
+```sh
+export DEMO_LAB_LAB004_OPERATION=operator-start-enrollment
+export DEMO_LAB_LAB004_DIAGNOSTIC_NAME=start-enrollment.log
+bundle _4.0.16_ exec fastlane ios demolab_lab004_operator_preflight
+```
+
+The other allowed operation names are `operator-close-enrollment`,
+`operator-start-run-1`, `operator-close-run-1`, `operator-start-run-2`,
+`operator-close-run-2`, and `operator-verify`. Later-state profiles additionally
+require `DEMO_LAB_LAB004_EXPERIMENT_NAME`; close profiles require one direct
+`DEMO_LAB_LAB004_EXTERNAL_INPUT_NAME` whose fixed Receipt/Export kind is derived
+from the operation rather than supplied by the caller.
+
+This lane reports role-level readiness only. It never runs the Helper, creates
+or consumes an envelope, signs or uploads a build, contacts Apple, or queries a
+device. The historical `demolab_operator_*` lanes remain independently closed
+and use a separately named legacy wrapper behind that early rejection. The
+LAB-004 Helper wrapper requires an active held boundary as a mandatory argument;
+there is no optional fail-open path around its binding, input, and diagnostic
+guard. The synthetic regression suite is:
+
+```sh
+ruby fastlane/test/lab004_operator_boundary_test.rb
+```
+
 ## Why this controlled build exists
 
 The ordinary DemoLab CI product is an unsigned Simulator build. It can prove

@@ -47,6 +47,42 @@ LAB-002 保留证据，不创建或消费信封，也不执行 Build、上传、
 ruby fastlane/test/lab003_layout_test.rb
 ```
 
+## LAB-004 无设备 Host 边界
+
+LAB-004 检查点 2 新增第二层无凭据边界，但仍不打开任何历史 Lifecycle Lane。先准备一个
+全新的空三角色根：
+
+```sh
+export DEMO_LAB_CONFIRM_LOCAL_MANUAL_RUN=I_AM_RUNNING_LOCALLY_OUTSIDE_CI
+export DEMO_LAB_LAB004_PRIVATE_ROOT=/canonical/private/path/orchardprobe-lab004
+bundle _4.0.16_ exec fastlane ios demolab_lab004_prepare_layout
+```
+
+无设备 Preflight 只接受一个固定操作 Profile。例如 Enrollment Start 要求 `experiments`
+与 `external-inputs` 为空，只验证稍后可以安全创建一个全新诊断名称：
+
+```sh
+export DEMO_LAB_LAB004_OPERATION=operator-start-enrollment
+export DEMO_LAB_LAB004_DIAGNOSTIC_NAME=start-enrollment.log
+bundle _4.0.16_ exec fastlane ios demolab_lab004_operator_preflight
+```
+
+其余允许的操作名为 `operator-close-enrollment`、`operator-start-run-1`、
+`operator-close-run-1`、`operator-start-run-2`、`operator-close-run-2` 与
+`operator-verify`。后续状态 Profile 还需要 `DEMO_LAB_LAB004_EXPERIMENT_NAME`；Close
+Profile 需要一个直接子项 `DEMO_LAB_LAB004_EXTERNAL_INPUT_NAME`，其固定 Receipt/Export
+类型由操作推导，调用方不能另行指定。
+
+该 Lane 只报告角色级 Ready；绝不运行 Helper、创建或消费信封、签名或上传 Build、访问
+Apple 或查询设备。历史 `demolab_operator_*` Lane 继续由独立门禁关闭，并只在该早期拒绝
+之后引用单独命名的 Legacy Wrapper。LAB-004 Helper Wrapper 把 Active 且持有 Descriptor
+的 Boundary 设为必填参数，不存在绕过 Binding、Input 与 Diagnostic 保护的可选 Fail-open
+路径。合成回归 Suite 为：
+
+```sh
+ruby fastlane/test/lab004_operator_boundary_test.rb
+```
+
 ## 目的
 
 TestFlight 只用于准备一个由项目自己开发、自己签名、自己上传并安装到自有 iPhone
