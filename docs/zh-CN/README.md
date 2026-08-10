@@ -26,8 +26,8 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
   `1.0 (3)` 候选/Oracle 授权、顺序实现门禁与脱敏本地候选记录。
 - [LAB-002 检查点 4 进度](lab-002-checkpoint-4-progress.md)：已对账的内部上传、
   Host 工具门禁、终态 Enrollment 尝试及保留的流程性 No-Go。
-- [LAB-003 外部工件布局](lab-003-external-artifact-layout.md)：当前无设备后续
-  检查点，在未来授权前分离严格控制工件、操作员输入与诊断。
+- [LAB-003 外部工件布局](lab-003-external-artifact-layout.md)：已完成的无设备后续
+  门禁，在未来授权前分离严格控制工件、操作员输入与诊断。
 - [LAB-003 无设备实现结果](lab-003-implementation-result.md)：记录仅布局 Go 与继续
   有效的设备仪式 No-Go；不建立设备 Backend 或可用 IPA 砸壳。
 - [范围与威胁模型（英文）](../architecture/RFC-0001-scope-and-threat-model.md)

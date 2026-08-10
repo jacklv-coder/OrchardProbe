@@ -4,7 +4,7 @@
 
 Tracking Issue: [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-Status: **checkpoint 3 active — PR #87**
+Status: **complete — layout Go / device-ceremony No-Go through PR #87**
 
 This record evaluates only the device-free filesystem-role gate defined by the
 [LAB-003 layout contract](lab-003-external-artifact-layout.md). It contains no
@@ -40,7 +40,7 @@ by this checkpoint.
 |---:|---|---|---|
 | 3A | Record sanitized implementation evidence | `done` | Only public PR, commit, CI, test, and review facts appear above; no private artifact was opened |
 | 3B | Validate the bilingual result locally | `done` | English/Chinese meaning, links, patch formatting, documentation consistency, both Ruby regression runs, and Codex CR passed |
-| 3C | Publish and close | `active — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87) must pass required CI and review plus pre-merge Codex CR; its merge then closes Issue #84 |
+| 3C | Publish and close | `done — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87) passed required CI and review plus pre-merge Codex CR, merged, and closed Issue #84 |
 
 ## Decision
 
@@ -57,8 +57,8 @@ or compatibility claim.
 
 ## Next gate
 
-LAB-003 may close after this record passes local checks, Codex CR, PR review,
-required CI, and merge. A later real-device proposal must be a new sequential
+LAB-003 closed when PR #87 passed local checks, Codex CR, PR review, required
+CI, and merged. A later real-device proposal must be a new sequential
 checkpoint that names one exact first-party build/device tuple, states why the
 protected-oracle prerequisite is satisfied, fixes the allowed external and
 device actions, and obtains fresh explicit authorization immediately before
