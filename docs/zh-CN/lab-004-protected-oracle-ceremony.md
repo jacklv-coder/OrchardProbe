@@ -4,7 +4,7 @@
 
 跟踪 Issue：[#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)
 
-状态：**提议激活 — 仅文档与无设备评审**
+状态：**提议激活 — PR #90；仅文档与无设备评审**
 
 LAB-004 是针对 DemoLab `1.0 (4)` 的全新首方实验。它要回答：当每个外部输入与诊断都
 遵守 LAB-003 角色边界时，现有固定区间自观测器能否闭合受保护 Oracle 证据链。它不会
@@ -60,7 +60,7 @@ Host 必须在创建或消费授权之前及关闭时，执行 LAB-003 的完整
 
 | 顺序 | 检查点 | 激活合并后的状态 | 门禁 |
 |---:|---|---|---|
-| 1 | 激活与后续设计 | `done` | Issue #89、本双语契约与台账新增行进入 `main` |
+| 1 | 激活与后续设计 | `PR #90 合并后 done` | Issue #89、[PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90)、本双语契约与台账新增行进入 `main` |
 | 2 | 无设备角色集成与合成回归 | `active` | 在现有受保护 Host 流程周围强制 LAB-003 Prepare/Preflight/Closure，同时全部外部与设备 Lane 保持关闭 |
 | 3 | 精确签名 `1.0 (4)` 候选与冻结 Oracle | `planned` | 需要独立评审的检查点和全新明确授权；不含上传或设备动作 |
 | 4 | 一次内部上传与安装 Enrollment | `planned` | 精确检查点 3 Tuple 必须已合并并独立复核；上传、安装与 Enrollment 分别需要其声明的全新授权 |

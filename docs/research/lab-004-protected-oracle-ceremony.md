@@ -4,7 +4,7 @@
 
 Tracking Issue: [#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)
 
-Status: **activation proposed — documentation and device-free review only**
+Status: **activation proposed — PR #90; documentation and device-free review only**
 
 LAB-004 is a new first-party experiment for DemoLab `1.0 (4)`. It asks whether
 the existing fixed-range self-observer can close the protected-oracle evidence
@@ -75,7 +75,7 @@ evidence and never broadens or retries the action.
 
 | Order | Checkpoint | Status after activation merges | Gate |
 |---:|---|---|---|
-| 1 | Activation and successor design | `done` | Issue #89, this bilingual contract, and the ledger insertion are on `main` |
+| 1 | Activation and successor design | `done after PR #90 merges` | Issue #89, [PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90), this bilingual contract, and the ledger insertion are on `main` |
 | 2 | Device-free role integration and synthetic regressions | `active` | Require LAB-003 prepare/preflight/closure around the existing guarded Host flow while every external and device lane remains closed |
 | 3 | Exact signed `1.0 (4)` candidate and frozen oracle | `planned` | A separate reviewed checkpoint and fresh explicit authorization are required; no upload or device action |
 | 4 | One internal upload and installation enrollment | `planned` | The exact checkpoint-3 tuple must be merged and independently revalidated; upload, installation, and enrollment each require their stated fresh authorization |
