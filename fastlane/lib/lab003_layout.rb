@@ -190,6 +190,9 @@ module OrchardProbe
       context = open_layout(root_path, repository_root: repository_root, uid: uid)
       opened = [context.root, *context.roles.values]
       begin
+        acquire_diagnostics_role_lock!(
+          context.roles.fetch("diagnostics")
+        ) if diagnostic_name
         after_layout_open&.call
         validate_experiments_role!(
           context.roles.fetch("experiments"),
@@ -302,6 +305,7 @@ module OrchardProbe
       parent_reaped = false
       process_group_closed = false
       begin
+        acquire_diagnostics_role_lock!(diagnostic)
         validate_diagnostics_role!(diagnostic, uid, reserve: true)
         sink = create_direct_file!(diagnostic, name, 0o600, uid)
         diagnostic.identity = identity(diagnostic.handle.stat)
@@ -598,6 +602,7 @@ module OrchardProbe
     end
 
     def reserve_diagnostic!(role, name, uid)
+      acquire_diagnostics_role_lock!(role)
       validate_diagnostics_role!(role, uid, reserve: true)
       sink = create_direct_file!(role, name, 0o600, uid)
       role.identity = identity(role.handle.stat)
@@ -617,6 +622,18 @@ module OrchardProbe
           sink&.close
         end
       end
+    end
+
+    def acquire_diagnostics_role_lock!(role)
+      unless role.handle.flock(File::LOCK_EX | File::LOCK_NB)
+        fail!(
+          "diagnostic_role_lock",
+          "LAB-003 diagnostics role is already owned by another controlled lane"
+        )
+      end
+      true
+    rescue SystemCallError
+      fail!("diagnostic_role_lock", "LAB-003 diagnostics role lock failed closed")
     end
 
     def new_private_root_path!(raw_path, repository_root, uid)

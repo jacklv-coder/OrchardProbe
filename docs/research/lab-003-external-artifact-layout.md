@@ -63,6 +63,10 @@ are rejected. The reviewed wrapper must create the sink, constrain child output
 to the same per-file ceiling, enforce a maximum 30-second wall-clock lifetime,
 and terminate the complete child process group before final validation;
 arbitrary caller redirection is not a trusted diagnostic path.
+Every controlled diagnostic reservation or capture takes a nonblocking
+exclusive lock on the held `diagnostics` role descriptor before its first
+inventory and retains it until the context closes. A competing controlled
+writer therefore fails closed before creating or deleting a role entry.
 
 ## Preflight order
 

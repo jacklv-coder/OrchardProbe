@@ -33,3 +33,6 @@ Research designs:
 - [LAB-004 fresh protected-oracle ceremony](lab-004-protected-oracle-ceremony.md)
   defines the new DemoLab `1.0 (4)` six-checkpoint experiment, initially
   authorizing device-free integration only.
+- [LAB-004 device-free Host integration](lab-004-device-free-integration.md)
+  records the closed operation profiles, opaque experiment publication,
+  preflight/closure enforcement, and synthetic checkpoint-2 evidence.

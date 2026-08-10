@@ -4,7 +4,7 @@
 
 跟踪 Issue：[#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)
 
-状态：**提议激活 — PR #90；仅文档与无设备评审**
+状态：**提议完成检查点 2 无设备实现；外部动作保持关闭**
 
 LAB-004 是针对 DemoLab `1.0 (4)` 的全新首方实验。它要回答：当每个外部输入与诊断都
 遵守 LAB-003 角色边界时，现有固定区间自观测器能否闭合受保护 Oracle 证据链。它不会
@@ -61,8 +61,8 @@ Host 必须在创建或消费授权之前及关闭时，执行 LAB-003 的完整
 | 顺序 | 检查点 | 激活合并后的状态 | 门禁 |
 |---:|---|---|---|
 | 1 | 激活与后续设计 | `PR #90 合并后 done` | Issue #89、[PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90)、本双语契约与台账新增行进入 `main` |
-| 2 | 无设备角色集成与合成回归 | `active` | 在现有受保护 Host 流程周围强制 LAB-003 Prepare/Preflight/Closure，同时全部外部与设备 Lane 保持关闭 |
-| 3 | 精确签名 `1.0 (4)` 候选与冻结 Oracle | `planned` | 需要独立评审的检查点和全新明确授权；不含上传或设备动作 |
+| 2 | 无设备角色集成与合成回归 | `PR #91 合并后 done` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91)与[检查点 2 台账](lab-004-device-free-integration.md)要求在现有受保护 Host 流程周围强制 LAB-003 Prepare/Preflight/Closure，同时全部外部与设备 Lane 保持关闭 |
+| 3 | 精确签名 `1.0 (4)` 候选与冻结 Oracle | `下一提案 — 未授权` | 需要独立评审的检查点和全新明确授权；不含上传或设备动作 |
 | 4 | 一次内部上传与安装 Enrollment | `planned` | 精确检查点 3 Tuple 必须已合并并独立复核；上传、安装与 Enrollment 分别需要其声明的全新授权 |
 | 5 | 两轮干净观察 | `planned` | Enrollment 必须以精确已安装 Lineage 闭合；两个不同 Run 都需要全新信封和紧邻的明确授权 |
 | 6 | 脱敏 Go/No-Go 结果 | `planned` | 只发布非秘密证据，更新双语技术/用户状态并关闭 Issue #89 |
@@ -82,5 +82,5 @@ Go 也只允许另行提出 `DEVICE-001` 文档激活，不会启动 Backend 实
 
 ## 紧邻下一门禁
 
-本激活 PR 合并后，检查点 2 只能修改无设备代码与合成测试。检查点 1–2 不需要 Jack
-iPhone，也不得查询或操作它。
+检查点 2 实现 PR 合并后只能提议检查点 3；其独立激活通过评审并获得全新明确授权前不能
+执行。检查点 2 不需要 Jack iPhone，也不得查询或操作它；当前不授权签名或访问 Apple。

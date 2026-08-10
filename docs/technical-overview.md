@@ -274,8 +274,14 @@ descriptor-matched record. The host/helper never accesses the shared
 container. The merged device-free implementation is limited to the bounded
 Issue #55 design and synthetic/Simulator verification. The accepted upload does
 not establish the protected oracle, a device observation, or decryption.
-LAB-002 remains device-unverified, and DEVICE-001 remains blocked until LAB-002
-completes with a Go result.
+LAB-002 closed with a retained procedural No-Go. LAB-003 then established only
+the three-role filesystem layout, and LAB-004 checkpoint 2 adds a device-free
+Host adapter with seven fixed lifecycle profiles. The guarded Helper publishes
+an opaque 64-hex experiment child, accepts Receipt/Export bytes only when they
+match the held `external-inputs` descriptor, records a fixed bounded diagnostic,
+and requires exact role closure. These changes still perform no device
+observation and do not establish a protected oracle. `DEVICE-001` remains
+blocked pending a separately reviewed LAB-004 Go result.
 
 ### 6. Bounded host/helper session
 

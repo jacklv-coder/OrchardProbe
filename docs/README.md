@@ -40,6 +40,9 @@ implementation behind it. Start with the document that matches what you need:
 - [LAB-004 fresh protected-oracle ceremony](research/lab-004-protected-oracle-ceremony.md)
   — the new DemoLab `1.0 (4)` experiment contract and its separately gated
   device-free, signing, upload, enrollment, observation, and result phases.
+- [LAB-004 device-free Host integration](research/lab-004-device-free-integration.md)
+  — the seven closed Host transitions, held role/input/diagnostic boundary,
+  synthetic regressions, and checkpoint-3 gate.
 - [Bounded host/helper protocol](architecture/RFC-0002-bounded-host-helper-protocol.md)
   — the accepted device-free protocol design gate.
 - [Rust host architecture decision](architecture/ADR-0001-rust-host.md) — why

@@ -32,6 +32,8 @@ OrchardProbe 把简单的用户体验和内部安全敏感实现分开。可以�
   有效的设备仪式 No-Go；不建立设备 Backend 或可用 IPA 砸壳。
 - [LAB-004 全新受保护 Oracle 仪式](lab-004-protected-oracle-ceremony.md)：定义新的
   DemoLab `1.0 (4)` 六检查点实验；最初只授权无设备集成。
+- [LAB-004 无设备 Host 集成](lab-004-device-free-integration.md)：记录七个闭合 Host 转换、
+  持有式角色/输入/诊断边界、合成回归及检查点 3 门禁。
 - [范围与威胁模型（英文）](../architecture/RFC-0001-scope-and-threat-model.md)
 - [有界 Host/Helper 协议（英文）](../architecture/RFC-0002-bounded-host-helper-protocol.md)
 - [Rust Host 架构决策（英文）](../architecture/ADR-0001-rust-host.md)

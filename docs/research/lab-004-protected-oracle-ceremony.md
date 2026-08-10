@@ -4,7 +4,7 @@
 
 Tracking Issue: [#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)
 
-Status: **activation proposed — PR #90; documentation and device-free review only**
+Status: **checkpoint 2 device-free implementation proposed; external actions closed**
 
 LAB-004 is a new first-party experiment for DemoLab `1.0 (4)`. It asks whether
 the existing fixed-range self-observer can close the protected-oracle evidence
@@ -76,8 +76,8 @@ evidence and never broadens or retries the action.
 | Order | Checkpoint | Status after activation merges | Gate |
 |---:|---|---|---|
 | 1 | Activation and successor design | `done after PR #90 merges` | Issue #89, [PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90), this bilingual contract, and the ledger insertion are on `main` |
-| 2 | Device-free role integration and synthetic regressions | `active` | Require LAB-003 prepare/preflight/closure around the existing guarded Host flow while every external and device lane remains closed |
-| 3 | Exact signed `1.0 (4)` candidate and frozen oracle | `planned` | A separate reviewed checkpoint and fresh explicit authorization are required; no upload or device action |
+| 2 | Device-free role integration and synthetic regressions | `done after PR #91 merges` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) and the [checkpoint-2 ledger](lab-004-device-free-integration.md) require LAB-003 prepare/preflight/closure around the existing guarded Host flow while every external and device lane remains closed |
+| 3 | Exact signed `1.0 (4)` candidate and frozen oracle | `next proposal — not authorized` | A separate reviewed checkpoint and fresh explicit authorization are required; no upload or device action |
 | 4 | One internal upload and installation enrollment | `planned` | The exact checkpoint-3 tuple must be merged and independently revalidated; upload, installation, and enrollment each require their stated fresh authorization |
 | 5 | Two clean observations | `planned` | Enrollment must close with exact installed lineage; each distinct run requires a fresh envelope and immediately preceding explicit authorization |
 | 6 | Sanitized Go/No-Go result | `planned` | Publish only non-secret evidence, update bilingual technical/user status, and close Issue #89 |
@@ -103,6 +103,7 @@ start backend implementation or operate another app.
 
 ## Immediate next gate
 
-After this activation PR merges, checkpoint 2 may make device-free code and
-synthetic-test changes only. Jack iPhone is not needed and must not be queried
-or operated during checkpoints 1–2.
+After the checkpoint-2 implementation PR merges, checkpoint 3 may be proposed
+but cannot execute until its separate activation is reviewed and fresh explicit
+authorization is obtained. Jack iPhone is not needed and must not be queried or
+operated during checkpoint 2. No signing or Apple access is authorized.

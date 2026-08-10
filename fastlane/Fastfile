@@ -20,6 +20,7 @@ require "zip"
 require "zlib"
 
 require_relative "lib/lab003_layout"
+require_relative "lib/lab004_operator_boundary"
 
 DEMO_LAB_EVIDENCE_PROFILE = "orchardprobe.demolab.testflight-preupload.v1"
 DEMO_LAB_EVIDENCE_PURPOSE = "LAB-001 controlled first-party TestFlight preparation"
@@ -7475,7 +7476,7 @@ ensure
   writer.close unless writer.closed?
 end
 
-def run_lab002_operator_helper!(
+def run_closed_lab002_operator_helper!(
   operation:,
   bindings:,
   input:,
@@ -7609,12 +7610,61 @@ def run_lab002_operator_helper!(
     unless reviewed_main_source_commit == source_commit
       UI.user_error!("The reviewed LAB-002 operator source changed during use.")
     end
-    result
+    block_given? ? yield(result) : result
   ensure
     acknowledgement_reader&.close unless acknowledgement_reader&.closed?
     acknowledgement_writer&.close unless acknowledgement_writer&.closed?
     FileUtils.rm_rf(tool_workspace) if tool_workspace
     operator_locks.reverse_each { |handle| handle.flock(File::LOCK_UN) rescue nil }
+  end
+end
+
+def run_lab002_operator_helper!(
+  operation:,
+  bindings:,
+  input:,
+  publishes:,
+  lab004_boundary:
+)
+  begin
+    OrchardProbe::Lab004OperatorBoundary.authorize_helper_bindings!(
+      lab004_boundary,
+      operation: operation,
+      bindings: bindings,
+      input: input
+    )
+  rescue OrchardProbe::Lab004OperatorBoundary::Error => error
+    UI.user_error!(error.message)
+  end
+
+  begin
+    result = run_closed_lab002_operator_helper!(
+      operation: operation,
+      bindings: bindings,
+      input: input,
+      publishes: publishes
+    ) do |helper_result|
+      OrchardProbe::Lab004OperatorBoundary.capture_transition!(
+        lab004_boundary,
+        result: helper_result
+      )
+      helper_result
+    end
+    OrchardProbe::Lab004OperatorBoundary.publish_diagnostic(
+      lab004_boundary,
+      "helper-success"
+    )
+    result
+  rescue
+    begin
+      OrchardProbe::Lab004OperatorBoundary.publish_diagnostic(
+        lab004_boundary,
+        "helper-failure"
+      )
+    rescue OrchardProbe::Lab004OperatorBoundary::Error
+      nil
+    end
+    raise
   end
 end
 
@@ -7668,6 +7718,56 @@ platform :ios do
     result
   end
 
+  desc "Prepare the device-free LAB-004 private role layout"
+  lane :demolab_lab004_prepare_layout do
+    ensure_manual_lane!
+    ensure_clean_source!
+    result = begin
+      OrchardProbe::Lab003Layout.prepare(
+        required_environment("DEMO_LAB_LAB004_PRIVATE_ROOT"),
+        repository_root: repository_root
+      )
+    rescue OrchardProbe::Lab003Layout::Error => error
+      UI.user_error!(error.message)
+    end
+    ensure_clean_source!
+    UI.success(
+      "Prepared the LAB-004 private role layout without creating an " \
+      "experiment, authorization, external-service request, or device action."
+    )
+    result
+  end
+
+  desc "Validate one LAB-004 Host operation profile without executing it"
+  lane :demolab_lab004_operator_preflight do
+    ensure_manual_lane!
+    ensure_clean_source!
+    optional = lambda do |name|
+      value = ENV[name]
+      value && !value.empty? ? value : nil
+    end
+    result = begin
+      OrchardProbe::Lab004OperatorBoundary.preflight(
+        required_environment("DEMO_LAB_LAB004_PRIVATE_ROOT"),
+        operation: required_environment("DEMO_LAB_LAB004_OPERATION"),
+        experiment_name: optional.call("DEMO_LAB_LAB004_EXPERIMENT_NAME"),
+        external_input_name: optional.call("DEMO_LAB_LAB004_EXTERNAL_INPUT_NAME"),
+        diagnostic_name: required_environment(
+          "DEMO_LAB_LAB004_DIAGNOSTIC_NAME"
+        ),
+        repository_root: repository_root
+      )
+    rescue OrchardProbe::Lab004OperatorBoundary::Error => error
+      UI.user_error!(error.message)
+    end
+    ensure_clean_source!
+    UI.success(
+      "LAB-004 Host operation profile is device-free ready. No Helper, " \
+      "authorization, external service, or device action was executed."
+    )
+    result
+  end
+
   desc "Historical (closed): create a LAB-002 installation control bundle"
   lane :demolab_operator_start_enrollment do
     reject_closed_lab002_checkpoint_4!
@@ -7709,7 +7809,7 @@ platform :ios do
           ),
         },
       )
-      result = run_lab002_operator_helper!(
+      result = run_closed_lab002_operator_helper!(
         operation: "operator-start-enrollment",
         bindings: [
           {
@@ -7789,7 +7889,7 @@ platform :ios do
       ) == "true"
         UI.user_error!("The full device-selection fingerprint was not confirmed.")
       end
-      result = run_lab002_operator_helper!(
+      result = run_closed_lab002_operator_helper!(
         operation: "operator-close-enrollment",
         bindings: [
           {
@@ -7853,7 +7953,7 @@ platform :ios do
       request = lab002_operator_assertions!.merge(
         "schema" => "orchardprobe.lab002.operator-start-run.v1"
       )
-      result = run_lab002_operator_helper!(
+      result = run_closed_lab002_operator_helper!(
         operation: "operator-start-run",
         bindings: [
           {
@@ -7915,7 +8015,7 @@ platform :ios do
         512 * 1024,
         "LAB-002 signed session export"
       )
-      result = run_lab002_operator_helper!(
+      result = run_closed_lab002_operator_helper!(
         operation: "operator-close-run",
         bindings: [
           {
@@ -7985,7 +8085,7 @@ platform :ios do
           "DEMO_LAB_BUILD_OUTPUT_DIRECTORY", "LAB-002 frozen candidate"
         )
       handles.concat([handle, prebuild_handle, candidate_handle])
-      result = run_lab002_operator_helper!(
+      result = run_closed_lab002_operator_helper!(
         operation: "operator-verify",
         bindings: [
           {

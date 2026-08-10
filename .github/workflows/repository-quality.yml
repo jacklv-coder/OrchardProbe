@@ -37,6 +37,13 @@ jobs:
           ruby -c fastlane/test/lab003_layout_test.rb
           ruby fastlane/test/lab003_layout_test.rb
 
+      - name: Test LAB-004 device-free Host boundary
+        shell: bash
+        run: |
+          ruby -c fastlane/lib/lab004_operator_boundary.rb
+          ruby -c fastlane/test/lab004_operator_boundary_test.rb
+          ruby fastlane/test/lab004_operator_boundary_test.rb
+
       - name: Check required project files
         shell: bash
         run: |
