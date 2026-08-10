@@ -30,27 +30,28 @@ Enrollment Publisher 现在使用已签名的随机 64 位小写十六进制 `ex
 
 ## 强制链
 
-Callback 能到达受保护 Helper 之前，Adapter 会打开私有根和三个角色，校验精确选中
+检查点 2 中任何生产 Callback 都不能到达受保护 Helper。Adapter 会打开私有根和三个角色，校验精确选中
 Lifecycle 清单，持有全部 Control/Phase 工件，只通过 `external-inputs` Descriptor 打开
 Receipt 或 Export，并验证无别名、稳定身份和一个全新诊断名称。首次读取诊断清单前，Adapter
 还会取得非阻塞排他 Diagnostics 角色锁，并一直持有到校验、发布、清理及 Descriptor 关闭全部
-结束；所有受控诊断 Writer 都必须遵循这一锁协议。Helper 还会拒绝不匹配的
-主目录 Descriptor：Enrollment Start 必须使用持有的 `experiments` 角色，后续操作必须使用
-持有的不透明实验子目录。检查点 2 只允许这一个角色内 Binding，并拒绝所有额外 Descriptor；
-三 Descriptor Helper 启动保持关闭，直到后续检查点审查每个额外来源 Binding 应归属的角色。
-Receipt/Export 字节必须与持有外部输入 Descriptor 读取的字节完全相同。校验成功后会在 Active
-Boundary 上记录一次性 Helper 授权；转换捕获与成功诊断都会拒绝任何绕过该授权的调用。
+结束；所有受控诊断 Writer 都必须遵循这一锁协议。生产授权入口会重复完整前置状态校验，
+随后对任何 Binding 请求返回终态 `helper_launch_closed`。真实 Helper 需要三个目录 Binding，
+而本角色边界只能说明主 `experiments` 角色或不透明实验子目录的归属。后续检查点必须审查
+另外两个来源 Binding，并把 Helper 实际消费的每个字节绑定到已接受快照，之后才能开放执行。
+Receipt/Export 字节会通过持有的外部输入 Descriptor 保留，但检查点 2 不会把它们交给 Helper。
+合成测试只设置内部授权状态来覆盖转换后捕获与 Closure；生产调用方无法从公开授权 API 获得
+该状态。
 
-紧邻 Helper 授权前，Host 会重新检查三个角色的精确清单，重新打开选中的 Lifecycle，并将
+紧邻返回关闭授权决定前，Host 会重新检查三个角色的精确清单，重新打开选中的 Lifecycle，并将
 每个既有 Control/Phase 后代与其持有身份及打开时 SHA-256 比较。每个文件从捕获摘要到
 Closure 都持有非阻塞共享读锁，使遵循协调协议的排他写入者无法进入；新转换工件也必须先
-加入该加锁集合。Helper 返回后，既有排他 Operator 目录锁仍会保持，直到 Host 捕获精确
-后置 Lifecycle；之后才能发布成功诊断。每个新发布的实验、Phase 目录和工件都会一直持有到
+加入该加锁集合。合成 Callback 返回后，既有排他 Operator 目录锁仍会保持，直到测试捕获精确
+后置 Lifecycle；之后合成 Closure 路径才能发布成功诊断。每个新发布的实验、Phase 目录和工件都会一直持有到
 Closure。
 Closure 重新打开完整后置状态，按角色相对名称、类型、Device、Inode 与文件内容摘要比较
 全部既有和新捕获后代。因此同名替换、保留元数据的原位改写或未捕获的转换都会 Fail-closed。
 
-Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失败语句。Preflight
+Boundary 诊断 API 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失败语句。Preflight
 同时预留一个文件位和较长固定语句所需的总字节容量，不会把已知的容量失败延迟到发布阶段。正常返回的操作
 必须携带 `helper-success` 状态，持久化的 `helper-failure` 语句绝不能闭合为成功。成功后，Closure
 重新打开并比较根/角色身份，要求精确后置状态清单、未改变的外部输入身份与字节、共享锁下
@@ -75,7 +76,7 @@ Sink 身份会在任何可能失败的创建后写入或校验前保留，因此
 |---:|---|---|---|
 | 2A | 让 Host 实验目录符合 LAB-003 | `done` | Rust 发布与签名 Binding 使用随机 64-hex 实验 ID；复制、改名或固定名称目录均失败 |
 | 2B | 新增持有式 Preflight 与 Closure | `done` | 七个固定 Profile 校验精确前/后清单、角色身份、别名和失败 Closure |
-| 2C | 约束 Helper 输入与诊断 | `done` | Helper 主 Binding 必须匹配 Active Boundary；启动前重新检查精确角色与持有后代；Receipt/Export 匹配持有外部输入；先捕获后置转换后代，再发布固定、有界、排他且仅 Owner 可访问的诊断 |
+| 2C | 保持 Helper 启动关闭并测试诊断 | `done` | 生产授权 API 重新检查精确角色与持有后代后返回 `helper_launch_closed`；合成转换覆盖后置状态捕获及固定、有界、排他、仅 Owner 可访问的诊断清理，但不声称 Helper 已运行 |
 | 2D | 新增合成回归与 CI | `done` | Ruby 转换/对抗测试、既有 LAB-003 Suite、Rust 测试、语法、格式及 CI Wiring 覆盖本无设备边界 |
 | 2E | 发布检查点 2 完成记录 | `PR #91 合并后完成` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) 必须通过 Codex CR、GitHub Review 与全部必需 CI 后才能合并 |
 

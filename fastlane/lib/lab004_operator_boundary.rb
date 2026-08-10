@@ -52,15 +52,6 @@ module OrchardProbe
         input_kind: nil
       ),
     }.freeze
-    HELPER_OPERATIONS = {
-      "operator-start-enrollment" => "operator-start-enrollment",
-      "operator-close-enrollment" => "operator-close-enrollment",
-      "operator-start-run-1" => "operator-start-run",
-      "operator-close-run-1" => "operator-close-run",
-      "operator-start-run-2" => "operator-start-run",
-      "operator-close-run-2" => "operator-close-run",
-      "operator-verify" => "operator-verify",
-    }.freeze
     DIAGNOSTIC_MESSAGES = {
       "helper-success" => "LAB-004 Host helper completed within the reviewed boundary.\n",
       "helper-failure" => "LAB-004 Host helper failed within the reviewed boundary.\n",
@@ -150,10 +141,6 @@ module OrchardProbe
 
       def helper_authorized?
         @helper_authorized
-      end
-
-      def record_helper_authorization!
-        @helper_authorized = true
       end
 
       def protocol_digest(relative)
@@ -311,29 +298,12 @@ module OrchardProbe
         fail!("helper_state", "LAB-004 Host helper authorization is out of order")
       end
       revalidate_prestate!(boundary)
-      unless HELPER_OPERATIONS.fetch(boundary.operation) == operation &&
-             bindings.is_a?(Array) && bindings.length == 1
-        fail!("helper_scope", "LAB-004 Host helper scope is invalid")
-      end
-      primary = bindings.first
-      unless primary.is_a?(Hash) &&
-             primary[:handle].respond_to?(:stat) &&
-             primary[:identity].is_a?(Array)
-        fail!("helper_binding", "LAB-004 Host helper binding is invalid")
-      end
-      expected = boundary.primary_directory
-      held = primary.fetch(:handle).stat
-      expected_stat = expected.handle.stat
-      identity = primary.fetch(:identity)
-      unless held.dev == expected_stat.dev && held.ino == expected_stat.ino &&
-             identity[0] == held.dev && identity[1] == held.ino
-        fail!("helper_binding", "LAB-004 Host helper binding is outside its role")
-      end
-      authorize_helper_input!(boundary, operation, input)
-      boundary.record_helper_authorization!
-      true
-    rescue KeyError, SystemCallError
-      fail!("helper_binding", "LAB-004 Host helper binding is invalid")
+      fail!(
+        "helper_launch_closed",
+        "LAB-004 checkpoint 2 does not authorize a Host helper launch"
+      )
+    rescue SystemCallError
+      fail!("helper_prestate", "LAB-004 Host helper pre-state failed closed")
     end
 
     def capture_transition!(boundary, result:)
@@ -443,26 +413,6 @@ module OrchardProbe
           sink&.close
         end
       end
-    end
-
-    def authorize_helper_input!(boundary, operation, input)
-      unless input.is_a?(String)
-        fail!("helper_input", "LAB-004 Host helper input is invalid")
-      end
-      case operation
-      when "operator-close-enrollment"
-        expected = read_external_input(boundary)
-        prefix, separator, receipt = input.partition("\n")
-        unless separator == "\n" && /\A[0-9a-f]{64}\z/.match?(prefix) &&
-               receipt == expected
-          fail!("helper_input", "LAB-004 enrollment input is outside its role")
-        end
-      when "operator-close-run"
-        unless input == read_external_input(boundary)
-          fail!("helper_input", "LAB-004 run input is outside its role")
-        end
-      end
-      true
     end
 
     def open_boundary!(

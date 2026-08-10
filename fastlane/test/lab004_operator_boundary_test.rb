@@ -62,7 +62,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       ) do |boundary|
         observed_boundary = boundary
         assert boundary.active?
-        assert_helper_binding(boundary, operation)
+        authorize_synthetic_transition(boundary, operation)
         if profile.input_kind
           assert_equal "synthetic-#{profile.input_kind}",
                        Boundary.read_external_input(boundary)
@@ -167,7 +167,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-close-enrollment")
+        authorize_synthetic_transition(boundary, "operator-close-enrollment")
         capture_transition(boundary)
         { "experiment_id" => EXPERIMENT }
       end
@@ -186,7 +186,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         { "experiment_id" => EXPERIMENT }
@@ -211,7 +211,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-close-enrollment")
+        authorize_synthetic_transition(boundary, "operator-close-enrollment")
         advance_experiment(root, "base", "enrollment-closed")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -241,7 +241,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-close-enrollment")
+        authorize_synthetic_transition(boundary, "operator-close-enrollment")
         advance_experiment(root, "base", "enrollment-closed")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -312,7 +312,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, status)
@@ -355,7 +355,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
-          assert_helper_binding(boundary, "operator-start-enrollment")
+          authorize_synthetic_transition(boundary, "operator-start-enrollment")
           create_experiment(root, "base")
           capture_transition(boundary)
           inject = true
@@ -383,7 +383,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
-          assert_helper_binding(boundary, "operator-start-enrollment")
+          authorize_synthetic_transition(boundary, "operator-start-enrollment")
           create_experiment(root, "base")
           capture_transition(boundary)
           Boundary.publish_diagnostic(boundary, "helper-success")
@@ -419,7 +419,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -445,7 +445,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -473,7 +473,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -498,7 +498,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -524,7 +524,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -561,7 +561,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
-          assert_helper_binding(boundary, "operator-start-enrollment")
+          authorize_synthetic_transition(boundary, "operator-start-enrollment")
           create_experiment(root, "base")
           capture_transition(boundary)
           Boundary.publish_diagnostic(boundary, "helper-success")
@@ -604,7 +604,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -639,7 +639,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       diagnostic_name: "operation.log",
       repository_root: repository_root
     ) do |boundary|
-      assert_helper_binding(boundary, "operator-start-enrollment")
+      authorize_synthetic_transition(boundary, "operator-start-enrollment")
       create_experiment(root, "base")
       capture_transition(boundary)
       Boundary.publish_diagnostic(boundary, "helper-success")
@@ -671,7 +671,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         repository_root: repository_root
       ) do |boundary|
         assert_exclusive_lock_is_held(retained)
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -728,78 +728,28 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     end
   end
 
-  def test_helper_binding_must_be_the_held_experiment_role
-    root = fresh_layout("helper-binding")
-    create_experiment(root, "run-1-control")
-    create_input(root, "export")
-    other = fresh_layout("other-helper-binding")
-
-    Boundary.with_operation(
-      root,
-      operation: "operator-close-run-1",
-      experiment_name: EXPERIMENT,
-      external_input_name: "export.json",
-      diagnostic_name: "operation.log",
-      repository_root: repository_root
-    ) do |boundary|
-      other_handle = File.open(File.join(other, "experiments"), File::RDONLY)
-      stat = other_handle.stat
-      begin
-        assert_boundary_error("helper_binding") do
-          Boundary.authorize_helper_bindings!(
-            boundary,
-            operation: "operator-close-run",
-            bindings: [{ handle: other_handle, identity: [stat.dev, stat.ino] }],
-            input: "synthetic-export"
-          )
-        end
-      ensure
-        other_handle.close
-      end
-      assert_helper_binding(boundary, "operator-close-run-1")
-      advance_experiment(root, "run-1-control", "run-1-closed")
-      capture_transition(boundary)
-      Boundary.publish_diagnostic(boundary, "helper-success")
-      { "experiment_id" => EXPERIMENT }
-    end
-  end
-
-  def test_helper_rejects_an_extra_unheld_directory_binding
-    root = fresh_layout("extra-helper-binding")
-    other = fresh_layout("extra-helper-binding-other")
-
+  def test_checkpoint_2_keeps_every_production_helper_launch_closed
+    root = fresh_layout("helper-launch-closed")
     Boundary.with_operation(
       root,
       operation: "operator-start-enrollment",
       diagnostic_name: "operation.log",
       repository_root: repository_root
     ) do |boundary|
-      primary = boundary.primary_directory
-      primary_stat = primary.handle.stat
-      other_handle = File.open(File.join(other, "experiments"), File::RDONLY)
-      other_stat = other_handle.stat
-      begin
-        assert_boundary_error("helper_scope") do
-          Boundary.authorize_helper_bindings!(
-            boundary,
-            operation: "operator-start-enrollment",
-            bindings: [
-              {
-                handle: primary.handle,
-                identity: [primary_stat.dev, primary_stat.ino],
-              },
-              {
-                handle: other_handle,
-                identity: [other_stat.dev, other_stat.ino],
-              },
-            ],
-            input: "{}"
-          )
-        end
-      ensure
-        other_handle.close
+      object = boundary.primary_directory
+      stat = object.handle.stat
+      bindings = Array.new(3) do
+        { handle: object.handle, identity: [stat.dev, stat.ino] }
       end
-      assert_helper_binding(boundary, "operator-start-enrollment")
+      assert_boundary_error("helper_launch_closed") do
+        Boundary.authorize_helper_bindings!(
+          boundary,
+          operation: "operator-start-enrollment",
+          bindings: bindings,
+          input: "{}"
+        )
+      end
+      authorize_synthetic_transition(boundary, "operator-start-enrollment")
       create_experiment(root, "base")
       capture_transition(boundary)
       Boundary.publish_diagnostic(boundary, "helper-success")
@@ -807,36 +757,47 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     end
   end
 
-  def test_helper_authorization_rechecks_exact_role_inventories
-    root = fresh_layout("helper-inventory-recheck")
+  def test_closed_helper_launch_sanitizes_a_prestate_syscall_failure
+    root = fresh_layout("helper-prestate-syscall")
     create_experiment(root, "enrollment-closed")
-    unexpected = File.join(root, "external-inputs", "unexpected.json")
-
-    Boundary.with_operation(
-      root,
-      operation: "operator-start-run-1",
-      experiment_name: EXPERIMENT,
-      diagnostic_name: "operation.log",
-      repository_root: repository_root
-    ) do |boundary|
-      write_private(unexpected, "unexpected", 0o600)
-      object = boundary.primary_directory
-      stat = object.handle.stat
-      assert_boundary_error("input_inventory") do
-        Boundary.authorize_helper_bindings!(
-          boundary,
-          operation: "operator-start-run",
-          bindings: [{ handle: object.handle, identity: [stat.dev, stat.ino] }],
-          input: "{}"
-        )
+    observed = nil
+    original = Layout.method(:open_experiment!)
+    inject = false
+    Layout.define_singleton_method(:open_experiment!) do |*args|
+      if inject
+        inject = false
+        raise Errno::ENOENT, "synthetic pre-state race"
       end
-      File.unlink(unexpected)
-      assert_helper_binding(boundary, "operator-start-run-1")
-      advance_experiment(root, "enrollment-closed", "run-1-control")
-      capture_transition(boundary)
-      Boundary.publish_diagnostic(boundary, "helper-success")
-      { "experiment_id" => EXPERIMENT }
+      original.call(*args)
     end
+
+    begin
+      assert_boundary_error("operation_failed") do
+        Boundary.with_operation(
+          root,
+          operation: "operator-start-run-1",
+          experiment_name: EXPERIMENT,
+          diagnostic_name: "operation.log",
+          repository_root: repository_root
+        ) do |boundary|
+          inject = true
+          observed = assert_boundary_error("helper_prestate") do
+            Boundary.authorize_helper_bindings!(
+              boundary,
+              operation: "operator-start-run",
+              bindings: [],
+              input: "{}"
+            )
+          end
+          raise "stop after the sanitized closed-launch failure"
+        end
+      end
+    ensure
+      Layout.define_singleton_method(:open_experiment!, original)
+    end
+
+    refute_nil observed
+    refute_includes observed.message, root
   end
 
   def test_closure_rejects_external_input_added_after_transition_capture
@@ -849,7 +810,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-enrollment")
+        authorize_synthetic_transition(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         write_private(
@@ -957,7 +918,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       repository_root: repository_root
     ) do |boundary|
       assert_exclusive_lock_is_held(control)
-      assert_helper_binding(boundary, "operator-start-run-1")
+      authorize_synthetic_transition(boundary, "operator-start-run-1")
       advance_experiment(root, "enrollment-closed", "run-1-control")
       capture_transition(boundary)
       artifact = File.join(
@@ -985,7 +946,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-run-1")
+        authorize_synthetic_transition(boundary, "operator-start-run-1")
         advance_experiment(root, "enrollment-closed", "run-1-control")
         paths = Layout::PHASE_INVENTORIES.fetch("run-1-control").map do |name|
           File.join(experiment, "run-1-control", name)
@@ -1017,7 +978,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
-          assert_helper_binding(
+          authorize_synthetic_transition(
             boundary,
             before ? "operator-start-run-1" : "operator-start-enrollment"
           )
@@ -1055,7 +1016,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
-        assert_helper_binding(boundary, "operator-start-run-1")
+        authorize_synthetic_transition(boundary, "operator-start-run-1")
         advance_experiment(root, "enrollment-closed", "run-1-control")
         artifact = File.join(
           root,
@@ -1210,34 +1171,12 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     name
   end
 
-  def assert_helper_binding(boundary, boundary_operation)
-    object = boundary.primary_directory
-    stat = object.handle.stat
-    helper_operation = Boundary::HELPER_OPERATIONS.fetch(boundary_operation)
-    helper_input = case helper_operation
-                   when "operator-close-enrollment"
-                     "#{'f' * 64}\n#{Boundary.read_external_input(boundary)}"
-                   when "operator-close-run"
-                     Boundary.read_external_input(boundary)
-                   else
-                     "{}"
-                   end
-    if boundary.profile.input_kind
-      assert_boundary_error("helper_input") do
-        Boundary.authorize_helper_bindings!(
-          boundary,
-          operation: helper_operation,
-          bindings: [{ handle: object.handle, identity: [stat.dev, stat.ino] }],
-          input: "wrong-role-copy"
-        )
-      end
-    end
-    assert Boundary.authorize_helper_bindings!(
-      boundary,
-      operation: helper_operation,
-      bindings: [{ handle: object.handle, identity: [stat.dev, stat.ino] }],
-      input: helper_input
-    )
+  def authorize_synthetic_transition(boundary, _boundary_operation)
+    # Checkpoint 2 intentionally exposes no production Helper authorization.
+    # Tests set this internal state only to exercise capture and closure logic.
+    Boundary.revalidate_prestate!(boundary)
+    boundary.instance_variable_set(:@helper_authorized, true)
+    assert boundary.helper_authorized?
   end
 
   def capture_transition(boundary)
