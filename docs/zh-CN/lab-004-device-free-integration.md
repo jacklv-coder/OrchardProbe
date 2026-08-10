@@ -36,7 +36,8 @@ Receipt 或 Export，并验证无别名、稳定身份和一个全新诊断名�
 主目录 Descriptor：Enrollment Start 必须使用持有的 `experiments` 角色，后续操作必须使用
 持有的不透明实验子目录。检查点 2 只允许这一个角色内 Binding，并拒绝所有额外 Descriptor；
 三 Descriptor Helper 启动保持关闭，直到后续检查点审查每个额外来源 Binding 应归属的角色。
-Receipt/Export 字节必须与持有外部输入 Descriptor 读取的字节完全相同。
+Receipt/Export 字节必须与持有外部输入 Descriptor 读取的字节完全相同。校验成功后会在 Active
+Boundary 上记录一次性 Helper 授权；转换捕获与成功诊断都会拒绝任何绕过该授权的调用。
 
 紧邻 Helper 授权前，Host 会重新检查三个角色的精确清单，重新打开选中的 Lifecycle，并将
 每个既有 Control/Phase 后代与其持有身份及打开时 SHA-256 比较。每个文件从捕获摘要到

@@ -107,6 +107,7 @@ module OrchardProbe
         @diagnostic = nil
         @diagnostic_digest = nil
         @transition_experiment_name = nil
+        @helper_authorized = false
         @active = true
       end
 
@@ -133,6 +134,14 @@ module OrchardProbe
 
       def transition_captured?
         !@transition_experiment_name.nil?
+      end
+
+      def helper_authorized?
+        @helper_authorized
+      end
+
+      def record_helper_authorization!
+        @helper_authorized = true
       end
 
       def protocol_digest(relative)
@@ -272,6 +281,9 @@ module OrchardProbe
 
     def authorize_helper_bindings!(boundary, operation:, bindings:, input:)
       active_boundary!(boundary)
+      if boundary.helper_authorized? || boundary.transition_captured? || boundary.diagnostic
+        fail!("helper_state", "LAB-004 Host helper authorization is out of order")
+      end
       revalidate_prestate!(boundary)
       unless HELPER_OPERATIONS.fetch(boundary.operation) == operation &&
              bindings.is_a?(Array) && bindings.length == 1
@@ -292,6 +304,7 @@ module OrchardProbe
         fail!("helper_binding", "LAB-004 Host helper binding is outside its role")
       end
       authorize_helper_input!(boundary, operation, input)
+      boundary.record_helper_authorization!
       true
     rescue KeyError, SystemCallError
       fail!("helper_binding", "LAB-004 Host helper binding is invalid")
@@ -299,6 +312,9 @@ module OrchardProbe
 
     def capture_transition!(boundary, result:)
       active_boundary!(boundary)
+      unless boundary.helper_authorized?
+        fail!("helper_authorization", "LAB-004 Host helper was not authorized")
+      end
       uid = boundary.context.root.identity.fetch(:uid)
       if boundary.transition_captured? || boundary.diagnostic
         fail!("transition_state", "LAB-004 Host transition capture is out of order")
@@ -347,8 +363,13 @@ module OrchardProbe
 
     def publish_diagnostic(boundary, status)
       active_boundary!(boundary)
-      if status.to_s == "helper-success" && !boundary.transition_captured?
-        fail!("transition_missing", "LAB-004 Host transition was not captured")
+      if status.to_s == "helper-success"
+        unless boundary.helper_authorized?
+          fail!("helper_authorization", "LAB-004 Host helper was not authorized")
+        end
+        unless boundary.transition_captured?
+          fail!("transition_missing", "LAB-004 Host transition was not captured")
+        end
       end
       message = DIAGNOSTIC_MESSAGES.fetch(status.to_s) do
         fail!("diagnostic_status", "LAB-004 diagnostic status is invalid")

@@ -98,6 +98,31 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     refute_includes error.message, root
   end
 
+  def test_transition_and_success_diagnostic_require_helper_authorization
+    root = fresh_layout("helper-authorization-bypass")
+
+    assert_boundary_error("operation_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        experiment = create_experiment(root, "base")
+        assert_boundary_error("helper_authorization") do
+          capture_transition(boundary)
+        end
+        assert_boundary_error("helper_authorization") do
+          Boundary.publish_diagnostic(boundary, "helper-success")
+        end
+        FileUtils.remove_entry(experiment)
+        raise "stop after rejected authorization bypass"
+      end
+    end
+
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
+  end
+
   def test_preflight_reserves_aggregate_capacity_for_the_largest_diagnostic
     root = fresh_layout("diagnostic-byte-reservation")
     diagnostic_root = File.join(root, "diagnostics")
@@ -143,6 +168,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-close-enrollment")
         capture_transition(boundary)
         { "experiment_id" => EXPERIMENT }
       end
@@ -161,6 +187,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         { "experiment_id" => EXPERIMENT }
@@ -184,6 +211,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-close-enrollment")
         advance_experiment(root, "base", "enrollment-closed")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -212,6 +240,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-close-enrollment")
         advance_experiment(root, "base", "enrollment-closed")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -298,6 +327,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
+          assert_helper_binding(boundary, "operator-start-enrollment")
           create_experiment(root, "base")
           capture_transition(boundary)
           inject = true
@@ -322,6 +352,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
+          assert_helper_binding(boundary, "operator-start-enrollment")
           create_experiment(root, "base")
           capture_transition(boundary)
           Boundary.publish_diagnostic(boundary, "helper-success")
@@ -365,6 +396,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         repository_root: repository_root
       ) do |boundary|
         assert_exclusive_lock_is_held(retained)
+        assert_helper_binding(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         Boundary.publish_diagnostic(boundary, "helper-success")
@@ -449,6 +481,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       ensure
         other_handle.close
       end
+      assert_helper_binding(boundary, "operator-close-run-1")
       advance_experiment(root, "run-1-control", "run-1-closed")
       capture_transition(boundary)
       Boundary.publish_diagnostic(boundary, "helper-success")
@@ -491,6 +524,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       ensure
         other_handle.close
       end
+      assert_helper_binding(boundary, "operator-start-enrollment")
       create_experiment(root, "base")
       capture_transition(boundary)
       Boundary.publish_diagnostic(boundary, "helper-success")
@@ -540,6 +574,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
         create_experiment(root, "base")
         capture_transition(boundary)
         write_private(
@@ -674,6 +709,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-run-1")
         advance_experiment(root, "enrollment-closed", "run-1-control")
         paths = Layout::PHASE_INVENTORIES.fetch("run-1-control").map do |name|
           File.join(experiment, "run-1-control", name)
@@ -705,6 +741,10 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           diagnostic_name: "operation.log",
           repository_root: repository_root
         ) do |boundary|
+          assert_helper_binding(
+            boundary,
+            before ? "operator-start-run-1" : "operator-start-enrollment"
+          )
           if before
             advance_experiment(root, before, "run-1-control")
           else
@@ -739,6 +779,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         diagnostic_name: "operation.log",
         repository_root: repository_root
       ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-run-1")
         advance_experiment(root, "enrollment-closed", "run-1-control")
         artifact = File.join(
           root,

@@ -46,7 +46,9 @@ Checkpoint 2 admits exactly that one role-owned binding and rejects every extra
 descriptor; the three-descriptor Helper launch remains closed until a later
 checkpoint reviews where each additional source binding belongs.
 Receipt/Export bytes must exactly equal the bytes read from the held external
-input descriptor.
+input descriptor. Successful validation records a one-shot Helper authorization
+on the active boundary; transition capture and a success diagnostic both reject
+calls that try to bypass that authorization.
 
 Immediately before Helper authorization, Host repeats the exact inventory of
 all three roles, reopens the selected lifecycle, and compares every retained
