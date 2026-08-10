@@ -302,6 +302,29 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
+  def test_normal_return_rejects_a_helper_failure_diagnostic
+    root = fresh_layout("returned-helper-failure")
+    status = +"helper-failure"
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, status)
+        status.replace("helper-success")
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
+  end
+
   def test_post_write_validation_failure_removes_the_unrecorded_diagnostic
     root = fresh_layout("post-write-diagnostic-failure")
     original = Layout.method(:validate_diagnostics_role!)
@@ -406,6 +429,33 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     assert File.exist?(File.join(diagnostic_root, "operation.log"))
   ensure
     File.chmod(0o700, diagnostic_root) if diagnostic_root && File.exist?(diagnostic_root)
+  end
+
+  def test_closure_reports_indeterminate_when_cleanup_directory_sync_fails
+    root = fresh_layout("indeterminate-cleanup-sync")
+    diagnostic_root = File.join(root, "diagnostics")
+
+    error = assert_boundary_error("diagnostic_cleanup_indeterminate") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        write_private(File.join(diagnostic_root, "unexpected.log"), "unexpected", 0o400)
+        boundary.context.roles.fetch("diagnostics").handle.define_singleton_method(:fsync) do
+          raise Errno::EIO
+        end
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute_includes error.message, root
+    refute File.exist?(File.join(diagnostic_root, "operation.log"))
   end
 
   def test_closure_removes_a_renamed_boundary_diagnostic_by_identity

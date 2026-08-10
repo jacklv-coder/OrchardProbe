@@ -80,6 +80,7 @@ module OrchardProbe
       attr_reader :operation, :profile, :context, :experiment_name,
                   :diagnostic_name, :opened, :external_input_digest,
                   :initial_diagnostic_names, :diagnostic, :diagnostic_digest,
+                  :diagnostic_status,
                   :transition_experiment_name
 
       def initialize(
@@ -106,6 +107,7 @@ module OrchardProbe
         @protocol_digests = protocol_digests.dup.freeze
         @diagnostic = nil
         @diagnostic_digest = nil
+        @diagnostic_status = nil
         @transition_experiment_name = nil
         @helper_authorized = false
         @active = true
@@ -127,9 +129,10 @@ module OrchardProbe
         context.external_input
       end
 
-      def record_diagnostic!(object, digest)
+      def record_diagnostic!(object, digest, status)
         @diagnostic = object
         @diagnostic_digest = digest
+        @diagnostic_status = status
       end
 
       def transition_captured?
@@ -383,7 +386,8 @@ module OrchardProbe
           fail!("transition_missing", "LAB-004 Host transition was not captured")
         end
       end
-      message = DIAGNOSTIC_MESSAGES.fetch(status.to_s) do
+      status_name = status.to_s.dup.freeze
+      message = DIAGNOSTIC_MESSAGES.fetch(status_name) do
         fail!("diagnostic_status", "LAB-004 diagnostic status is invalid")
       end
       role = boundary.context.roles.fetch("diagnostics")
@@ -411,7 +415,7 @@ module OrchardProbe
         end
         Layout.validate_diagnostics_role!(role, uid)
         boundary.opened << sink
-        boundary.record_diagnostic!(sink, Digest::SHA256.digest(message))
+        boundary.record_diagnostic!(sink, Digest::SHA256.digest(message), status_name)
         published = true
         { "status" => "recorded", "diagnostic_role" => "diagnostics" }
       rescue Layout::Error => error
@@ -983,6 +987,9 @@ module OrchardProbe
       unless boundary.diagnostic && boundary.diagnostic_digest
         fail!("diagnostic_missing", "LAB-004 diagnostic result is missing")
       end
+      unless boundary.diagnostic_status == "helper-success"
+        fail!("diagnostic_status", "LAB-004 completed operation lacks a success diagnostic")
+      end
       current = opened.drop(start).find do |object|
         File.basename(object.path) == boundary.diagnostic_name
       end
@@ -1039,6 +1046,7 @@ module OrchardProbe
       ensure
         remaining_matches.each(&:close)
       end
+      role.handle.fsync
       true
     rescue Layout::Error, SystemCallError
       fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")
