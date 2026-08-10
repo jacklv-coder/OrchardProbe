@@ -53,7 +53,10 @@ Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失�
 重新打开并比较根/角色身份，要求精确后置状态清单、未改变的外部输入身份与字节、共享锁下
 每个保留诊断的持有身份与打开时 SHA-256、指定的有界只读诊断及完整无别名。Callback 失败时
 先精确移除本 Boundary 发布的诊断，再要求原
-前置状态保持精确；部分 Lifecycle 发布则会变成通用 Fail-closed Closure 错误。公开结果
+前置状态保持精确；部分 Lifecycle 发布则会变成通用 Fail-closed Closure 错误。任何最终
+Closure 失败也会在返回前按持有的 Device/Inode 身份扫描 `diagnostics` 角色并移除该 Boundary
+精确拥有的诊断，因此同角色内的重命名或硬链接不能绕过清理。若无法证明该身份已消失，操作会返回独立终态
+`diagnostic_cleanup_indeterminate`，而不是普通 Closure 失败；保留的私有证据不得视为成功。公开结果
 只含角色名称与操作状态，不含私有根、实验 ID、输入名称/内容或原始错误。
 
 ## 检查点 2 顺序台账

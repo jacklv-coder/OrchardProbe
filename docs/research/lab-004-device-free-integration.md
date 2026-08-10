@@ -74,7 +74,12 @@ input identity and bytes, every retained diagnostic's held identity and opening
 SHA-256 under a shared lock, the named bounded read-only diagnostic, and
 complete non-aliasing. On callback failure it removes the diagnostic published by this
 boundary before requiring the original pre-state to remain exact; a partial
-lifecycle publication instead becomes a generic fail-closed closure error.
+lifecycle publication instead becomes a generic fail-closed closure error. Any
+final closure failure also removes the exact boundary-owned diagnostic before
+returning, scanning the diagnostics role by held device/inode identity so a
+same-role rename or hard link cannot evade cleanup. If absence cannot be proved, the operation returns the distinct
+terminal `diagnostic_cleanup_indeterminate` state instead of an ordinary
+closure failure; the retained private evidence must not be treated as success.
 Public results contain role names and operation state only, never a private
 root, experiment ID, input name/content, or raw error.
 

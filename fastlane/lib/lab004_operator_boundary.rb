@@ -222,6 +222,7 @@ module OrchardProbe
       result = nil
       callback_error = nil
       closure_error = nil
+      cleanup_error = nil
       begin
         result = yield(boundary)
       rescue StandardError => error
@@ -248,11 +249,22 @@ module OrchardProbe
           end
         rescue StandardError => error
           closure_error = error
+          begin
+            cleanup_boundary_diagnostic!(boundary, uid)
+          rescue StandardError => error
+            cleanup_error = error
+          end
         ensure
           close_boundary!(boundary)
         end
       end
 
+      if cleanup_error
+        fail!(
+          "diagnostic_cleanup_indeterminate",
+          "LAB-004 diagnostic cleanup is indeterminate after closure failure"
+        )
+      end
       if closure_error
         fail!("closure_failed", "LAB-004 role closure failed closed")
       end
@@ -1010,12 +1022,51 @@ module OrchardProbe
       role = boundary.context.roles.fetch("diagnostics")
       Layout.cleanup_unpublished_file!(role, boundary.diagnostic, uid)
       role.identity = Layout.identity(role.handle.stat)
-      if Layout.entries(role, uid).include?(boundary.diagnostic_name)
-        fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")
+      matching_diagnostic_entries(role, boundary.diagnostic, uid).each do |candidate|
+        begin
+          Layout.cleanup_unpublished_file!(role, candidate, uid)
+          role.identity = Layout.identity(role.handle.stat)
+        ensure
+          candidate.close
+        end
+      end
+      remaining_names = Layout.entries(role, uid)
+      remaining_matches = matching_diagnostic_entries(role, boundary.diagnostic, uid)
+      begin
+        if remaining_names.include?(boundary.diagnostic_name) || remaining_matches.any?
+          fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")
+        end
+      ensure
+        remaining_matches.each(&:close)
       end
       true
     rescue Layout::Error, SystemCallError
       fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")
+    end
+
+    def matching_diagnostic_entries(role, diagnostic, uid)
+      held = diagnostic.handle.stat
+      matches = []
+      Layout.entries(role, uid).each do |name|
+        candidate = Layout.open_regular_file_at!(
+          role,
+          name,
+          uid,
+          maximum_size: Layout::MAX_DIAGNOSTIC_FILE_BYTES,
+          exact_mode: 0o400,
+          allow_empty: true
+        )
+        stat = candidate.handle.stat
+        if stat.dev == held.dev && stat.ino == held.ino
+          matches << candidate
+        else
+          candidate.close
+        end
+      end
+      matches
+    rescue StandardError
+      matches&.each(&:close)
+      raise
     end
 
     def read_bounded_input!(input, maximum)

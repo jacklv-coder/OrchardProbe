@@ -193,6 +193,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         { "experiment_id" => EXPERIMENT }
       end
     end
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
   def test_external_input_identity_is_unchanged_at_closure
@@ -220,6 +221,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         { "experiment_id" => EXPERIMENT }
       end
     end
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
   def test_external_input_content_is_unchanged_when_metadata_is_preserved
@@ -258,6 +260,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         { "experiment_id" => EXPERIMENT }
       end
     end
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
   def test_callback_failure_is_sanitized_when_the_prestate_closes_cleanly
@@ -345,7 +348,9 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       root = fresh_layout("diagnostic-#{mutation}")
       displaced = File.join(@container, "#{mutation}-displaced.log")
 
-      assert_boundary_error("closure_failed") do
+      expected_error = mutation == "replace" ?
+        "diagnostic_cleanup_indeterminate" : "closure_failed"
+      assert_boundary_error(expected_error) do
         Boundary.with_operation(
           root,
           operation: "operator-start-enrollment",
@@ -375,6 +380,57 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         end
       end
     end
+  end
+
+  def test_closure_reports_indeterminate_when_success_diagnostic_cannot_be_removed
+    root = fresh_layout("indeterminate-diagnostic-cleanup")
+    diagnostic_root = File.join(root, "diagnostics")
+
+    error = assert_boundary_error("diagnostic_cleanup_indeterminate") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        File.chmod(0o500, diagnostic_root)
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute_includes error.message, root
+    assert File.exist?(File.join(diagnostic_root, "operation.log"))
+  ensure
+    File.chmod(0o700, diagnostic_root) if diagnostic_root && File.exist?(diagnostic_root)
+  end
+
+  def test_closure_removes_a_renamed_boundary_diagnostic_by_identity
+    root = fresh_layout("renamed-boundary-diagnostic")
+    diagnostic_root = File.join(root, "diagnostics")
+    renamed = File.join(diagnostic_root, "renamed.log")
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        File.rename(File.join(diagnostic_root, "operation.log"), renamed)
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute File.exist?(File.join(diagnostic_root, "operation.log"))
+    refute File.exist?(renamed)
   end
 
   def test_closure_rejects_in_place_change_to_retained_diagnostic
@@ -586,6 +642,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         { "experiment_id" => EXPERIMENT }
       end
     end
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
   def test_preflight_sanitizes_layout_syscall_failure
