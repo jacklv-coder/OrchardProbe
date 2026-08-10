@@ -76,7 +76,7 @@ evidence and never broadens or retries the action.
 | Order | Checkpoint | Status after activation merges | Gate |
 |---:|---|---|---|
 | 1 | Activation and successor design | `done after PR #90 merges` | Issue #89, [PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90), this bilingual contract, and the ledger insertion are on `main` |
-| 2 | Device-free role integration and synthetic regressions | `done after this implementation PR merges` | The [checkpoint-2 ledger](lab-004-device-free-integration.md) requires LAB-003 prepare/preflight/closure around the existing guarded Host flow while every external and device lane remains closed |
+| 2 | Device-free role integration and synthetic regressions | `done after PR #91 merges` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) and the [checkpoint-2 ledger](lab-004-device-free-integration.md) require LAB-003 prepare/preflight/closure around the existing guarded Host flow while every external and device lane remains closed |
 | 3 | Exact signed `1.0 (4)` candidate and frozen oracle | `next proposal — not authorized` | A separate reviewed checkpoint and fresh explicit authorization are required; no upload or device action |
 | 4 | One internal upload and installation enrollment | `planned` | The exact checkpoint-3 tuple must be merged and independently revalidated; upload, installation, and enrollment each require their stated fresh authorization |
 | 5 | Two clean observations | `planned` | Enrollment must close with exact installed lineage; each distinct run requires a fresh envelope and immediately preceding explicit authorization |

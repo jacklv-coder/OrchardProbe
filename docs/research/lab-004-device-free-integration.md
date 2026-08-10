@@ -76,7 +76,7 @@ root, experiment ID, input name/content, or raw error.
 | 2B | Add held preflight and closure | `done` | Seven fixed profiles validate exact pre/post inventories, role identities, aliasing, and failure closure |
 | 2C | Gate Helper input and diagnostics | `done` | Helper primary bindings must match the active boundary; exact roles and held descendants are rechecked before launch; Receipt/Export bytes match held external input; post-transition descendants are captured before a fixed, bounded, exclusive, owner-private diagnostic |
 | 2D | Add synthetic regressions and CI | `done` | Ruby transition/adversarial tests, the existing LAB-003 suite, Rust tests, syntax, formatting, and CI wiring cover this device-free boundary |
-| 2E | Publish checkpoint-2 completion | `active` | This implementation PR must pass Codex CR, GitHub review, and all required CI before merge |
+| 2E | Publish checkpoint-2 completion | `active` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) must pass Codex CR, GitHub review, and all required CI before merge |
 
 ## Scope result
 

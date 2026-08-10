@@ -61,7 +61,7 @@ Host 必须在创建或消费授权之前及关闭时，执行 LAB-003 的完整
 | 顺序 | 检查点 | 激活合并后的状态 | 门禁 |
 |---:|---|---|---|
 | 1 | 激活与后续设计 | `PR #90 合并后 done` | Issue #89、[PR #90](https://github.com/jacklv-coder/OrchardProbe/pull/90)、本双语契约与台账新增行进入 `main` |
-| 2 | 无设备角色集成与合成回归 | `本实现 PR 合并后 done` | [检查点 2 台账](lab-004-device-free-integration.md)要求在现有受保护 Host 流程周围强制 LAB-003 Prepare/Preflight/Closure，同时全部外部与设备 Lane 保持关闭 |
+| 2 | 无设备角色集成与合成回归 | `PR #91 合并后 done` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91)与[检查点 2 台账](lab-004-device-free-integration.md)要求在现有受保护 Host 流程周围强制 LAB-003 Prepare/Preflight/Closure，同时全部外部与设备 Lane 保持关闭 |
 | 3 | 精确签名 `1.0 (4)` 候选与冻结 Oracle | `下一提案 — 未授权` | 需要独立评审的检查点和全新明确授权；不含上传或设备动作 |
 | 4 | 一次内部上传与安装 Enrollment | `planned` | 精确检查点 3 Tuple 必须已合并并独立复核；上传、安装与 Enrollment 分别需要其声明的全新授权 |
 | 5 | 两轮干净观察 | `planned` | Enrollment 必须以精确已安装 Lineage 闭合；两个不同 Run 都需要全新信封和紧邻的明确授权 |

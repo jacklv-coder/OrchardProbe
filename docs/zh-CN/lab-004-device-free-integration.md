@@ -58,7 +58,7 @@ Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失�
 | 2B | 新增持有式 Preflight 与 Closure | `done` | 七个固定 Profile 校验精确前/后清单、角色身份、别名和失败 Closure |
 | 2C | 约束 Helper 输入与诊断 | `done` | Helper 主 Binding 必须匹配 Active Boundary；启动前重新检查精确角色与持有后代；Receipt/Export 匹配持有外部输入；先捕获后置转换后代，再发布固定、有界、排他且仅 Owner 可访问的诊断 |
 | 2D | 新增合成回归与 CI | `done` | Ruby 转换/对抗测试、既有 LAB-003 Suite、Rust 测试、语法、格式及 CI Wiring 覆盖本无设备边界 |
-| 2E | 发布检查点 2 完成记录 | `active` | 本实现 PR 必须通过 Codex CR、GitHub Review 与全部必需 CI 后才能合并 |
+| 2E | 发布检查点 2 完成记录 | `active` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91)必须通过 Codex CR、GitHub Review 与全部必需 CI 后才能合并 |
 
 ## 范围结果
 
