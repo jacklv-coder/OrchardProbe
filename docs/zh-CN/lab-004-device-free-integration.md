@@ -39,14 +39,18 @@ Receipt 或 Export，并验证无别名、稳定身份和一个全新诊断名�
 Receipt/Export 字节必须与持有外部输入 Descriptor 读取的字节完全相同。
 
 紧邻 Helper 授权前，Host 会重新检查三个角色的精确清单，重新打开选中的 Lifecycle，并将
-每个既有 Control/Phase 后代与其持有身份比较。Helper 返回后，Host 必须先捕获精确后置
-Lifecycle，才能发布成功诊断：每个新发布的实验、Phase 目录和工件都会一直持有到 Closure。
-Closure 重新打开完整后置状态，按角色相对名称、类型、Device 与 Inode 比较全部既有和新
-捕获后代。因此同名替换或未捕获的转换都会 Fail-closed。
+每个既有 Control/Phase 后代与其持有身份及打开时 SHA-256 比较。每个文件从捕获摘要到
+Closure 都持有非阻塞共享读锁，使遵循协调协议的排他写入者无法进入；新转换工件也必须先
+加入该加锁集合。Helper 返回后，既有排他 Operator 目录锁仍会保持，直到 Host 捕获精确
+后置 Lifecycle；之后才能发布成功诊断。每个新发布的实验、Phase 目录和工件都会一直持有到
+Closure。
+Closure 重新打开完整后置状态，按角色相对名称、类型、Device、Inode 与文件内容摘要比较
+全部既有和新捕获后代。因此同名替换、保留元数据的原位改写或未捕获的转换都会 Fail-closed。
 
 Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失败语句。成功后，Closure
-重新打开并比较根/角色身份，要求精确后置状态清单、未改变的外部输入身份与字节、指定的
-有界只读诊断及完整无别名。Callback 失败时先精确移除本 Boundary 发布的诊断，再要求原
+重新打开并比较根/角色身份，要求精确后置状态清单、未改变的外部输入身份与字节、共享锁下
+每个保留诊断的持有身份与打开时 SHA-256、指定的有界只读诊断及完整无别名。Callback 失败时
+先精确移除本 Boundary 发布的诊断，再要求原
 前置状态保持精确；部分 Lifecycle 发布则会变成通用 Fail-closed Closure 错误。公开结果
 只含角色名称与操作状态，不含私有根、实验 ID、输入名称/内容或原始错误。
 

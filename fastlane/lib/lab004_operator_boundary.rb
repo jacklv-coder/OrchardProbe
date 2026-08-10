@@ -89,7 +89,9 @@ module OrchardProbe
         diagnostic_name:,
         opened:,
         external_input_digest:,
-        initial_diagnostic_names:
+        initial_diagnostic_names:,
+        initial_diagnostic_digests:,
+        protocol_digests:
       )
         @operation = operation
         @profile = profile
@@ -99,6 +101,8 @@ module OrchardProbe
         @opened = opened
         @external_input_digest = external_input_digest
         @initial_diagnostic_names = initial_diagnostic_names.freeze
+        @initial_diagnostic_digests = initial_diagnostic_digests.dup.freeze
+        @protocol_digests = protocol_digests.dup.freeze
         @diagnostic = nil
         @diagnostic_digest = nil
         @transition_experiment_name = nil
@@ -130,9 +134,21 @@ module OrchardProbe
         !@transition_experiment_name.nil?
       end
 
-      def record_transition!(experiment_name, objects)
+      def protocol_digest(relative)
+        @protocol_digests[relative]
+      end
+
+      def initial_diagnostic_digest(name)
+        @initial_diagnostic_digests[name]
+      end
+
+      def record_transition!(experiment_name, objects, digests)
+        if (digests.keys & @protocol_digests.keys).any?
+          raise Error.new("protocol_identity", "LAB-004 protocol identity set is invalid")
+        end
         @transition_experiment_name = experiment_name
         @opened.concat(objects)
+        @protocol_digests = @protocol_digests.merge(digests).freeze
       end
 
       def sanitized_result(status)
@@ -306,7 +322,7 @@ module OrchardProbe
         )
         before = protocol_descendants(boundary.opened, experiments)
         after = protocol_descendants(current, experiments)
-        compare_protocol_subset!(before, after, uid)
+        compare_protocol_subset!(before, after, uid, boundary)
         validate_external_role_exact!(boundary, uid)
         validate_diagnostics_role_exact!(boundary, uid, reserve: true)
         Layout.reject_identity_aliases!(
@@ -315,8 +331,11 @@ module OrchardProbe
         )
         Layout.revalidate_opened!(boundary.opened, uid)
         Layout.revalidate_opened!(current, uid)
-        retained = (after.keys - before.keys).map { |name| after.fetch(name) }
-        boundary.record_transition!(experiment_name, retained)
+        added = after.keys - before.keys
+        candidates = added.map { |name| after.fetch(name) }
+        digests = capture_protocol_digests!(after.slice(*added))
+        boundary.record_transition!(experiment_name, candidates, digests)
+        retained = candidates
         true
       rescue Layout::Error => error
         fail!(error.code, error.message.sub("LAB-003", "LAB-004"))
@@ -350,6 +369,12 @@ module OrchardProbe
         sink.handle.chmod(0o400)
         sink.identity = Layout.identity(sink.handle.stat)
         Layout.revalidate_opened!([sink], uid, file_mode: 0o400)
+        # create_direct_file! deliberately returns a write-only descriptor.
+        # LOCK_EX is valid for that descriptor on Linux and preserves the
+        # single-writer diagnostic publication contract through closure.
+        unless sink.handle.flock(File::LOCK_EX | File::LOCK_NB)
+          fail!("diagnostic_lock", "LAB-004 diagnostic result lock could not be acquired")
+        end
         Layout.validate_diagnostics_role!(role, uid)
         boundary.opened << sink
         boundary.record_diagnostic!(sink, Digest::SHA256.digest(message))
@@ -475,6 +500,12 @@ module OrchardProbe
                                     )
                                   )
                                 end
+        initial_diagnostic_digests = capture_initial_diagnostic_digests!(
+          diagnostic_descendants(opened, diagnostics_role)
+        )
+        protocol_digests = capture_protocol_digests!(
+          protocol_descendants(opened, context.roles.fetch("experiments"))
+        )
         boundary = Boundary.new(
           operation: operation.to_s,
           profile: profile,
@@ -483,7 +514,9 @@ module OrchardProbe
           diagnostic_name: diagnostic_name,
           opened: opened,
           external_input_digest: external_input_digest,
-          initial_diagnostic_names: initial_diagnostic_names
+          initial_diagnostic_names: initial_diagnostic_names,
+          initial_diagnostic_digests: initial_diagnostic_digests,
+          protocol_digests: protocol_digests
         )
         revalidate_prestate!(boundary, uid)
       rescue
@@ -494,6 +527,8 @@ module OrchardProbe
       boundary
     rescue Layout::Error => error
       fail!(error.code, error.message.sub("LAB-003", "LAB-004"))
+    rescue SystemCallError
+      fail!("boundary_open", "LAB-004 private role boundary could not be opened safely")
     end
 
     def validate_selection!(
@@ -574,7 +609,8 @@ module OrchardProbe
               opened,
               context.roles.fetch("experiments")
             ),
-            uid
+            uid,
+            boundary
           )
         end
         Layout.validate_external_inputs_role!(
@@ -583,6 +619,17 @@ module OrchardProbe
           opened,
           skip_name: boundary.profile.input_kind && boundary.context.external_input.path.split(File::SEPARATOR).last
         )
+        expected_external_names = if boundary.profile.input_kind
+                                    [File.basename(boundary.context.external_input.path)]
+                                  else
+                                    []
+                                  end
+        unless Layout.entries(
+          context.roles.fetch("external-inputs"),
+          uid
+        ).sort == expected_external_names.sort
+          fail!("input_inventory", "LAB-004 external input inventory changed")
+        end
         if boundary.profile.input_kind
           name = File.basename(boundary.context.external_input.path)
           context.instance_variable_set(
@@ -662,7 +709,8 @@ module OrchardProbe
           compare_protocol_subset!(
             protocol_descendants(boundary.opened, experiments),
             protocol_descendants(current, experiments),
-            uid
+            uid,
+            boundary
           )
         end
         validate_external_role_exact!(boundary, uid)
@@ -704,7 +752,18 @@ module OrchardProbe
       unless Layout.entries(role, uid).sort == boundary.initial_diagnostic_names.sort
         fail!("diagnostic_inventory", "LAB-004 diagnostic inventory changed")
       end
-      Layout.validate_diagnostics_role!(role, uid, reserve: reserve)
+      current = []
+      begin
+        Layout.validate_diagnostics_role!(
+          role,
+          uid,
+          reserve: reserve,
+          opened: current
+        )
+        compare_initial_diagnostics!(boundary, current, role)
+      ensure
+        current.reverse_each(&:close)
+      end
       true
     end
 
@@ -721,7 +780,50 @@ module OrchardProbe
       end
     end
 
-    def compare_protocol_subset!(before, after, uid)
+    def diagnostic_descendants(objects, diagnostics_role)
+      prefix = "#{diagnostics_role.path}#{File::SEPARATOR}"
+      objects.each_with_object({}) do |object, result|
+        next unless object.kind == :file && object.path.start_with?(prefix)
+
+        relative = object.path.delete_prefix(prefix)
+        if relative.empty? || relative.include?(File::SEPARATOR) || result.key?(relative)
+          fail!("diagnostic_identity", "LAB-004 diagnostic identity set is invalid")
+        end
+        result[relative] = object
+      end
+    end
+
+    def capture_initial_diagnostic_digests!(descendants)
+      descendants.each_with_object({}) do |(name, object), result|
+        unless object.handle.flock(File::LOCK_SH | File::LOCK_NB)
+          fail!("diagnostic_lock", "LAB-004 retained diagnostic is already in use")
+        end
+        content = read_bounded_file!(object, Layout::MAX_DIAGNOSTIC_FILE_BYTES, false)
+        result[name] = Digest::SHA256.digest(content)
+      end
+    rescue SystemCallError
+      fail!("diagnostic_lock", "LAB-004 retained diagnostic lock could not be acquired")
+    end
+
+    def compare_initial_diagnostics!(boundary, current_objects, current_role)
+      before = diagnostic_descendants(
+        boundary.opened,
+        boundary.context.roles.fetch("diagnostics")
+      )
+      after = diagnostic_descendants(current_objects, current_role)
+      boundary.initial_diagnostic_names.each do |name|
+        prior = before[name]
+        current = after[name]
+        digest = boundary.initial_diagnostic_digest(name)
+        unless prior && current && digest
+          fail!("diagnostic_identity", "LAB-004 retained diagnostic identity changed")
+        end
+        compare_stable_diagnostic!(prior, current, digest)
+      end
+      true
+    end
+
+    def compare_protocol_subset!(before, after, uid, boundary)
       before.each do |relative, prior|
         current = after[relative]
         unless current && prior.kind == current.kind
@@ -743,11 +845,44 @@ module OrchardProbe
           Layout.revalidate_opened!([prior, current], uid)
         else
           Layout.revalidate_opened!([prior, current], uid)
+          expected_digest = boundary.protocol_digest(relative)
+          unless expected_digest &&
+                 protocol_file_digest!(prior) == expected_digest
+            fail!("protocol_content", "LAB-004 protocol artifact content changed")
+          end
         end
       end
       true
     rescue SystemCallError
       fail!("protocol_identity", "LAB-004 protocol descendants changed")
+    end
+
+    def capture_protocol_digests!(descendants)
+      descendants.each_with_object({}) do |(relative, object), result|
+        next if object.kind == :directory
+
+        unless object.handle.flock(File::LOCK_SH | File::LOCK_NB)
+          fail!("protocol_lock", "LAB-004 protocol artifact is already in use")
+        end
+        result[relative] = protocol_file_digest!(object)
+      end
+    rescue SystemCallError
+      fail!("protocol_lock", "LAB-004 protocol artifact lock could not be acquired")
+    end
+
+    def protocol_file_digest!(object)
+      Layout.revalidate_opened!([object], object.identity.fetch(:uid))
+      object.handle.rewind
+      content = object.handle.read(Layout::MAX_EXTERNAL_INPUT_BYTES + 1)
+      object.handle.rewind
+      if content.nil? || content.empty? ||
+         content.bytesize > Layout::MAX_EXTERNAL_INPUT_BYTES
+        fail!("protocol_content", "LAB-004 protocol artifact content is outside its bound")
+      end
+      Layout.revalidate_opened!([object], object.identity.fetch(:uid))
+      Digest::SHA256.digest(content)
+    rescue SystemCallError
+      fail!("protocol_content", "LAB-004 protocol artifact content could not be read safely")
     end
 
     def refresh_mutated_directory!(object, uid)
@@ -797,6 +932,7 @@ module OrchardProbe
       unless Layout.entries(role, uid).sort == expected.sort
         fail!("diagnostic_inventory", "LAB-004 diagnostic inventory changed during operation")
       end
+      compare_initial_diagnostics!(boundary, opened.drop(start), role)
       return true unless completed
 
       unless boundary.diagnostic && boundary.diagnostic_digest

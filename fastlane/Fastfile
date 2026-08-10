@@ -7610,7 +7610,7 @@ def run_closed_lab002_operator_helper!(
     unless reviewed_main_source_commit == source_commit
       UI.user_error!("The reviewed LAB-002 operator source changed during use.")
     end
-    result
+    block_given? ? yield(result) : result
   ensure
     acknowledgement_reader&.close unless acknowledgement_reader&.closed?
     acknowledgement_writer&.close unless acknowledgement_writer&.closed?
@@ -7643,11 +7643,13 @@ def run_lab002_operator_helper!(
       bindings: bindings,
       input: input,
       publishes: publishes
-    )
-    OrchardProbe::Lab004OperatorBoundary.capture_transition!(
-      lab004_boundary,
-      result: result
-    )
+    ) do |helper_result|
+      OrchardProbe::Lab004OperatorBoundary.capture_transition!(
+        lab004_boundary,
+        result: helper_result
+      )
+      helper_result
+    end
     OrchardProbe::Lab004OperatorBoundary.publish_diagnostic(
       lab004_boundary,
       "helper-success"

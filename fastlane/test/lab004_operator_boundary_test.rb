@@ -315,6 +315,40 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     end
   end
 
+  def test_closure_rejects_in_place_change_to_retained_diagnostic
+    root = fresh_layout("retained-diagnostic-content")
+    retained = write_private(
+      File.join(root, "diagnostics", "retained.log"),
+      "retained evidence",
+      0o400
+    )
+    fixed_time = Time.at(1_700_000_000)
+    File.utime(fixed_time, fixed_time, retained)
+    original = File.stat(retained)
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_exclusive_lock_is_held(retained)
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        assert_exclusive_lock_is_held(
+          File.join(root, "diagnostics", "operation.log")
+        )
+        assert_shared_lock_is_held(
+          File.join(root, "diagnostics", "operation.log")
+        )
+        rewrite_preserving_metadata(retained, "x" * original.size, original)
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+  end
+
   def test_callback_failure_with_partial_publication_becomes_generic_closure_failure
     root = fresh_layout("partial-callback-failure")
     create_experiment(root, "enrollment-closed")
@@ -465,6 +499,46 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     end
   end
 
+  def test_closure_rejects_external_input_added_after_transition_capture
+    root = fresh_layout("closure-external-input-inventory")
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        write_private(
+          File.join(root, "external-inputs", "unexpected.json"),
+          "unexpected",
+          0o600
+        )
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+  end
+
+  def test_preflight_sanitizes_layout_syscall_failure
+    root = fresh_layout("preflight-syscall")
+    File.chmod(0o000, root)
+
+    error = assert_boundary_error("boundary_open") do
+      Boundary.preflight(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      )
+    end
+    refute_includes error.message, root
+  ensure
+    File.chmod(0o700, root) if root && File.exist?(root)
+  end
+
   def test_helper_authorization_rejects_a_substituted_held_control
     root = fresh_layout("helper-control-recheck")
     experiment = create_experiment(root, "enrollment-closed")
@@ -492,6 +566,96 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           )
         end
         raise "stop after rejected helper authorization"
+      end
+    end
+  end
+
+  def test_helper_authorization_rejects_in_place_protocol_content_change
+    root = fresh_layout("helper-control-content-recheck")
+    experiment = create_experiment(root, "enrollment-closed")
+    control = File.join(experiment, Layout::BASE_CONTROL_NAMES.first)
+    fixed_time = Time.at(1_700_000_000)
+    File.utime(fixed_time, fixed_time, control)
+    original = File.stat(control)
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-run-1",
+        experiment_name: EXPERIMENT,
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        rewrite_preserving_metadata(control, "x" * original.size, original)
+        object = boundary.primary_directory
+        stat = object.handle.stat
+        assert_boundary_error("protocol_content") do
+          Boundary.authorize_helper_bindings!(
+            boundary,
+            operation: "operator-start-run",
+            bindings: [{ handle: object.handle, identity: [stat.dev, stat.ino] }],
+            input: "{}"
+          )
+        end
+        raise "stop after rejected helper authorization"
+      end
+    end
+  end
+
+  def test_protocol_artifact_locks_are_held_through_transition_and_closure
+    root = fresh_layout("protocol-locks")
+    experiment = create_experiment(root, "enrollment-closed")
+    control = File.join(experiment, Layout::BASE_CONTROL_NAMES.first)
+
+    result = Boundary.with_operation(
+      root,
+      operation: "operator-start-run-1",
+      experiment_name: EXPERIMENT,
+      diagnostic_name: "operation.log",
+      repository_root: repository_root
+    ) do |boundary|
+      assert_exclusive_lock_is_held(control)
+      assert_helper_binding(boundary, "operator-start-run-1")
+      advance_experiment(root, "enrollment-closed", "run-1-control")
+      capture_transition(boundary)
+      artifact = File.join(
+        experiment,
+        "run-1-control",
+        Layout::PHASE_INVENTORIES.fetch("run-1-control").first
+      )
+      assert_exclusive_lock_is_held(artifact)
+      Boundary.publish_diagnostic(boundary, "helper-success")
+      { "experiment_id" => EXPERIMENT }
+    end
+
+    assert_equal "closed", result.fetch("status")
+  end
+
+  def test_failed_transition_capture_releases_new_protocol_locks
+    root = fresh_layout("failed-transition-locks")
+    experiment = create_experiment(root, "enrollment-closed")
+
+    assert_boundary_error("operation_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-run-1",
+        experiment_name: EXPERIMENT,
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        advance_experiment(root, "enrollment-closed", "run-1-control")
+        paths = Layout::PHASE_INVENTORIES.fetch("run-1-control").map do |name|
+          File.join(experiment, "run-1-control", name)
+        end
+        with_writable_handle(paths.last) do |blocked|
+          assert blocked.flock(File::LOCK_EX | File::LOCK_NB)
+          assert_boundary_error("protocol_lock") { capture_transition(boundary) }
+          with_writable_handle(paths.first) do |probe|
+            assert probe.flock(File::LOCK_EX | File::LOCK_NB)
+          end
+        end
+        FileUtils.remove_entry(File.join(experiment, "run-1-control"))
+        raise "stop after rejected transition capture"
       end
     end
   end
@@ -528,6 +692,37 @@ class Lab004OperatorBoundaryTest < Minitest::Test
           Boundary.publish_diagnostic(boundary, "helper-success")
           { "experiment_id" => EXPERIMENT }
         end
+      end
+    end
+  end
+
+  def test_closure_rejects_in_place_change_to_captured_protocol_content
+    root = fresh_layout("captured-content")
+    create_experiment(root, "enrollment-closed")
+
+    assert_boundary_error("closure_failed") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-run-1",
+        experiment_name: EXPERIMENT,
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        advance_experiment(root, "enrollment-closed", "run-1-control")
+        artifact = File.join(
+          root,
+          "experiments",
+          EXPERIMENT,
+          "run-1-control",
+          Layout::PHASE_INVENTORIES.fetch("run-1-control").first
+        )
+        fixed_time = Time.at(1_700_000_000)
+        File.utime(fixed_time, fixed_time, artifact)
+        original = File.stat(artifact)
+        capture_transition(boundary)
+        rewrite_preserving_metadata(artifact, "x" * original.size, original)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        { "experiment_id" => EXPERIMENT }
       end
     end
   end
@@ -578,6 +773,46 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     File.binwrite(path, content)
     File.chmod(mode, path)
     path
+  end
+
+  def rewrite_preserving_metadata(path, content, original)
+    assert_equal original.size, content.bytesize
+    File.chmod(0o600, path)
+    File.open(path, "r+b") do |file|
+      file.write(content)
+      file.flush
+      file.fsync
+    end
+    File.chmod(original.mode & 0o777, path)
+    File.utime(original.atime, original.mtime, path)
+    changed = File.stat(path)
+    assert_equal original.ino, changed.ino
+    assert_equal original.size, changed.size
+    assert_equal original.mode, changed.mode
+    assert_equal original.mtime.to_f, changed.mtime.to_f
+  end
+
+  def assert_exclusive_lock_is_held(path)
+    with_writable_handle(path) do |file|
+      refute file.flock(File::LOCK_EX | File::LOCK_NB)
+    end
+  end
+
+  def assert_shared_lock_is_held(path)
+    with_writable_handle(path) do |file|
+      refute file.flock(File::LOCK_SH | File::LOCK_NB)
+    end
+  end
+
+  def with_writable_handle(path)
+    original_mode = File.stat(path).mode & 0o777
+    File.chmod(original_mode | 0o200, path)
+    File.open(path, File::RDWR | File::NONBLOCK) do |file|
+      File.chmod(original_mode, path)
+      yield file
+    end
+  ensure
+    File.chmod(original_mode, path) if original_mode && File.exist?(path)
   end
 
   def create_experiment(root, lifecycle)

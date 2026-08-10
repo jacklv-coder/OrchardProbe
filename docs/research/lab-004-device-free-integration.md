@@ -50,19 +50,25 @@ input descriptor.
 
 Immediately before Helper authorization, Host repeats the exact inventory of
 all three roles, reopens the selected lifecycle, and compares every retained
-control/phase descendant with its held identity. After Helper returns, Host
-must capture the exact post-transition lifecycle before it can publish a
-success diagnostic: every newly published experiment, phase directory, and
+control/phase descendant with its held identity and opening-time SHA-256. A
+nonblocking shared read lock is held from digest capture through closure so a
+coordinated exclusive writer cannot enter; new transition artifacts join that
+locked set before success. The existing exclusive operator-directory lock also
+remains held while Host captures the exact post-transition lifecycle after the
+Helper returns. Only then can Host publish a success diagnostic: every newly
+published experiment, phase directory, and
 artifact remains held through closure. Closure reopens the complete post-state
 and compares every prior and newly captured descendant by relative role name,
-type, device, and inode. A same-name replacement or an uncaptured transition
-therefore fails closed.
+type, device, inode, and file content digest. A same-name replacement,
+metadata-preserving in-place rewrite, or uncaptured transition therefore fails
+closed.
 
 The Helper records only one fixed success/failure sentence through the held
 `diagnostics` descriptor. On success, closure reopens and compares the root and
 role identities, requires the exact post-state inventory, unchanged external
-input identity and bytes, the named bounded read-only diagnostic, and complete
-non-aliasing. On callback failure it removes the diagnostic published by this
+input identity and bytes, every retained diagnostic's held identity and opening
+SHA-256 under a shared lock, the named bounded read-only diagnostic, and
+complete non-aliasing. On callback failure it removes the diagnostic published by this
 boundary before requiring the original pre-state to remain exact; a partial
 lifecycle publication instead becomes a generic fail-closed closure error.
 Public results contain role names and operation state only, never a private
