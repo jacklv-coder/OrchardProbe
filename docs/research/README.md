@@ -30,3 +30,6 @@ Research designs:
 - [LAB-003 device-free implementation result](lab-003-implementation-result.md)
   records the narrow layout Go and the continuing device-ceremony No-Go. It
   does not establish a device backend or working IPA decryption.
+- [LAB-004 fresh protected-oracle ceremony](lab-004-protected-oracle-ceremony.md)
+  defines the new DemoLab `1.0 (4)` six-checkpoint experiment, initially
+  authorizing device-free integration only.
