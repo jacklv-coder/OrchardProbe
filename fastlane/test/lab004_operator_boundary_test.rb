@@ -325,8 +325,10 @@ class Lab004OperatorBoundaryTest < Minitest::Test
     refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
-  def test_post_write_validation_failure_removes_the_unrecorded_diagnostic
+  def test_post_write_validation_failure_removes_a_renamed_tracked_diagnostic
     root = fresh_layout("post-write-diagnostic-failure")
+    diagnostic_root = File.join(root, "diagnostics")
+    renamed = File.join(diagnostic_root, "renamed-after-write.log")
     original = Layout.method(:validate_diagnostics_role!)
     inject = false
     calls = 0
@@ -336,6 +338,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         calls += 1
         if calls == 2
           inject = false
+          File.rename(File.join(diagnostic_root, "operation.log"), renamed)
           raise Layout::Error.new(
             "synthetic_post_write",
             "LAB-003 synthetic post-write validation failure"
@@ -361,6 +364,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
         end
       end
       refute File.exist?(File.join(root, "diagnostics", "operation.log"))
+      refute File.exist?(renamed)
     ensure
       Layout.define_singleton_method(:validate_diagnostics_role!, original)
     end

@@ -108,6 +108,7 @@ module OrchardProbe
         @diagnostic = nil
         @diagnostic_digest = nil
         @diagnostic_status = nil
+        @diagnostic_published = false
         @transition_experiment_name = nil
         @helper_authorized = false
         @active = true
@@ -133,6 +134,14 @@ module OrchardProbe
         @diagnostic = object
         @diagnostic_digest = digest
         @diagnostic_status = status
+      end
+
+      def mark_diagnostic_published!
+        @diagnostic_published = true
+      end
+
+      def diagnostic_published?
+        @diagnostic_published
       end
 
       def transition_captured?
@@ -393,6 +402,7 @@ module OrchardProbe
       role = boundary.context.roles.fetch("diagnostics")
       uid = boundary.context.root.identity.fetch(:uid)
       sink = nil
+      tracked = false
       published = false
       begin
         if boundary.diagnostic
@@ -400,6 +410,9 @@ module OrchardProbe
         end
         validate_diagnostics_capacity!(role, uid)
         sink = Layout.create_direct_file!(role, boundary.diagnostic_name, 0o600, uid)
+        boundary.record_diagnostic!(sink, Digest::SHA256.digest(message), status_name)
+        boundary.opened << sink
+        tracked = true
         role.identity = Layout.identity(role.handle.stat)
         sink.handle.write(message)
         sink.handle.flush
@@ -414,8 +427,7 @@ module OrchardProbe
           fail!("diagnostic_lock", "LAB-004 diagnostic result lock could not be acquired")
         end
         Layout.validate_diagnostics_role!(role, uid)
-        boundary.opened << sink
-        boundary.record_diagnostic!(sink, Digest::SHA256.digest(message), status_name)
+        boundary.mark_diagnostic_published!
         published = true
         { "status" => "recorded", "diagnostic_role" => "diagnostics" }
       rescue Layout::Error => error
@@ -423,7 +435,7 @@ module OrchardProbe
       rescue SystemCallError
         fail!("diagnostic_failed", "LAB-004 diagnostic record failed closed")
       ensure
-        unless published
+        unless published || tracked
           Layout.cleanup_unpublished_file!(role, sink, uid) if sink
           role.identity = Layout.identity(role.handle.stat) if sink
           sink&.close
@@ -984,7 +996,8 @@ module OrchardProbe
       compare_initial_diagnostics!(boundary, opened.drop(start), role)
       return true unless completed
 
-      unless boundary.diagnostic && boundary.diagnostic_digest
+      unless boundary.diagnostic && boundary.diagnostic_digest &&
+             boundary.diagnostic_published?
         fail!("diagnostic_missing", "LAB-004 diagnostic result is missing")
       end
       unless boundary.diagnostic_status == "helper-success"

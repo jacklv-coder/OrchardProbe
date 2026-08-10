@@ -58,7 +58,8 @@ Helper 只通过持有的 `diagnostics` Descriptor 写入一条固定成功/失�
 Closure 失败也会在返回前按持有的 Device/Inode 身份扫描 `diagnostics` 角色并移除该 Boundary
 精确拥有的诊断，因此同角色内的重命名或硬链接不能绕过清理，随后执行受检查的目录同步。若无法证明该身份
 已消失或删除已持久化，操作会返回独立终态
-`diagnostic_cleanup_indeterminate`，而不是普通 Closure 失败；保留的私有证据不得视为成功。公开结果
+`diagnostic_cleanup_indeterminate`，而不是普通 Closure 失败；保留的私有证据不得视为成功。
+Sink 身份会在任何可能失败的创建后写入或校验前保留，因此发布回滚也受同一清理证明保护。公开结果
 只含角色名称与操作状态，不含私有根、实验 ID、输入名称/内容或原始错误。
 
 ## 检查点 2 顺序台账

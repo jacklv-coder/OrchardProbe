@@ -80,9 +80,12 @@ lifecycle publication instead becomes a generic fail-closed closure error. Any
 final closure failure also removes the exact boundary-owned diagnostic before
 returning, scanning the diagnostics role by held device/inode identity so a
 same-role rename or hard link cannot evade cleanup, then performs a checked
-directory sync. If absence or deletion durability cannot be proved, the operation returns the distinct
-terminal `diagnostic_cleanup_indeterminate` state instead of an ordinary
-closure failure; the retained private evidence must not be treated as success.
+directory sync. If absence or deletion durability cannot be proved, the
+operation returns the distinct terminal `diagnostic_cleanup_indeterminate`
+state instead of an ordinary closure failure; the retained private evidence
+must not be treated as success.
+The sink identity is retained before any fallible post-create write or
+validation, so the same cleanup proof also covers publication rollback.
 Public results contain role names and operation state only, never a private
 root, experiment ID, input name/content, or raw error.
 
