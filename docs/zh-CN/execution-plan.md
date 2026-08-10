@@ -104,6 +104,14 @@ Issue [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) 定义了
 但不授权 Build、上传、安装、信封或设备操作；任何后续仪式仍需另一个已评审检查点和
 全新明确授权。
 
+Issue [#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)提议新增
+`LAB-004`：针对全新 DemoLab `1.0 (4)` 的受保护 Oracle 实验，应用已完成的 LAB-003
+角色边界，但不重新打开或消费 LAB-002 保留证据。双语
+[仪式契约](lab-004-protected-oracle-ceremony.md)固定完整三角色/全 Slice 范围、一次上传
+上限、两轮证据门禁、可接受 No-Go 与六个顺序检查点。本纯文档激活合并后只授权检查点 2
+无设备集成与合成测试，不授权签名、上传、安装、信封、设备查询或观察、Backend 工作或
+IPA 砸壳。
+
 ### LAB-002 检查点台账
 
 与主台账相同，只有包含这些状态的 PR 进入 `main` 后才具有权威性。
@@ -220,19 +228,20 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 | 12 | `LAB-001` | `done` | 记录当前内部 TestFlight 精确组合的有界 No-Go：无法在批准边界内独立观察精确已安装 Lineage、初始保护和明文范围。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
 | 13 | `LAB-002` | `done — 保留证据的 No-Go` | 评估仅限 DemoLab 的受保护到明文自观测 Oracle。无设备检查点 2、精确本地 DemoLab `1.0 (3)` 候选/冻结 Oracle 和 Host 操作链已分别通过 PR #59、#72 与 #74 完成；恰好一次内部 TestFlight 上传已对账为 Apple 接受。最后一次全新 4C 仪式中，TestFlight 显示并打开首方 DemoLab `1.0 (3)`，该 App 导入一次性信封并导出签名 Receipt；Host 在发布 Enrollment Binding 前停止，所以已安装二进制 Lineage 仍未验证，随后授权过期。[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)保留该流程性 No-Go；两轮观察均未执行，不存在受保护到明文结果或 Go 结果，且本次仪式不重试。[PR #83](https://github.com/jacklv-coder/OrchardProbe/pull/83)发布脱敏关闭记录并关闭 Issue #55。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 初始：[#57](https://github.com/jacklv-coder/OrchardProbe/pull/57)；检查点 3：[#61](https://github.com/jacklv-coder/OrchardProbe/pull/61)；检查点 4：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | 检查点 2：[#59](https://github.com/jacklv-coder/OrchardProbe/pull/59)；检查点 3：[#72](https://github.com/jacklv-coder/OrchardProbe/pull/72)；Host 流程：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)；最终：[#83](https://github.com/jacklv-coder/OrchardProbe/pull/83) |
 | 14 | `LAB-003` | `done — 布局 Go / 设备 No-Go` | 闭合三角色布局、感知 Phase 的清单、无设备路径/身份预检、有界诊断及合成回归已通过 PR #86 合并。结果 PR #87 已通过评审与必需 CI、完成合并并关闭 Issue #84，记录脱敏结论：仅布局 Go、设备仪式 No-Go。它不授权 Build、上传、安装、信封、设备动作、Backend 声明或可用 IPA 砸壳。 | `LAB-002` 保留证据的 No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | [#86](https://github.com/jacklv-coder/OrchardProbe/pull/86)；结果 [#87](https://github.com/jacklv-coder/OrchardProbe/pull/87) |
-| 15 | `DEVICE-001` | `blocked` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | 已评审的首方受保护 Oracle Go 结果；只有 `LAB-003` 不足以满足 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
-| 16 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
-| 17 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
-| 18 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | 激活时记录 | — |
-| 19 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | 激活时记录 | — |
-| 20 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | 激活时记录 | — |
-| 21 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | 激活时记录 | — |
+| 15 | `LAB-004` | `active — 激活合并后进入检查点 2` | 使用已完成的 LAB-003 角色边界，评估唯一一个全新首方 DemoLab `1.0 (4)` 受保护 Oracle Tuple。激活只授权无设备集成与合成测试；签名、上传、安装、信封、设备动作、Backend 声明与 IPA 砸壳仍分别受门禁约束。允许记录 No-Go。 | `LAB-003` 布局 Go | [#89](https://github.com/jacklv-coder/OrchardProbe/issues/89) | 本激活 PR | — |
+| 16 | `DEVICE-001` | `blocked` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | 已评审的首方受保护 Oracle Go 结果；只有 `LAB-003` 不足以满足 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
+| 17 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
+| 18 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
+| 19 | `EXPORT-001` | `planned` | 使用精确设备代码区间证据重建并验证根主程序，其他字节仍来自输入 IPA。 | `DEVICE-003` | 激活时创建 | 激活时记录 | — |
+| 20 | `EXPORT-002` | `planned` | 把重建和逐二进制证据扩展到受支持的声明可执行文件清单；失败保持逐文件、显式可见。 | `EXPORT-001` | 激活时创建 | 激活时记录 | — |
+| 21 | `UX-001` | `planned` | 实现 `oprobe decrypt <input.ipa>` 一条命令主路径：自动诊断、原子输出未签名 IPA，并生成独立 Manifest。 | `EXPORT-002` | 激活时创建 | 激活时记录 | — |
+| 22 | `RELEASE-001` | `planned` | 发布可复现的窄范围 Alpha、安装说明、Checksum/SBOM、双语排错文档和有证据的兼容矩阵。 | `UX-001` | 激活时创建 | 激活时记录 | — |
 
 ## 本计划没有宣称什么
 
 `LAB-002` 检查点 3 已针对精确本地 DemoLab `1.0 (3)` Candidate/冻结 Oracle Pair
-完成，它的无设备检查点 2 实现也已完成。`LAB-003` 只完成了无设备布局修复。这些步骤及
-后续阻塞或计划条目都不建立产品能力。仓库目前尤其
+完成，它的无设备检查点 2 实现也已完成。`LAB-003` 只完成了无设备布局修复，`LAB-004`
+最初也只激活无设备集成。这些步骤及后续阻塞或计划条目都不建立产品能力。仓库目前尤其
 没有受保护 Oracle、设备后端、可用砸壳、设备/构建匹配、Mach-O 重建、
 调用方可见的 IPA 发布、
 `oprobe decrypt` 命令、可安装 Release 或正式支持的设备组合。输出设计仍是未重签、
