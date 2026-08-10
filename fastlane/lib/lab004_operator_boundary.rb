@@ -258,6 +258,8 @@ module OrchardProbe
               uid: uid,
               completed: true
             )
+            cleanup_boundary_diagnostic!(boundary, uid)
+            validate_diagnostics_role_exact!(boundary, uid)
           end
         rescue StandardError => error
           closure_error = error
@@ -490,6 +492,8 @@ module OrchardProbe
       opened = [context.root, *context.roles.values]
       boundary = nil
       begin
+        diagnostics_role = context.roles.fetch("diagnostics")
+        Layout.acquire_diagnostics_role_lock!(diagnostics_role)
         Layout.validate_experiments_role!(
           context.roles.fetch("experiments"),
           uid,
@@ -501,7 +505,6 @@ module OrchardProbe
           opened,
           skip_name: external_input_name
         )
-        diagnostics_role = context.roles.fetch("diagnostics")
         validate_diagnostics_capacity!(
           diagnostics_role,
           uid,
@@ -1012,12 +1015,18 @@ module OrchardProbe
       compare_stable_diagnostic!(
         boundary.diagnostic,
         current,
-        boundary.diagnostic_digest
+        boundary.diagnostic_digest,
+        require_single_link: true
       )
       true
     end
 
-    def compare_stable_diagnostic!(before, after, expected_digest)
+    def compare_stable_diagnostic!(
+      before,
+      after,
+      expected_digest,
+      require_single_link: false
+    )
       left = before.handle.stat
       right = after.handle.stat
       unless left.file? && right.file? &&
@@ -1028,8 +1037,15 @@ module OrchardProbe
              (right.mode & 0o777) == 0o400
         fail!("diagnostic_changed", "LAB-004 diagnostic result changed during operation")
       end
+      if require_single_link && (left.nlink != 1 || right.nlink != 1)
+        fail!("diagnostic_changed", "LAB-004 diagnostic result changed during operation")
+      end
       content = read_bounded_file!(after, Layout::MAX_DIAGNOSTIC_FILE_BYTES, false)
       unless Digest::SHA256.digest(content) == expected_digest
+        fail!("diagnostic_changed", "LAB-004 diagnostic result changed during operation")
+      end
+      if require_single_link &&
+         (before.handle.stat.nlink != 1 || after.handle.stat.nlink != 1)
         fail!("diagnostic_changed", "LAB-004 diagnostic result changed during operation")
       end
     rescue SystemCallError
@@ -1040,6 +1056,11 @@ module OrchardProbe
       return true unless boundary.diagnostic
 
       role = boundary.context.roles.fetch("diagnostics")
+      # The boundary acquires this role lock before its first inventory and
+      # retains it until close_boundary! closes the descriptor. Every
+      # controlled diagnostics writer follows the same lock contract, so the
+      # identity check and pathname unlink below cannot be interleaved with a
+      # coordinated replacement.
       Layout.cleanup_unpublished_file!(role, boundary.diagnostic, uid)
       role.identity = Layout.identity(role.handle.stat)
       matching_diagnostic_entries(role, boundary.diagnostic, uid).each do |candidate|
@@ -1060,6 +1081,9 @@ module OrchardProbe
         remaining_matches.each(&:close)
       end
       role.handle.fsync
+      unless boundary.diagnostic.handle.stat.nlink.zero?
+        fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")
+      end
       true
     rescue Layout::Error, SystemCallError
       fail!("diagnostic_cleanup", "LAB-004 partial diagnostic could not be removed")

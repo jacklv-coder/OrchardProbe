@@ -498,6 +498,32 @@ class Lab003LayoutTest < Minitest::Test
     refute File.exist?(File.join(@root, "diagnostics", "unpublished.log"))
   end
 
+  def test_diagnostic_writers_fail_closed_while_the_role_lock_is_held
+    diagnostic_role = File.join(@root, "diagnostics")
+    File.open(diagnostic_role) do |lock|
+      assert lock.flock(File::LOCK_EX | File::LOCK_NB)
+
+      assert_layout_error("diagnostic_role_lock") do
+        Layout.preflight(
+          @root,
+          repository_root: repository_root,
+          diagnostic_name: "reserved.log"
+        )
+      end
+      assert_layout_error("diagnostic_role_lock") do
+        Layout.capture_diagnostic(
+          @root,
+          name: "captured.log",
+          argv: ruby_output_command(1),
+          repository_root: repository_root
+        )
+      end
+    end
+
+    refute File.exist?(File.join(diagnostic_role, "reserved.log"))
+    refute File.exist?(File.join(diagnostic_role, "captured.log"))
+  end
+
   def test_errors_and_results_do_not_expose_private_values
     secret_name = "private-receipt-token.json"
     error = assert_layout_error do

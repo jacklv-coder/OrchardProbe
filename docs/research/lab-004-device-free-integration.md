@@ -4,7 +4,7 @@
 
 Tracking Issue: [#89](https://github.com/jacklv-coder/OrchardProbe/issues/89)
 
-Status: **checkpoint 2 implementation proposed; device and external lanes closed**
+Status: **checkpoint 2 complete after PR #91 merges; device and external lanes closed**
 
 This is the implementation ledger for LAB-004 checkpoint 2. It connects the
 existing guarded Host/operator flow to the LAB-003 three-role layout without
@@ -39,7 +39,11 @@ Before a callback can reach the guarded Helper, the adapter opens the private
 root and all three roles, validates the exact selected lifecycle inventory,
 holds every control/phase artifact, opens a Receipt or Export only through the
 `external-inputs` descriptor, verifies non-aliasing and stable identity, and
-reserves one new diagnostic name. The Helper additionally rejects execution
+reserves one new diagnostic name. Before its first diagnostics inventory it
+also takes the nonblocking exclusive diagnostics-role lock and retains that lock
+through validation, publication, cleanup, and descriptor closure. Every
+controlled diagnostics writer must follow this lock contract. The Helper
+additionally rejects execution
 unless its primary directory descriptor is the held `experiments` role for
 enrollment start or the held opaque experiment child for every later action.
 Checkpoint 2 admits exactly that one role-owned binding and rejects every extra
@@ -73,14 +77,24 @@ carry the `helper-success` status; a durable `helper-failure` sentence can never
 close as success. On success, closure reopens and compares the root and
 role identities, requires the exact post-state inventory, unchanged external
 input identity and bytes, every retained diagnostic's held identity and opening
-SHA-256 under a shared lock, the named bounded read-only diagnostic, and
-complete non-aliasing. On callback failure it removes the diagnostic published by this
-boundary before requiring the original pre-state to remain exact; a partial
+SHA-256 under a shared lock, and the newly published named bounded read-only
+diagnostic with its single-link state rechecked after the final read. The new
+single-link rule applies only to the boundary-owned result; it does not
+reclassify previously retained operator evidence. After validation, the Host
+deletes the boundary-owned diagnostic, syncs the role directory, requires the
+held inode to have zero remaining links, and revalidates the original diagnostic
+inventory before it can return `closed`. The sanitized return status is the only
+success indication; the fixed diagnostic sentence is intentionally transient.
+Closure also requires complete non-aliasing. On callback failure it removes the
+diagnostic published by this boundary before requiring the original pre-state to
+remain exact; a partial
 lifecycle publication instead becomes a generic fail-closed closure error. Any
 final closure failure also removes the exact boundary-owned diagnostic before
 returning, scanning the diagnostics role by held device/inode identity so a
 same-role rename or hard link cannot evade cleanup, then performs a checked
-directory sync. If absence or deletion durability cannot be proved, the
+directory sync and requires the held inode to have no links left. An out-of-role
+rename or hard link is therefore indeterminate rather than successful cleanup.
+If absence or deletion durability cannot be proved, the
 operation returns the distinct terminal `diagnostic_cleanup_indeterminate`
 state instead of an ordinary closure failure; the retained private evidence
 must not be treated as success.
@@ -97,7 +111,7 @@ root, experiment ID, input name/content, or raw error.
 | 2B | Add held preflight and closure | `done` | Seven fixed profiles validate exact pre/post inventories, role identities, aliasing, and failure closure |
 | 2C | Gate Helper input and diagnostics | `done` | Helper primary bindings must match the active boundary; exact roles and held descendants are rechecked before launch; Receipt/Export bytes match held external input; post-transition descendants are captured before a fixed, bounded, exclusive, owner-private diagnostic |
 | 2D | Add synthetic regressions and CI | `done` | Ruby transition/adversarial tests, the existing LAB-003 suite, Rust tests, syntax, formatting, and CI wiring cover this device-free boundary |
-| 2E | Publish checkpoint-2 completion | `active` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) must pass Codex CR, GitHub review, and all required CI before merge |
+| 2E | Publish checkpoint-2 completion | `done after PR #91 merges` | [PR #91](https://github.com/jacklv-coder/OrchardProbe/pull/91) must pass Codex CR, GitHub review, and all required CI before merge |
 
 ## Scope result
 

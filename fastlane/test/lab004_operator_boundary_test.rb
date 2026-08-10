@@ -76,8 +76,7 @@ class Lab004OperatorBoundaryTest < Minitest::Test
       assert_equal "closed", result.fetch("status")
       assert_equal operation, result.fetch("operation")
       refute observed_boundary.active?
-      assert_equal 0o400,
-                   File.stat(File.join(root, "diagnostics", "operation.log")).mode & 0o777
+      refute File.exist?(File.join(root, "diagnostics", "operation.log"))
     end
   end
 
@@ -485,6 +484,172 @@ class Lab004OperatorBoundaryTest < Minitest::Test
 
     refute File.exist?(File.join(diagnostic_root, "operation.log"))
     refute File.exist?(renamed)
+  end
+
+  def test_closure_reports_indeterminate_when_diagnostic_moves_outside_its_role
+    root = fresh_layout("out-of-role-diagnostic")
+    diagnostic = File.join(root, "diagnostics", "operation.log")
+    escaped = File.join(@container, "escaped-diagnostic.log")
+
+    error = assert_boundary_error("diagnostic_cleanup_indeterminate") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        File.rename(diagnostic, escaped)
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute_includes error.message, root
+    refute File.exist?(diagnostic)
+    assert File.exist?(escaped)
+  end
+
+  def test_closure_reports_indeterminate_when_diagnostic_is_linked_outside_its_role
+    root = fresh_layout("out-of-role-diagnostic-link")
+    diagnostic = File.join(root, "diagnostics", "operation.log")
+    escaped = File.join(@container, "linked-diagnostic.log")
+
+    error = assert_boundary_error("diagnostic_cleanup_indeterminate") do
+      Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        File.link(diagnostic, escaped)
+        { "experiment_id" => EXPERIMENT }
+      end
+    end
+
+    refute_includes error.message, root
+    refute File.exist?(diagnostic)
+    assert File.exist?(escaped)
+  end
+
+  def test_closure_rechecks_links_created_while_reading_the_diagnostic
+    root = fresh_layout("diagnostic-read-link-race")
+    diagnostic = File.join(root, "diagnostics", "operation.log")
+    escaped = File.join(@container, "read-race-diagnostic.log")
+    original = Boundary.method(:read_bounded_file!)
+    inject = false
+    Boundary.define_singleton_method(:read_bounded_file!) do |input, maximum, reject_empty|
+      content = original.call(input, maximum, reject_empty)
+      if inject && File.basename(input.path) == "operation.log"
+        inject = false
+        File.link(diagnostic, escaped)
+      end
+      content
+    end
+
+    begin
+      error = assert_boundary_error("diagnostic_cleanup_indeterminate") do
+        Boundary.with_operation(
+          root,
+          operation: "operator-start-enrollment",
+          diagnostic_name: "operation.log",
+          repository_root: repository_root
+        ) do |boundary|
+          assert_helper_binding(boundary, "operator-start-enrollment")
+          create_experiment(root, "base")
+          capture_transition(boundary)
+          Boundary.publish_diagnostic(boundary, "helper-success")
+          inject = true
+          { "experiment_id" => EXPERIMENT }
+        end
+      end
+
+      refute_includes error.message, root
+      refute File.exist?(diagnostic)
+      assert File.exist?(escaped)
+    ensure
+      Boundary.define_singleton_method(:read_bounded_file!, original)
+    end
+  end
+
+  def test_cleanup_holds_the_diagnostics_role_lock_against_a_replacement
+    root = fresh_layout("diagnostic-cleanup-lock")
+    diagnostic = File.join(root, "diagnostics", "operation.log")
+    replacement = File.join(@container, "replacement.log")
+    write_private(replacement, "unrelated evidence", 0o400)
+    original = Layout.method(:cleanup_unpublished_file!)
+    attempted = false
+    Layout.define_singleton_method(:cleanup_unpublished_file!) do |role, object, uid|
+      if object && File.basename(object.path) == "operation.log"
+        attempted = true
+        File.open(role.path) do |probe|
+          if probe.flock(File::LOCK_EX | File::LOCK_NB)
+            File.rename(replacement, diagnostic)
+          end
+        end
+      end
+      original.call(role, object, uid)
+    end
+
+    begin
+      result = Boundary.with_operation(
+        root,
+        operation: "operator-start-enrollment",
+        diagnostic_name: "operation.log",
+        repository_root: repository_root
+      ) do |boundary|
+        assert_helper_binding(boundary, "operator-start-enrollment")
+        create_experiment(root, "base")
+        capture_transition(boundary)
+        Boundary.publish_diagnostic(boundary, "helper-success")
+        { "experiment_id" => EXPERIMENT }
+      end
+
+      assert_equal "closed", result.fetch("status")
+      assert attempted
+      assert File.exist?(replacement)
+      refute File.exist?(diagnostic)
+      File.open(File.join(root, "diagnostics")) do |probe|
+        assert probe.flock(File::LOCK_EX | File::LOCK_NB)
+      end
+    ensure
+      Layout.define_singleton_method(:cleanup_unpublished_file!, original)
+    end
+  end
+
+  def test_boundary_link_rule_does_not_reclassify_retained_diagnostics
+    root = fresh_layout("retained-diagnostic-link")
+    retained = write_private(
+      File.join(root, "diagnostics", "retained.log"),
+      "retained evidence",
+      0o400
+    )
+    linked = File.join(@container, "linked-retained.log")
+    File.link(retained, linked)
+
+    result = Boundary.with_operation(
+      root,
+      operation: "operator-start-enrollment",
+      diagnostic_name: "operation.log",
+      repository_root: repository_root
+    ) do |boundary|
+      assert_helper_binding(boundary, "operator-start-enrollment")
+      create_experiment(root, "base")
+      capture_transition(boundary)
+      Boundary.publish_diagnostic(boundary, "helper-success")
+      { "experiment_id" => EXPERIMENT }
+    end
+
+    assert_equal "closed", result.fetch("status")
+    assert File.exist?(retained)
+    assert File.exist?(linked)
+    refute File.exist?(File.join(root, "diagnostics", "operation.log"))
   end
 
   def test_closure_rejects_in_place_change_to_retained_diagnostic
