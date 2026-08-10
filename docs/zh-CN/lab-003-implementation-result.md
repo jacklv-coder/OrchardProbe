@@ -4,7 +4,7 @@
 
 跟踪 Issue：[#84](https://github.com/jacklv-coder/OrchardProbe/issues/84)
 
-状态：**检查点 3 进行中 — PR #87**
+状态：**已完成 — 通过 PR #87 得到布局 Go / 设备仪式 No-Go**
 
 本文只评估 [LAB-003 布局契约](lab-003-external-artifact-layout.md)定义的无设备文件系统
 角色门禁，不包含私有路径、凭据、稳定设备标识符、Receipt/Export 内容、受保护二进制
@@ -34,7 +34,7 @@
 |---:|---|---|---|
 | 3A | 记录脱敏实现证据 | `完成` | 上文只包含公开 PR、Commit、CI、测试与 Review 事实；没有打开私有工件 |
 | 3B | 本地校验双语结果 | `完成` | 中英文语义、链接、Patch 格式、文档一致性、两个 Ruby 回归 Run 与 Codex CR 均通过 |
-| 3C | 发布并关闭 | `进行中 — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)必须通过必需 CI、Review 与合并前 Codex CR；合并后关闭 Issue #84 |
+| 3C | 发布并关闭 | `完成 — PR #87` | [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)已通过必需 CI、Review 与合并前 Codex CR，完成合并并关闭 Issue #84 |
 
 ## 判定
 
@@ -50,7 +50,7 @@
 
 ## 下一门禁
 
-本文通过本地检查、Codex CR、PR Review、必需 CI 并合并后，LAB-003 才能关闭。以后任何
+PR #87 通过本地检查、Codex CR、PR Review 与必需 CI 并合并后，LAB-003 已关闭。以后任何
 真机提案都必须是新的顺序检查点：指定唯一精确的首方 Build/设备 Tuple，说明受保护 Oracle
 前提为何已经满足，固定允许的外部与设备动作，并在每次此类动作前紧邻取得全新明确授权。
 在此之前，`DEVICE-001` 继续阻塞，已连接手机也不需要参与。

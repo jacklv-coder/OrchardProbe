@@ -98,9 +98,11 @@ Issue [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) 定义了
 双语[外部工件布局契约](lab-003-external-artifact-layout.md)：实验子目录保留六个不可变基础
 控制工件，并只允许当前生命周期状态对应的精确 Phase 目录；外部 Receipt/Export 输入与
 有界诊断分别使用不同、互不重叠且仅 Owner 可访问的角色，完整路径和身份校验必须发生在
-未来授权被创建或消费之前。本激活不会修改任何生命周期保护，
-也不授权 Build、上传、安装、信封或设备操作。合并后只能开始 Issue #84 内的无设备实现与
-合成测试；任何后续仪式仍需另一个已评审检查点和全新明确授权。
+未来授权被创建或消费之前。PR #86 已在无设备条件下实现并测试该边界；结果
+[PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)通过必需检查与评审、完成合并并
+关闭 Issue #84，得到严格收窄的结论：无设备布局 Go、设备仪式 No-Go。LAB-003 已完成，
+但不授权 Build、上传、安装、信封或设备操作；任何后续仪式仍需另一个已评审检查点和
+全新明确授权。
 
 ### LAB-002 检查点台账
 
@@ -217,7 +219,7 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 | 11 | `HOST-010` | `done` | 使用无设备 Fixture，把输入/输出 Hash、清单、逐二进制状态、排除项和打包证据写入带版本 Manifest。 | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | 记录当前内部 TestFlight 精确组合的有界 No-Go：无法在批准边界内独立观察精确已安装 Lineage、初始保护和明文范围。 | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
 | 13 | `LAB-002` | `done — 保留证据的 No-Go` | 评估仅限 DemoLab 的受保护到明文自观测 Oracle。无设备检查点 2、精确本地 DemoLab `1.0 (3)` 候选/冻结 Oracle 和 Host 操作链已分别通过 PR #59、#72 与 #74 完成；恰好一次内部 TestFlight 上传已对账为 Apple 接受。最后一次全新 4C 仪式中，TestFlight 显示并打开首方 DemoLab `1.0 (3)`，该 App 导入一次性信封并导出签名 Receipt；Host 在发布 Enrollment Binding 前停止，所以已安装二进制 Lineage 仍未验证，随后授权过期。[检查点 4 进度台账](lab-002-checkpoint-4-progress.md)保留该流程性 No-Go；两轮观察均未执行，不存在受保护到明文结果或 Go 结果，且本次仪式不重试。[PR #83](https://github.com/jacklv-coder/OrchardProbe/pull/83)发布脱敏关闭记录并关闭 Issue #55。 | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | 初始：[#57](https://github.com/jacklv-coder/OrchardProbe/pull/57)；检查点 3：[#61](https://github.com/jacklv-coder/OrchardProbe/pull/61)；检查点 4：[#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | 检查点 2：[#59](https://github.com/jacklv-coder/OrchardProbe/pull/59)；检查点 3：[#72](https://github.com/jacklv-coder/OrchardProbe/pull/72)；Host 流程：[#74](https://github.com/jacklv-coder/OrchardProbe/pull/74)；最终：[#83](https://github.com/jacklv-coder/OrchardProbe/pull/83) |
-| 14 | `LAB-003` | `active — 检查点 3` | 闭合三角色布局、感知 Phase 的清单、无设备路径/身份预检、有界诊断及合成回归已通过 PR #86 合并。检查点 3 记录脱敏结论：仅布局 Go、设备仪式 No-Go。结果 PR #87 可以关闭 LAB-003，但不能授权 Build、上传、安装、信封、设备动作、Backend 声明或可用 IPA 砸壳。 | `LAB-002` 保留证据的 No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | [#86](https://github.com/jacklv-coder/OrchardProbe/pull/86)；结果 [#87](https://github.com/jacklv-coder/OrchardProbe/pull/87) |
+| 14 | `LAB-003` | `done — 布局 Go / 设备 No-Go` | 闭合三角色布局、感知 Phase 的清单、无设备路径/身份预检、有界诊断及合成回归已通过 PR #86 合并。结果 PR #87 已通过评审与必需 CI、完成合并并关闭 Issue #84，记录脱敏结论：仅布局 Go、设备仪式 No-Go。它不授权 Build、上传、安装、信封、设备动作、Backend 声明或可用 IPA 砸壳。 | `LAB-002` 保留证据的 No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | [#86](https://github.com/jacklv-coder/OrchardProbe/pull/86)；结果 [#87](https://github.com/jacklv-coder/OrchardProbe/pull/87) |
 | 15 | `DEVICE-001` | `blocked` | 在自有且获授权设备上评估一个边界狭窄的后端，记录可复现 Go/No-Go 证据，不扩大 Helper 边界。 | 已评审的首方受保护 Oracle Go 结果；只有 `LAB-003` 不足以满足 | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | 激活时记录 | — |
 | 16 | `DEVICE-002` | `planned` | 为唯一一个已验证后端和设备组合接受 ADR；没有必需真机记录时不得发布支持声明。 | `DEVICE-001` Go 结果 | 激活时创建 | 激活时记录 | — |
 | 17 | `DEVICE-003` | `planned` | 在 RFC-0002 限制下实现最小 Helper 和 USB Transport，不提供 Shell、任意路径、PID 或内存 API。 | `DEVICE-002` | 激活时创建 | 激活时记录 | — |
@@ -229,7 +231,7 @@ Issue 和 PR 链接是持久证据。PR 页面本身会展示 Merge Commit 和�
 ## 本计划没有宣称什么
 
 `LAB-002` 检查点 3 已针对精确本地 DemoLab `1.0 (3)` Candidate/冻结 Oracle Pair
-完成，它的无设备检查点 2 实现也已完成。`LAB-003` 只激活无设备布局修复。这些步骤及
+完成，它的无设备检查点 2 实现也已完成。`LAB-003` 只完成了无设备布局修复。这些步骤及
 后续阻塞或计划条目都不建立产品能力。仓库目前尤其
 没有受保护 Oracle、设备后端、可用砸壳、设备/构建匹配、Mach-O 重建、
 调用方可见的 IPA 发布、

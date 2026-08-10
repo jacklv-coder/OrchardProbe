@@ -120,19 +120,21 @@ Issue #9 fixed the first-party DemoLab provenance, independent
 initial-protection/plaintext-oracle evidence, redaction, explicit Go/No-Go,
 documentation, and claim-narrowing criteria.
 
-Issue [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) defines
+Issue [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) defined
 `LAB-003`, a separately reviewed, device-free successor inserted before the
-blocked backend work. Its first gate is the bilingual
+blocked backend work. Its first gate was the bilingual
 [external artifact layout contract](docs/research/lab-003-external-artifact-layout.md):
 the experiment child retains six immutable base controls plus only the exact
 phase directories valid at its lifecycle state, while external Receipt/Export
 inputs and bounded diagnostics receive distinct, non-overlapping, owner-only
 roles whose complete path and identity checks occur before future authorization
-creation or consumption. This activation changes no lifecycle
-guard and authorizes no build, upload, installation, envelope, or device
-action. After it merges, only device-free implementation and synthetic tests
-inside Issue #84 may begin. Any later ceremony requires another reviewed
-checkpoint and fresh explicit authorization.
+creation or consumption. PR #86 implemented and tested that boundary without a
+device. Result [PR #87](https://github.com/jacklv-coder/OrchardProbe/pull/87)
+passed the required checks and review, merged, and closed Issue #84 with the
+narrow conclusion: device-free layout Go, device-ceremony No-Go. LAB-003 is
+complete but authorizes no build, upload, installation, envelope, or device
+action. Any later ceremony requires another reviewed checkpoint and fresh
+explicit authorization.
 
 ### LAB-002 checkpoint ledger
 
@@ -282,7 +284,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 | 11 | `HOST-010` | `done` | Bind input/output hashes, inventory, per-binary state, exclusions, and package evidence into the versioned manifest using device-free fixtures. | `HOST-009` | [#43](https://github.com/jacklv-coder/OrchardProbe/issues/43) | [#44](https://github.com/jacklv-coder/OrchardProbe/pull/44) | [#45](https://github.com/jacklv-coder/OrchardProbe/pull/45) |
 | 12 | `LAB-001` | `done` | Record the bounded No-Go for the stock internal-TestFlight tuple: exact installed lineage, initial protection, and plaintext ranges were not independently observable inside the approved boundary. | `HOST-010` | [#9](https://github.com/jacklv-coder/OrchardProbe/issues/9) | [#46](https://github.com/jacklv-coder/OrchardProbe/pull/46) | [#54](https://github.com/jacklv-coder/OrchardProbe/pull/54) |
 | 13 | `LAB-002` | `done — retained No-Go` | Evaluate a DemoLab-only protected-to-plaintext self-observation oracle. Device-free checkpoint 2, the exact local DemoLab `1.0 (3)` candidate/frozen Oracle, and the Host operator chain completed through PRs #59, #72, and #74. The one internal-TestFlight upload was reconciled as accepted. In the final fresh 4C ceremony TestFlight displayed and opened first-party DemoLab `1.0 (3)`, which imported its one-shot envelope and exported a signed Receipt; Host closure stopped before Enrollment Binding publication, so installed binary lineage remained unverified, and the authorization expired. The [checkpoint-4 progress ledger](docs/research/lab-002-checkpoint-4-progress.md) retains the procedural No-Go; neither observation run occurred, no protected-to-plaintext or Go result exists, and the ceremony is not retried. [PR #83](https://github.com/jacklv-coder/OrchardProbe/pull/83) publishes the sanitized closure record and closes Issue #55. | `LAB-001` No-Go | [#55](https://github.com/jacklv-coder/OrchardProbe/issues/55) | Initial: [#57](https://github.com/jacklv-coder/OrchardProbe/pull/57); checkpoint 3: [#61](https://github.com/jacklv-coder/OrchardProbe/pull/61); checkpoint 4: [#73](https://github.com/jacklv-coder/OrchardProbe/pull/73) | Checkpoint 2: [#59](https://github.com/jacklv-coder/OrchardProbe/pull/59); checkpoint 3: [#72](https://github.com/jacklv-coder/OrchardProbe/pull/72); host workflow: [#74](https://github.com/jacklv-coder/OrchardProbe/pull/74); final: [#83](https://github.com/jacklv-coder/OrchardProbe/pull/83) |
-| 14 | `LAB-003` | `active — checkpoint 3` | The closed three-role layout, phase-aware inventory, device-free path/identity preflight, bounded diagnostics, and synthetic regressions merged in PR #86. Checkpoint 3 records the sanitized conclusion: layout-only Go, device-ceremony No-Go. Result PR #87 may close LAB-003 but cannot authorize a build, upload, installation, envelope, device action, backend claim, or working IPA decryption. | `LAB-002` retained No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | [#86](https://github.com/jacklv-coder/OrchardProbe/pull/86); result [#87](https://github.com/jacklv-coder/OrchardProbe/pull/87) |
+| 14 | `LAB-003` | `done — layout Go / device No-Go` | The closed three-role layout, phase-aware inventory, device-free path/identity preflight, bounded diagnostics, and synthetic regressions merged in PR #86. Result PR #87 passed review and required CI, merged, closed Issue #84, and records the sanitized conclusion: layout-only Go, device-ceremony No-Go. It does not authorize a build, upload, installation, envelope, device action, backend claim, or working IPA decryption. | `LAB-002` retained No-Go | [#84](https://github.com/jacklv-coder/OrchardProbe/issues/84) | [#85](https://github.com/jacklv-coder/OrchardProbe/pull/85) | [#86](https://github.com/jacklv-coder/OrchardProbe/pull/86); result [#87](https://github.com/jacklv-coder/OrchardProbe/pull/87) |
 | 15 | `DEVICE-001` | `blocked` | Evaluate one narrowly scoped backend on an owned, authorized device and record reproducible Go/No-Go evidence without expanding the helper boundary. | A reviewed first-party protected-oracle Go result; `LAB-003` alone is insufficient | [#10](https://github.com/jacklv-coder/OrchardProbe/issues/10) | To record during activation | — |
 | 16 | `DEVICE-002` | `planned` | Accept an ADR for exactly one supported backend and device tuple; publish no support claim without the required real-device record. | `DEVICE-001` Go result | To create during activation | To record during activation | — |
 | 17 | `DEVICE-003` | `planned` | Implement the minimum helper and USB transport behind RFC-0002 limits, with no shell, arbitrary path, PID, or memory API. | `DEVICE-002` | To create during activation | To record during activation | — |
@@ -295,7 +297,7 @@ and required-check history, so merge SHAs are not duplicated in this table.
 
 `LAB-002` checkpoint 3 is done for the exact local DemoLab `1.0 (3)`
 candidate/frozen-oracle pair, and its device-free checkpoint 2 implementation
-is complete. `LAB-003` only activates device-free layout remediation. None of
+is complete. `LAB-003` completed only the device-free layout remediation. None of
 these steps, or the later blocked and planned rows, establishes a product
 capability. In particular, the repository does not yet provide a protected
 oracle, device backend, working decryption, device/build matching, Mach-O
